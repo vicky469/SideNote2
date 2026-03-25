@@ -18,6 +18,7 @@ This reduces review risk and catches cross-platform issues before the plugin is 
 - Beta install source: published GitHub releases
 
 BRAT does not install from a draft release. The GitHub release must be published.
+During the current beta phase, our GitHub Actions workflow creates a published GitHub pre-release when a semver tag is pushed.
 
 ## Maintainer Steps
 
@@ -27,7 +28,7 @@ BRAT does not install from a draft release. The GitHub release must be published
    - `main.js`
    - `manifest.json`
    - `styles.css`
-4. Optionally mark the GitHub release as a pre-release.
+4. Mark the GitHub release as a pre-release during beta.
 5. Do not submit to `obsidian-releases` yet.
 6. Share the repo path `vicky469/SideNote2` with testers.
 7. Ask testers to install through BRAT.

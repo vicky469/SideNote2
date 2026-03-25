@@ -16,7 +16,7 @@ We use a beta-first rollout for new public releases. See [beta-testing.md](./bet
 
 ## Automation
 
-- `.github/workflows/release.yml` creates a draft GitHub release whenever a semantic-version tag is pushed.
+- During the current beta phase, `.github/workflows/release.yml` creates a published GitHub pre-release whenever a semantic-version tag is pushed.
 - `npm version patch|minor|major` updates `package.json`, `package-lock.json`, `manifest.json`, and `versions.json` together.
 - The workflow assumes GitHub Actions has `Read and write permissions` enabled for the repository.
 - The workflow can only run after this local repo is connected to a GitHub remote.
@@ -44,8 +44,8 @@ We use a beta-first rollout for new public releases. See [beta-testing.md](./bet
 5. Verify that `main.js` exists at the repo root. Do not commit it.
 6. Commit the release metadata and documentation changes.
 7. Push the commit and the semantic-version tag that exactly matches the plugin version, for example `1.0.0`.
-8. Let GitHub Actions create the draft GitHub release from that tag.
-9. Review the draft release and confirm these files are attached:
+8. During beta, let GitHub Actions create the published GitHub pre-release from that tag.
+9. Review the release and confirm these files are attached:
    - `main.js`
    - `manifest.json`
    - `styles.css`
