@@ -1,12 +1,12 @@
 {
 	"name": "side-note2",
-	"version": "1.0.0",
+	"version": "1.0.2",
 	"description": "Side comments for both humans and agents.",
 	"main": "main.js",
 	"scripts": {
 		"dev": "node esbuild.config.mjs",
 		"build": "tsc -noEmit -skipLibCheck && node esbuild.config.mjs production",
-		"test": "rm -rf .test-dist && tsc -p tsconfig.test.json && node --test .test-dist/tests/**/*.test.js",
+		"test": "rm -rf .test-dist && tsc -p tsconfig.test.json && find .test-dist/tests -type f -name '*.test.js' -exec node --test {} +",
 		"release:check": "npm run test && npm run build",
 		"version": "node version-bump.mjs && git add manifest.json versions.json"
 	},
