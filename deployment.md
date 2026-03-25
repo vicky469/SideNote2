@@ -12,6 +12,8 @@
 
 `minAppVersion` stays at `0.15.0` unless the plugin starts using newer Obsidian APIs or launch testing shows a higher floor is required.
 
+We use a beta-first rollout for new public releases. See [beta-testing.md](./beta-testing.md).
+
 ## Automation
 
 - `.github/workflows/release.yml` creates a draft GitHub release whenever a semantic-version tag is pushed.
