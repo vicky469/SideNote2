@@ -23,7 +23,6 @@ Use this guide for:
 - Obsidian is installed on the test device.
 - The tester has a vault open.
 - Community plugins are allowed in that vault.
-- The vault is not using the dev checkout directly.
 
 ## Standard Setup For Any Tester
 
