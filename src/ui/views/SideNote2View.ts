@@ -1,13 +1,16 @@
 import { ItemView, MarkdownRenderer, Notice, TFile, WorkspaceLeaf, setIcon, type ViewStateResult } from "obsidian";
 import type { Comment } from "../../commentManager";
+import { extractTagsFromText } from "../../core/commentTags";
 import type { DraftComment } from "../../domain/drafts";
 import { sortCommentsByPosition } from "../../core/noteCommentStorage";
 import type SideNote2 from "../../main";
 import { copyTextToClipboard } from "../copyTextToClipboard";
 import { continueMarkdownList, type TextEditResult } from "../editor/commentEditorFormatting";
 import { findOpenWikiLinkQuery, replaceOpenWikiLinkQuery } from "../editor/commentEditorLinks";
+import { findOpenTagQuery, replaceOpenTagQuery } from "../editor/commentEditorTags";
 import ConfirmDeleteModal from "../modals/ConfirmDeleteModal";
 import SideNoteLinkSuggestModal from "../modals/SideNoteLinkSuggestModal";
+import SideNoteTagSuggestModal from "../modals/SideNoteTagSuggestModal";
 import { SIDE_NOTE2_ICON_ID } from "../sideNote2Icon";
 import { decideEditDismissal } from "./editDismissal";
 import type { CustomViewState } from "./viewState";
@@ -67,7 +70,7 @@ export default class SideNote2View extends ItemView {
     private activeCommentId: string | null = null;
     private renderVersion = 0;
     private pendingDraftFocusFrame: number | null = null;
-    private isLinkSuggestOpen = false;
+    private activeInlineSuggest: "link" | "tag" | null = null;
     private readonly documentKeydownHandler = (event: KeyboardEvent) => {
         const activeElement = document.activeElement;
         if (!(activeElement instanceof HTMLTextAreaElement)) {
@@ -269,7 +272,7 @@ export default class SideNote2View extends ItemView {
         comment: DraftComment,
         textarea: HTMLTextAreaElement,
     ): boolean {
-        if (this.isLinkSuggestOpen) {
+        if (this.activeInlineSuggest) {
             return false;
         }
 
@@ -285,7 +288,7 @@ export default class SideNote2View extends ItemView {
         const initialValue = textarea.value;
         const initialCursor = linkQuery.end;
         let inserted = false;
-        this.isLinkSuggestOpen = true;
+        this.activeInlineSuggest = "link";
 
         new SideNoteLinkSuggestModal(this.app, {
             initialQuery: linkQuery.query,
@@ -304,7 +307,68 @@ export default class SideNote2View extends ItemView {
                 this.scheduleDraftFocus(comment.id);
             },
             onCloseModal: () => {
-                this.isLinkSuggestOpen = false;
+                this.activeInlineSuggest = null;
+                if (inserted || !textarea.isConnected) {
+                    return;
+                }
+
+                window.requestAnimationFrame(() => {
+                    textarea.focus();
+                    textarea.setSelectionRange(initialCursor, initialCursor);
+                });
+            },
+        }).open();
+
+        return true;
+    }
+
+    private openDraftTagSuggest(
+        comment: DraftComment,
+        textarea: HTMLTextAreaElement,
+    ): boolean {
+        if (this.activeInlineSuggest || findOpenWikiLinkQuery(
+            textarea.value,
+            textarea.selectionStart,
+            textarea.selectionEnd,
+        )) {
+            return false;
+        }
+
+        const tagQuery = findOpenTagQuery(
+            textarea.value,
+            textarea.selectionStart,
+            textarea.selectionEnd,
+        );
+        if (!tagQuery) {
+            return false;
+        }
+
+        const initialValue = textarea.value;
+        const initialCursor = tagQuery.end;
+        let inserted = false;
+        this.activeInlineSuggest = "tag";
+
+        new SideNoteTagSuggestModal(this.app, {
+            extraTags: [
+                ...this.plugin.getAllIndexedComments().flatMap((storedComment) => extractTagsFromText(storedComment.comment ?? "")),
+                ...extractTagsFromText(textarea.value),
+            ],
+            initialQuery: tagQuery.query,
+            onChooseTag: async (tagText) => {
+                inserted = true;
+                const edit = replaceOpenTagQuery(initialValue, tagQuery, tagText);
+                if (textarea.isConnected) {
+                    this.applyDraftEditorEdit(comment.id, textarea, edit);
+                    textarea.focus();
+                    return;
+                }
+
+                this.plugin.updateDraftCommentText(comment.id, edit.value);
+                await this.renderComments();
+                this.scheduleDraftFocus(comment.id);
+            },
+            onCloseModal: () => {
+                this.activeInlineSuggest = null;
                 if (inserted || !textarea.isConnected) {
                     return;
                 }
@@ -616,12 +680,7 @@ export default class SideNote2View extends ItemView {
             cls: "sidenote2-inline-textarea",
         });
         textarea.value = comment.comment;
-        textarea.setAttribute("placeholder", "Write a side note. Type [[ to link or create a note.");
-
-        editorWrap.createDiv({
-            cls: "sidenote2-inline-editor-hint",
-            text: "Type [[ to link or create a note.",
-        });
+        textarea.setAttribute("placeholder", "Write a side note. Type [[ for links or # for tags.");
 
         const actionRow = editorWrap.createDiv("sidenote2-inline-editor-actions");
         const cancelButton = actionRow.createEl("button", {
@@ -648,14 +707,35 @@ export default class SideNote2View extends ItemView {
             const target = event.target as HTMLTextAreaElement;
             this.plugin.updateDraftCommentText(comment.id, target.value);
 
+            if (!(event instanceof InputEvent) || event.inputType !== "insertText" || !event.data) {
+                return;
+            }
+
             if (
-                event instanceof InputEvent
-                && event.inputType === "insertText"
-                && event.data === "["
+                event.data === "["
                 && target.selectionStart >= 2
                 && target.value.slice(target.selectionStart - 2, target.selectionStart) === "[["
             ) {
                 this.openDraftLinkSuggest(comment, target);
+                return;
+            }
+
+            if (findOpenWikiLinkQuery(target.value, target.selectionStart, target.selectionEnd)) {
+                return;
+            }
+
+            const tagQuery = findOpenTagQuery(
+                target.value,
+                target.selectionStart,
+                target.selectionEnd,
+            );
+            if (!tagQuery) {
+                return;
+            }
+
+            if (event.data === "#") {
+                this.openDraftTagSuggest(comment, target);
+                return;
             }
         });
         textarea.addEventListener("keydown", (event: KeyboardEvent) => {
@@ -673,9 +753,11 @@ export default class SideNote2View extends ItemView {
 
             event.stopPropagation();
 
-            if (event.key === "Tab" && !event.shiftKey && this.openDraftLinkSuggest(comment, textarea)) {
-                consumeShortcut();
-                return;
+            if (event.key === "Tab" && !event.shiftKey) {
+                if (this.openDraftLinkSuggest(comment, textarea) || this.openDraftTagSuggest(comment, textarea)) {
+                    consumeShortcut();
+                    return;
+                }
             }
 
             if (!(event.metaKey || event.ctrlKey) && !event.altKey && event.key === "Enter" && !event.shiftKey) {

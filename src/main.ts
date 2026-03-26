@@ -673,6 +673,10 @@ export default class SideNote2 extends Plugin {
         return this.draftComment?.filePath === filePath ? this.draftComment : null;
     }
 
+    public getAllIndexedComments(): Comment[] {
+        return this.aggregateCommentIndex.getAllComments();
+    }
+
     public isSavingDraft(commentId: string): boolean {
         return this.savingDraftCommentId === commentId;
     }

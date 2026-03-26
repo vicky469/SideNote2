@@ -94,6 +94,16 @@ test("buildAllCommentsNoteContent escapes markdown-heavy selections and truncate
     assert.match(content, /\[Use \\`\/path\/to\/SideNote2\\`, \\`\\\[Vault\\\]\\`, and \\`\\<tag\\>\\` placeholders instead of mach\.\.\.\]/);
 });
 
+test("buildAllCommentsNoteContent includes extracted comment tags for search", () => {
+    const content = buildAllCommentsNoteContent("dev", [
+        createComment({
+            comment: "Track this with #hi and #follow/up next.",
+        }),
+    ]);
+
+    assert.match(content, /-\s+\[hello\]\(obsidian:\/\/side-note2-comment\?vault=dev&file=Folder%2FNote\.md&commentId=comment-1\)  #hi #follow\/up/);
+});
+
 test("isAllCommentsNotePath matches the generated note path", () => {
     assert.equal(isAllCommentsNotePath(ALL_COMMENTS_NOTE_PATH), true);
     assert.equal(isAllCommentsNotePath(LEGACY_ALL_COMMENTS_NOTE_PATH), true);

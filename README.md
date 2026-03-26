@@ -12,6 +12,7 @@ It is built for a minimal workflow: humans work in the sidebar, while agents can
 
 - Uses a dedicated sidebar for drafting, editing, resolving, reopening, and deleting comments.
 - Supports Obsidian-style `[[wikilinks]]` inside side comments to link existing notes or create new markdown notes.
+- Type `#` in a side note to search existing tags or add a new one.
 - Highlights commented text directly in the note.
 - Keeps resolved comments archived instead of removing them.
 - Generates `SideNote2 index.md` as a vault-wide comment index.
@@ -23,6 +24,7 @@ It is built for a minimal workflow: humans work in the sidebar, while agents can
 2. Right-click `Add comment to selection`.
    You can use the ribbon button to open the sidebar, or assign your own hotkey in Obsidian.
 3. Write the comment in the sidebar.
+   Type `[[` to link a note, or type `#` to search existing tags or create a new one.
 4. Review it later from the sidebar.
 
 For power users:
@@ -35,7 +37,7 @@ In Codex CLI, you can ask for a stored side comment directly:
 Show me the side comment for "selected text" in "/Users/path/to/note.md".
 ```
 
-Or update it without knowing the underlying command:
+Or update it:
 
 ```text
 Update the side comment for "selected text" in "/Users/path/to/note.md" to:
@@ -47,7 +49,7 @@ If multiple side comments in the same note use the same selected text, include a
 ## Settings
 
 - `Debug mode`
-  This is not implemented yet. 
+  This is not implemented yet.
 
 ## Command
 

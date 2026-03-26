@@ -1,4 +1,5 @@
 import type { Comment } from "../commentManager";
+import { extractTagsFromText } from "./commentTags";
 import { sortCommentsByPosition } from "./noteCommentStorage";
 
 export const ALL_COMMENTS_NOTE_PATH = "SideNote2 index.md";
@@ -34,6 +35,15 @@ function formatCommentLinkLabel(comment: Comment): string {
     return selectedPreview;
 }
 
+function formatCommentTags(comment: Comment): string | null {
+    const uniqueTags = Array.from(new Set(extractTagsFromText(comment.comment ?? "")));
+    if (!uniqueTags.length) {
+        return null;
+    }
+
+    return uniqueTags.join(" ");
+}
+
 export function isAllCommentsNotePath(filePath: string): boolean {
     return filePath === ALL_COMMENTS_NOTE_PATH || filePath === LEGACY_ALL_COMMENTS_NOTE_PATH;
 }
@@ -66,7 +76,12 @@ export function buildAllCommentsNoteContent(vaultName: string, comments: Comment
 
         const fileComments = sortCommentsByPosition(commentsByFile.get(filePath) ?? []);
         for (const comment of fileComments) {
-            lines.push(`- [${formatCommentLinkLabel(comment)}](${buildCommentLocationUrl(vaultName, comment)})`);
+            const tagLine = formatCommentTags(comment);
+            lines.push(
+                tagLine
+                    ? `- [${formatCommentLinkLabel(comment)}](${buildCommentLocationUrl(vaultName, comment)})  ${tagLine}`
+                    : `- [${formatCommentLinkLabel(comment)}](${buildCommentLocationUrl(vaultName, comment)})`
+            );
         }
 
         lines.push("");
