@@ -15,7 +15,7 @@ Use this guide for:
 - Plugins are installed per vault, not globally.
 - Each tester should repeat these steps in their own vault on their own device.
 - Current beta repo: `vicky469/SideNote2`
-- Current beta release line: `1.0.3` or newer
+- Current beta release line: `1.0.4` or newer
 
 ## Prerequisites
 
@@ -83,12 +83,19 @@ obsidian://brat?plugin=vicky469/SideNote2
 5. Write and save a comment.
 6. Confirm the selected text is highlighted.
 7. Edit the comment.
-8. Resolve the comment.
-9. Reopen the comment.
-10. Delete a test comment.
-11. Confirm `SideNote2 index.md` updates.
-12. Close and reopen Obsidian, or reopen the vault.
-13. Confirm the comment data persists after reload.
+8. Inside the side comment editor, type `[[` and:
+   Create a link to an existing note, or create a new markdown note through the suggester flow.
+9. Save the comment and confirm the rendered side comment link opens the expected note.
+10. Use the comment actions menu and confirm `Copy` works.
+11. Resolve the comment.
+12. Reopen the comment.
+13. Delete a test comment.
+14. Confirm `SideNote2 index.md` updates.
+15. Optional Codex check: install the `sidenote2` CLI and run `sidenote2 install-skill`.
+16. Restart Codex and confirm it can pick up the SideNote2 skill.
+17. Ask Codex to update the side comment for the selected text by note path, then confirm the note file updates correctly.
+18. Close and reopen Obsidian, or reopen the vault.
+19. Confirm the comment data persists after reload.
 
 ## Update Test During Beta
 

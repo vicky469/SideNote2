@@ -1,6 +1,6 @@
-# Beta Testing
+# Beta Release
 
-`SideNote2` should go through a short beta period before we submit it to Obsidian's community plugin directory.
+`SideNote2` should go through a short beta release cycle before we submit it to Obsidian's community plugin directory.
 
 ## Policy
 
@@ -11,18 +11,20 @@
 
 This reduces review risk and catches cross-platform issues before the plugin is listed in Obsidian.
 
-Use [qa.md](./qa.md) for tester setup and the platform-by-platform verification checklist.
+Use [README-qa.md](./README-qa.md) for tester setup and the platform-by-platform verification checklist.
 
-## Current Beta Path
+## Current Beta Track
 
 - Current beta repo: `vicky469/SideNote2`
-- Current release line: `1.0.2` or newer
+- Current release line: `1.0.4` or newer
 - Beta install source: published GitHub releases
 
 BRAT does not install from a draft release. The GitHub release must be published.
 During the current beta phase, our GitHub Actions workflow creates a published GitHub pre-release when a semver tag is pushed.
 
 ## Maintainer Steps
+
+Use [README-release.md](./README-release.md) for the shared release mechanics. This document covers the beta-specific rollout decisions.
 
 1. Prepare the next beta release.
 2. Run `npm run release:check`.
@@ -35,35 +37,20 @@ During the current beta phase, our GitHub Actions workflow creates a published G
 6. Share the repo path `vicky469/SideNote2` with testers.
 7. Ask testers to install through BRAT.
 8. Collect bug reports and platform feedback.
-9. Ship fixes as new patch releases, for example `1.0.3`, `1.0.4`, and so on.
+9. Ship fixes as new patch releases, for example `1.0.4`, `1.0.5`, and so on.
 10. After the beta is stable, publish the final release and submit the plugin to the community directory.
-
-## Tester Install Steps
-
-1. Open Obsidian.
-2. Install the community plugin `Obsidian42 - BRAT`.
-3. Open the command palette.
-4. Run `BRAT: Add a beta plugin for testing`.
-5. Paste `vicky469/SideNote2`.
-6. Let BRAT install the plugin.
-7. Go to `Settings -> Community plugins`.
-8. Enable `SideNote2`.
-
-Testers can also use this BRAT protocol link:
-
-```text
-obsidian://brat?plugin=vicky469/SideNote2
-```
 
 ## What Testers Should Verify
 
-- Add a comment to a text selection.
-- Edit a comment.
-- Resolve and reopen a comment.
-- Delete a comment.
-- Confirm highlights appear in the note.
-- Confirm `SideNote2 index.md` updates.
-- Reload Obsidian and confirm comments persist.
+Use [README-qa.md](./README-qa.md) for the full tester install steps, platform notes, smoke test, and bug report format.
+
+During this beta phase, make sure the tester checklist covers:
+
+- the core side comment workflow,
+- `[[wikilinks]]` inside side comments,
+- `SideNote2 index.md` updates,
+- the optional Codex CLI skill install and prompt-driven side comment update flow,
+- reload and persistence behavior.
 
 ## Updating During Beta
 

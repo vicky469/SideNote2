@@ -2,7 +2,7 @@
 
 Development notes for `SideNote2`. The main [README.md](./README.md) stays product-level; this file is for setup, internals, and testing.
 
-Release and deployment steps live in [deployment.md](./deployment.md). Beta rollout steps live in [beta-testing.md](./beta-testing.md). QA steps live in [qa.md](./qa.md).
+Release steps live in [README-release.md](./README-release.md). Beta rollout steps live in [README-beta-release.md](./README-beta-release.md). QA steps live in [README-qa.md](./README-qa.md).
 
 ## Architecture
 
@@ -111,8 +111,17 @@ npm run dev
 - Keep `npm run dev` running while testing.
 - `npm run build` creates a production bundle.
 - `npm test` runs the Node test suite.
+- `npm run skill:install` copies the packaged SideNote2 Codex skill into the default Codex skills directory. This matches the end-user install flow.
+- `npm run skill:link` symlinks the SideNote2 Codex skill from the repo into the default Codex skills directory for development.
+- `npm run comment:update -- --file "/abs/path/note.md" --id "<comment-id>" --comment-file "/abs/path/comment.md"` updates one stored comment body using the same managed block format as the plugin.
 - `npm version patch|minor|major` updates `package.json`, `manifest.json`, and `versions.json` together for a release bump.
 - The test suite covers the note-backed comment lifecycle, comment retargeting and pruning, JSON storage updates, aggregate note generation, and the parsed-note cache plus aggregate index behavior.
+
+The canonical repo skill lives in `skills/side-note2-note-comments/`. Link that copy into Codex rather than editing the global copy by hand.
+For developers, `npm run skill:link` is the supported workflow. It keeps the installed Codex skill pointed at the repo copy, so skill edits in the repo are picked up without a manual sync step.
+For release-like local testing or end-user docs, `npm run skill:install` copies the packaged skill instead of creating a symlink.
+
+For user or agent comment edits outside the UI, find the target `id` in the trailing `<!-- SideNote2 comments -->` block in source mode, then run the helper script instead of hand-editing escaped JSON.
 
 ## Local Install
 

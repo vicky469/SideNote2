@@ -1,6 +1,6 @@
-# Deployment
+# Release
 
-`SideNote2` ships as an Obsidian plugin. Deployment means building the plugin, publishing a GitHub release with the required assets, and for the first public launch, submitting the plugin to Obsidian's community catalog.
+`SideNote2` ships as an Obsidian plugin. Release means building the plugin, publishing a GitHub release with the required assets, and for the first public launch, submitting the plugin to Obsidian's community catalog.
 
 ## Release Baseline
 
@@ -12,7 +12,7 @@
 
 `minAppVersion` stays at `0.15.0` unless the plugin starts using newer Obsidian APIs or launch testing shows a higher floor is required.
 
-We use a beta-first rollout for new public releases. See [beta-testing.md](./beta-testing.md).
+We use a beta-first rollout for new public releases. See [README-beta-release.md](./README-beta-release.md).
 
 ## Automation
 
@@ -26,13 +26,7 @@ We use a beta-first rollout for new public releases. See [beta-testing.md](./bet
 - Confirm the release version is the same in `manifest.json`, `package.json`, and `package-lock.json`.
 - Confirm `versions.json` contains the release version mapped to the intended `minAppVersion`.
 - Run `npm run release:check`.
-- Smoke test in a local Obsidian vault:
-  - Enable the plugin.
-  - Add a comment from a text selection.
-  - Edit, resolve, reopen, and delete comments.
-  - Confirm highlights render in the note.
-  - Confirm `SideNote2 index.md` is generated and updated.
-  - Reload the plugin and verify comments persist.
+- Run the current smoke test from [README-qa.md](./README-qa.md) in a local Obsidian vault.
 - Review the README files for any user-facing changes that need documentation.
 
 ## Release Steps
@@ -45,6 +39,7 @@ We use a beta-first rollout for new public releases. See [beta-testing.md](./bet
 6. Commit the release metadata and documentation changes.
 7. Push the commit and the semantic-version tag that exactly matches the plugin version, for example `1.0.0`.
 8. During beta, let GitHub Actions create the published GitHub pre-release from that tag.
+   Outside beta, publish a normal GitHub release from the matching tag.
 9. Review the release and confirm these files are attached:
    - `main.js`
    - `manifest.json`

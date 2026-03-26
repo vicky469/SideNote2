@@ -214,12 +214,12 @@
 .sidenote2-inline-editor {
     display: flex;
     flex-direction: column;
-    gap: 8px;
+    gap: 6px;
 }
 
 .sidenote2-inline-textarea {
     width: 100%;
-    min-height: 88px;
+    min-height: 72px;
     padding: 9px 10px;
     border: 1px solid var(--background-modifier-border);
     border-radius: 8px;
@@ -237,6 +237,12 @@
     outline: none;
     border-color: var(--background-modifier-border-focus, var(--interactive-accent));
     box-shadow: 0 0 0 1px var(--interactive-accent-translucent);
+}
+
+.sidenote2-inline-editor-hint {
+    color: var(--text-muted);
+    font-size: var(--font-ui-smaller);
+    line-height: 1.35;
 }
 
 .sidenote2-inline-editor-actions {

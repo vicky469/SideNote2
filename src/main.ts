@@ -1,4 +1,4 @@
-import { WorkspaceLeaf, TFile, MarkdownView, Notice, Plugin, normalizePath } from "obsidian";
+import { addIcon, WorkspaceLeaf, TFile, MarkdownView, Notice, Plugin, normalizePath } from "obsidian";
 import { Decoration, DecorationSet, EditorView, ViewPlugin, ViewUpdate } from "@codemirror/view";
 import { Range, StateEffect } from "@codemirror/state";
 import { Comment, CommentManager } from "./commentManager";
@@ -11,6 +11,7 @@ import { AggregateCommentIndex } from "./index/AggregateCommentIndex";
 import { ParsedNoteCache } from "./cache/ParsedNoteCache";
 import { getManagedSectionEdit, getManagedSectionLineRange, getManagedSectionStartLine, parseNoteComments, ParsedNoteComments, serializeNoteComments, sortCommentsByPosition } from "./core/noteCommentStorage";
 import SideNote2SettingTab, { DEFAULT_SETTINGS, SideNote2Settings } from "./ui/settings/SideNote2SettingTab";
+import { SIDE_NOTE2_ICON_ID, SIDE_NOTE2_ICON_SVG } from "./ui/sideNote2Icon";
 import SideNote2View from "./ui/views/SideNote2View";
 import { debugCount, debugLog, initializeDebug, setDebugEnabled } from "./debug";
 
@@ -49,6 +50,7 @@ export default class SideNote2 extends Plugin {
     async onload() {
         initializeDebug();
         debugLog("plugin.onload", { version: this.manifest.version });
+        addIcon(SIDE_NOTE2_ICON_ID, SIDE_NOTE2_ICON_SVG);
 
         this.commentManager = new CommentManager([]);
         this.activeMarkdownFile = this.app.workspace.getActiveFile();
@@ -82,7 +84,7 @@ export default class SideNote2 extends Plugin {
         this.addCommand({
             id: "add-comment-to-selection",
             name: "Add comment to selection",
-            icon: "message-square",
+            icon: SIDE_NOTE2_ICON_ID,
             editorCallback: async (editor, view) => {
                 const file = view.file;
                 const selection = editor.getSelection();
@@ -111,7 +113,7 @@ export default class SideNote2 extends Plugin {
                 if (editor.somethingSelected()) {
                     menu.addItem((item) => {
                         item.setTitle("Add comment to selection")
-                            .setIcon("message-square")
+                            .setIcon(SIDE_NOTE2_ICON_ID)
                             .onClick(async () => {
                                 const selection = editor.getSelection();
                                 const file = view.file;
@@ -138,7 +140,7 @@ export default class SideNote2 extends Plugin {
         );
 
         // Add ribbon icon to open SideNote2 in sidebar
-        this.addRibbonIcon("message-square", "SideNote2: Open in Sidebar", () => {
+        this.addRibbonIcon(SIDE_NOTE2_ICON_ID, "SideNote2: Open in Sidebar", () => {
             this.activateView();
         });
 

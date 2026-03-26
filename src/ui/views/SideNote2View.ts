@@ -1,10 +1,14 @@
-import { ItemView, MarkdownRenderer, TFile, WorkspaceLeaf, setIcon, type ViewStateResult } from "obsidian";
+import { ItemView, MarkdownRenderer, Notice, TFile, WorkspaceLeaf, setIcon, type ViewStateResult } from "obsidian";
 import type { Comment } from "../../commentManager";
 import type { DraftComment } from "../../domain/drafts";
 import { sortCommentsByPosition } from "../../core/noteCommentStorage";
 import type SideNote2 from "../../main";
+import { copyTextToClipboard } from "../copyTextToClipboard";
 import { continueMarkdownList, type TextEditResult } from "../editor/commentEditorFormatting";
+import { findOpenWikiLinkQuery, replaceOpenWikiLinkQuery } from "../editor/commentEditorLinks";
 import ConfirmDeleteModal from "../modals/ConfirmDeleteModal";
+import SideNoteLinkSuggestModal from "../modals/SideNoteLinkSuggestModal";
+import { SIDE_NOTE2_ICON_ID } from "../sideNote2Icon";
 import { decideEditDismissal } from "./editDismissal";
 import type { CustomViewState } from "./viewState";
 
@@ -63,6 +67,7 @@ export default class SideNote2View extends ItemView {
     private activeCommentId: string | null = null;
     private renderVersion = 0;
     private pendingDraftFocusFrame: number | null = null;
+    private isLinkSuggestOpen = false;
     private readonly documentKeydownHandler = (event: KeyboardEvent) => {
         const activeElement = document.activeElement;
         if (!(activeElement instanceof HTMLTextAreaElement)) {
@@ -140,7 +145,7 @@ export default class SideNote2View extends ItemView {
     }
 
     getIcon() {
-        return "message-square";
+        return SIDE_NOTE2_ICON_ID;
     }
 
     async onOpen() {
@@ -258,6 +263,60 @@ export default class SideNote2View extends ItemView {
         textarea.value = edit.value;
         textarea.setSelectionRange(edit.selectionStart, edit.selectionEnd);
         this.plugin.updateDraftCommentText(commentId, edit.value);
+    }
+
+    private openDraftLinkSuggest(
+        comment: DraftComment,
+        textarea: HTMLTextAreaElement,
+    ): boolean {
+        if (this.isLinkSuggestOpen) {
+            return false;
+        }
+
+        const linkQuery = findOpenWikiLinkQuery(
+            textarea.value,
+            textarea.selectionStart,
+            textarea.selectionEnd,
+        );
+        if (!linkQuery) {
+            return false;
+        }
+
+        const initialValue = textarea.value;
+        const initialCursor = linkQuery.end;
+        let inserted = false;
+        this.isLinkSuggestOpen = true;
+
+        new SideNoteLinkSuggestModal(this.app, {
+            initialQuery: linkQuery.query,
+            sourcePath: comment.filePath,
+            onChooseLink: async (linkText) => {
+                inserted = true;
+                const edit = replaceOpenWikiLinkQuery(initialValue, linkQuery, linkText);
+                if (textarea.isConnected) {
+                    this.applyDraftEditorEdit(comment.id, textarea, edit);
+                    textarea.focus();
+                    return;
+                }
+
+                this.plugin.updateDraftCommentText(comment.id, edit.value);
+                await this.renderComments();
+                this.scheduleDraftFocus(comment.id);
+            },
+            onCloseModal: () => {
+                this.isLinkSuggestOpen = false;
+                if (inserted || !textarea.isConnected) {
+                    return;
+                }
+
+                window.requestAnimationFrame(() => {
+                    textarea.focus();
+                    textarea.setSelectionRange(initialCursor, initialCursor);
+                });
+            },
+        }).open();
+
+        return true;
     }
 
     public async renderComments() {
@@ -445,6 +504,12 @@ export default class SideNote2View extends ItemView {
             void this.plugin.startEditDraft(comment.id);
         });
 
+        createMenuOption("Copy", "copy", "sidenote2-menu-copy", (e) => {
+            e.stopPropagation();
+            menuContainer.classList.remove("visible");
+            void this.copyCommentBody(comment);
+        });
+
         createMenuOption(
             comment.resolved ? "Reopen" : "Resolve",
             comment.resolved ? "rotate-ccw" : "check",
@@ -551,6 +616,12 @@ export default class SideNote2View extends ItemView {
             cls: "sidenote2-inline-textarea",
         });
         textarea.value = comment.comment;
+        textarea.setAttribute("placeholder", "Write a side note. Type [[ to link or create a note.");
+
+        editorWrap.createDiv({
+            cls: "sidenote2-inline-editor-hint",
+            text: "Type [[ to link or create a note.",
+        });
 
         const actionRow = editorWrap.createDiv("sidenote2-inline-editor-actions");
         const cancelButton = actionRow.createEl("button", {
@@ -576,6 +647,16 @@ export default class SideNote2View extends ItemView {
         textarea.addEventListener("input", (event) => {
             const target = event.target as HTMLTextAreaElement;
             this.plugin.updateDraftCommentText(comment.id, target.value);
+
+            if (
+                event instanceof InputEvent
+                && event.inputType === "insertText"
+                && event.data === "["
+                && target.selectionStart >= 2
+                && target.value.slice(target.selectionStart - 2, target.selectionStart) === "[["
+            ) {
+                this.openDraftLinkSuggest(comment, target);
+            }
         });
         textarea.addEventListener("keydown", (event: KeyboardEvent) => {
             const consumeShortcut = () => {
@@ -591,6 +672,11 @@ export default class SideNote2View extends ItemView {
             }
 
             event.stopPropagation();
+
+            if (event.key === "Tab" && !event.shiftKey && this.openDraftLinkSuggest(comment, textarea)) {
+                consumeShortcut();
+                return;
+            }
 
             if (!(event.metaKey || event.ctrlKey) && !event.altKey && event.key === "Enter" && !event.shiftKey) {
                 const listEdit = continueMarkdownList(
@@ -623,6 +709,11 @@ export default class SideNote2View extends ItemView {
 
     private async openCommentInEditor(comment: Comment) {
         await this.plugin.revealComment(comment);
+    }
+
+    private async copyCommentBody(comment: Comment) {
+        const copied = await copyTextToClipboard(comment.comment ?? "");
+        new Notice(copied ? "Side note copied." : "Unable to copy side note.");
     }
 
     getState(): CustomViewState {

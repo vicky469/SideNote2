@@ -1,15 +1,21 @@
 # SideNote2
 
+<p align="center">
+  <img src="./logo.svg" alt="SideNote2 logo" width="72">
+</p>
+
 SideNote2 is an [Obsidian](https://obsidian.md) plugin for side comments that stay attached to the note.
 
 It is built for a minimal workflow: humans work in the sidebar, while agents can read the same comments directly from the markdown file. Inspired by [mofukuru/SideNote](https://github.com/mofukuru/SideNote).
 
-## What It Does
+## Features
 
 - Uses a dedicated sidebar for drafting, editing, resolving, reopening, and deleting comments.
+- Supports Obsidian-style `[[wikilinks]]` inside side comments to link existing notes or create new markdown notes.
 - Highlights commented text directly in the note.
 - Keeps resolved comments archived instead of removing them.
 - Generates `SideNote2 index.md` as a vault-wide comment index.
+- Supports Codex CLI workflows so agents can read and update side comments from the note-backed storage format.
 
 ## Workflow
 
@@ -19,10 +25,29 @@ It is built for a minimal workflow: humans work in the sidebar, while agents can
 3. Write the comment in the sidebar.
 4. Review it later from the sidebar.
 
+For power users:
+
+Agents can read the same note directly from markdown, including the trailing `<!-- SideNote2 comments -->` block.
+
+In Codex CLI, you can ask for a stored side comment directly:
+
+```text
+Show me the side comment for "selected text" in "/Users/path/to/note.md".
+```
+
+Or update it without knowing the underlying command:
+
+```text
+Update the side comment for "selected text" in "/Users/path/to/note.md" to:
+Your new side comment text here.
+```
+
+If multiple side comments in the same note use the same selected text, include a little more nearby context or the comment id.
+
 ## Settings
 
 - `Debug mode`
-	This is not implemented yet. In the future, if you see bugs, toggle this to on, then contact me and send me the console logs. 
+  This is not implemented yet. 
 
 ## Command
 

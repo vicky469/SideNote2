@@ -1,6 +1,6 @@
 import * as assert from "node:assert/strict";
 import test from "node:test";
-import { getManagedSectionEdit, getManagedSectionLineRange, getManagedSectionRange, getManagedSectionStartLine, parseNoteComments, serializeNoteComments } from "../src/core/noteCommentStorage";
+import { getManagedSectionEdit, getManagedSectionLineRange, getManagedSectionRange, getManagedSectionStartLine, parseNoteComments, replaceNoteCommentBodyById, serializeNoteComments } from "../src/core/noteCommentStorage";
 import type { Comment } from "../src/commentManager";
 
 function createComment(overrides: Partial<Comment> = {}): Comment {
@@ -106,6 +106,33 @@ test("serializeNoteComments removes the managed appendix when there are no comme
 
     assert.equal(withoutComments, "Body\n");
     assert.equal(parseNoteComments(withoutComments, "note.md").comments.length, 0);
+});
+
+test("replaceNoteCommentBodyById updates only the targeted stored comment", () => {
+    const original = serializeNoteComments("# Title\n\nAlpha beta gamma.\n", [
+        createComment({
+            id: "comment-1",
+            comment: "Original alpha",
+        }),
+        createComment({
+            id: "comment-2",
+            comment: "Original beta",
+            timestamp: 1710000001000,
+        }),
+    ]);
+
+    const updated = replaceNoteCommentBodyById(original, "note.md", "comment-2", "Updated beta\n");
+    assert.ok(updated);
+
+    const parsed = parseNoteComments(updated, "note.md");
+    assert.equal(parsed.comments[0].comment, "Original alpha");
+    assert.equal(parsed.comments[1].comment, "Updated beta");
+    assert.match(updated, /Alpha beta gamma\./);
+});
+
+test("replaceNoteCommentBodyById returns null when the target id is missing", () => {
+    const original = serializeNoteComments("Body\n", [createComment()]);
+    assert.equal(replaceNoteCommentBodyById(original, "note.md", "missing-id", "Updated"), null);
 });
 
 test("getManagedSectionEdit patches only the managed comments block", () => {

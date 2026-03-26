@@ -298,3 +298,31 @@ export function getManagedSectionEdit(noteContent: string, comments: Comment[]):
         replacement: sectionFromOffset > 0 ? `\n\n${section}\n` : `${section}\n`,
     };
 }
+
+export function replaceNoteCommentBodyById(
+    noteContent: string,
+    filePath: string,
+    commentId: string,
+    nextCommentBody: string,
+): string | null {
+    const { comments } = parseNoteComments(noteContent, filePath);
+    let found = false;
+
+    const updatedComments = comments.map((comment) => {
+        if (comment.id !== commentId) {
+            return comment;
+        }
+
+        found = true;
+        return {
+            ...comment,
+            comment: normalizeCommentBody(nextCommentBody),
+        };
+    });
+
+    if (!found) {
+        return null;
+    }
+
+    return serializeNoteComments(noteContent, updatedComments);
+}
