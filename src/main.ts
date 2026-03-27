@@ -41,6 +41,7 @@ export default class SideNote2 extends Plugin {
     private lastAddFingerprint: { key: string; at: number } | null = null;
     private activeMarkdownFile: TFile | null = null;
     private draftComment: DraftComment | null = null;
+    private draftHostFilePath: string | null = null;
     private savingDraftCommentId: string | null = null;
     private aggregateRefreshTimer: number | null = null;
     private aggregateIndexInitialized = false;
@@ -361,7 +362,7 @@ export default class SideNote2 extends Plugin {
     async activateViewAndHighlightComment(commentId: string) {
         const comment = this.draftComment?.id === commentId
             ? this.draftComment
-            : this.commentManager.getCommentById(commentId);
+            : this.getKnownCommentById(commentId);
         if (comment) {
             this.setRevealedCommentState(comment.filePath, comment.id);
         }
@@ -860,6 +861,12 @@ export default class SideNote2 extends Plugin {
         return this.draftComment?.filePath === filePath ? this.draftComment : null;
     }
 
+    public getDraftForView(filePath: string): DraftComment | null {
+        return this.draftComment && this.draftHostFilePath === filePath
+            ? this.draftComment
+            : null;
+    }
+
     public getAllIndexedComments(): Comment[] {
         return this.aggregateCommentIndex.getAllComments();
     }
@@ -888,8 +895,11 @@ export default class SideNote2 extends Plugin {
         await this.setDraftComment(null);
     }
 
-    public async startEditDraft(commentId: string) {
-        const existingComment = this.commentManager.getCommentById(commentId);
+    public async startEditDraft(
+        commentId: string,
+        hostFilePath: string | null = this.getSidebarTargetFile()?.path ?? null,
+    ) {
+        const existingComment = this.getKnownCommentById(commentId);
         const file = existingComment ? this.getMarkdownFileByPath(existingComment.filePath) : null;
         if (!existingComment || !file) {
             new Notice("Unable to find that side note.");
@@ -903,10 +913,13 @@ export default class SideNote2 extends Plugin {
             return;
         }
 
-        await this.setDraftComment({
-            ...latestComment,
-            mode: "edit",
-        });
+        await this.setDraftComment(
+            {
+                ...latestComment,
+                mode: "edit",
+            },
+            hostFilePath ?? latestComment.filePath,
+        );
         await this.activateViewAndHighlightComment(latestComment.id);
     }
 
@@ -939,6 +952,7 @@ export default class SideNote2 extends Plugin {
         } finally {
             if (saved && this.draftComment?.id === commentId) {
                 this.draftComment = null;
+                this.draftHostFilePath = null;
             }
             this.savingDraftCommentId = null;
             await this.refreshCommentViews();
@@ -987,12 +1001,16 @@ export default class SideNote2 extends Plugin {
         };
 
         this.activeMarkdownFile = selection.file;
-        await this.setDraftComment(draft);
+        await this.setDraftComment(draft, selection.file.path);
         await this.activateViewAndHighlightComment(draft.id);
     }
 
-    private async setDraftComment(draftComment: DraftComment | null) {
+    private async setDraftComment(
+        draftComment: DraftComment | null,
+        hostFilePath: string | null = draftComment?.filePath ?? null,
+    ) {
         this.draftComment = draftComment;
+        this.draftHostFilePath = draftComment ? hostFilePath : null;
         await this.refreshCommentViews();
         this.refreshEditorDecorations();
     }
@@ -1000,6 +1018,11 @@ export default class SideNote2 extends Plugin {
     private toPersistedComment(draftComment: DraftComment): Comment {
         const { mode: _mode, ...comment } = draftComment;
         return comment;
+    }
+
+    private getKnownCommentById(commentId: string): Comment | null {
+        return this.commentManager.getCommentById(commentId)
+            ?? this.aggregateCommentIndex.getCommentById(commentId);
     }
 
     /**

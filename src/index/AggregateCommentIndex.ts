@@ -36,4 +36,15 @@ export class AggregateCommentIndex {
     getAllComments(): Comment[] {
         return Array.from(this.commentsByFile.values()).flatMap((comments) => cloneComments(comments));
     }
+
+    getCommentById(commentId: string): Comment | null {
+        for (const comments of this.commentsByFile.values()) {
+            const comment = comments.find((entry) => entry.id === commentId);
+            if (comment) {
+                return { ...comment };
+            }
+        }
+
+        return null;
+    }
 }

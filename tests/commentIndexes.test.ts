@@ -59,13 +59,16 @@ test("AggregateCommentIndex updates, renames, deletes, and returns cloned commen
 
     const fresh = index.getAllComments();
     assert.equal(fresh.find((comment) => comment.id === "a-1")?.comment, "This is a side note.");
+    assert.equal(index.getCommentById("a-1")?.filePath, "a.md");
 
     index.renameFile("a.md", "renamed.md");
     const renamed = index.getAllComments();
     assert.equal(renamed.find((comment) => comment.id === "a-1")?.filePath, "renamed.md");
+    assert.equal(index.getCommentById("a-1")?.filePath, "renamed.md");
 
     index.deleteFile("b.md");
     const remaining = index.getAllComments();
     assert.equal(remaining.length, 1);
     assert.equal(remaining[0].id, "a-1");
+    assert.equal(index.getCommentById("missing"), null);
 });

@@ -152,7 +152,7 @@ export default class SideNote2View extends ItemView {
             ? target.closest(".sidenote2-comment-section-header, .sidenote2-sidebar-toolbar")
             : null;
 
-        const draft = this.plugin.getDraftForFile(file.path);
+        const draft = this.plugin.getDraftForView(file.path);
         if (draft && draft.mode === "edit") {
             const draftEl = this.containerEl.querySelector(`[data-draft-id="${draft.id}"]`);
             if (!draftEl) {
@@ -415,8 +415,20 @@ export default class SideNote2View extends ItemView {
         edit: TextEditResult,
     ): void {
         textarea.value = edit.value;
+        this.syncDraftTextareaHeight(textarea);
         textarea.setSelectionRange(edit.selectionStart, edit.selectionEnd);
         this.plugin.updateDraftCommentText(commentId, edit.value);
+    }
+
+    private syncDraftTextareaHeight(textarea: HTMLTextAreaElement): void {
+        const isEditDraft = textarea.closest(".sidenote2-comment-draft")?.classList.contains("is-edit");
+        if (!isEditDraft) {
+            textarea.style.height = "";
+            return;
+        }
+
+        textarea.style.height = "auto";
+        textarea.style.height = `${Math.max(textarea.scrollHeight, 72)}px`;
     }
 
     private openDraftLinkSuggest(
@@ -556,9 +568,7 @@ export default class SideNote2View extends ItemView {
             const persistedComments = isAllCommentsView
                 ? this.plugin.getAllIndexedComments()
                 : this.plugin.commentManager.getCommentsForFile(file.path);
-            const draftComment = isAllCommentsView
-                ? null
-                : this.plugin.getDraftForFile(file.path);
+            const draftComment = this.plugin.getDraftForView(file.path);
             const resolvedCount = persistedComments.filter((comment) => comment.resolved).length;
             const hasResolvedComments = resolvedCount > 0;
             const showResolved = this.plugin.shouldShowResolvedComments();
@@ -600,16 +610,14 @@ export default class SideNote2View extends ItemView {
                     '[data-section-key="anchored"] .sidenote2-comment-section-body',
                 );
                 if (anchoredSectionBody instanceof HTMLDivElement) {
-                    const emptyStateEl = anchoredSectionBody.createDiv("sidenote2-empty-state sidenote2-section-empty-state");
                     if (isAllCommentsView) {
+                        const emptyStateEl = anchoredSectionBody.createDiv("sidenote2-empty-state sidenote2-section-empty-state");
                         emptyStateEl.createEl("p", { text: "No side notes in the index yet." });
                         emptyStateEl.createEl("p", { text: "Add side notes in markdown files to populate SideNote2 index." });
                     } else if (hasResolvedComments && !showResolved) {
+                        const emptyStateEl = anchoredSectionBody.createDiv("sidenote2-empty-state sidenote2-section-empty-state");
                         emptyStateEl.createEl("p", { text: "No active comments for this file." });
                         emptyStateEl.createEl("p", { text: "Turn on Show resolved to review archived comments." });
-                    } else {
-                        emptyStateEl.createEl("p", { text: "No comments for this file yet." });
-                        emptyStateEl.createEl("p", { text: "Select text and use the add comment command to start a side comment in the sidebar." });
                     }
                 }
             }
@@ -837,7 +845,7 @@ export default class SideNote2View extends ItemView {
         setIcon(editButton, "pencil");
         editButton.onclick = (event) => {
             event.stopPropagation();
-            void this.plugin.startEditDraft(comment.id);
+            void this.plugin.startEditDraft(comment.id, this.file?.path ?? null);
         };
 
         const deleteButton = actionsEl.createEl("button", {
@@ -857,6 +865,7 @@ export default class SideNote2View extends ItemView {
         const commentEl = commentsContainer.createDiv("sidenote2-comment-item sidenote2-comment-draft");
         commentEl.setAttribute("data-draft-id", comment.id);
         commentEl.setAttribute("data-start-line", String(comment.startLine));
+        commentEl.addClass(comment.mode === "edit" ? "is-edit" : "is-new");
 
         if (isPageComment(comment)) {
             commentEl.addClass("page-note");
@@ -883,6 +892,7 @@ export default class SideNote2View extends ItemView {
         });
         textarea.value = comment.comment;
         textarea.setAttribute("placeholder", "Write a side note. Type [[ for links or # for tags.");
+        this.syncDraftTextareaHeight(textarea);
 
         const actionRow = editorWrap.createDiv("sidenote2-inline-editor-actions");
         const cancelButton = actionRow.createEl("button", {
@@ -908,6 +918,7 @@ export default class SideNote2View extends ItemView {
         textarea.addEventListener("input", (event) => {
             const target = event.target as HTMLTextAreaElement;
             this.plugin.updateDraftCommentText(comment.id, target.value);
+            this.syncDraftTextareaHeight(target);
 
             if (!(event instanceof InputEvent) || event.inputType !== "insertText" || !event.data) {
                 return;

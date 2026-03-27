@@ -7,8 +7,15 @@ interface MockFile {
     extension: string;
 }
 
+interface MockDraftComment {
+    id: string;
+    filePath: string;
+}
+
 class MockPlugin {
     public activeMarkdownFile: MockFile | null = { path: "last-note.md", extension: "md" };
+    public draftComment: MockDraftComment | null = null;
+    public draftHostFilePath: string | null = null;
 
     getSidebarTargetFileOld(activeFile: MockFile | null): MockFile | null {
         if (activeFile && activeFile.extension === "md" && activeFile.path !== ALL_COMMENTS_NOTE_PATH) {
@@ -46,6 +53,16 @@ class MockPlugin {
 
         return file;
     }
+
+    getDraftForFile(filePath: string): MockDraftComment | null {
+        return this.draftComment?.filePath === filePath ? this.draftComment : null;
+    }
+
+    getDraftForView(filePath: string): MockDraftComment | null {
+        return this.draftComment && this.draftHostFilePath === filePath
+            ? this.draftComment
+            : null;
+    }
 }
 
 test("old sidebar target falls back to the last normal note for SideNote2 index", () => {
@@ -77,4 +94,20 @@ test("fixed file-open keeps the last normal note while still targeting SideNote2
 
     assert.deepEqual(openedFile, { path: ALL_COMMENTS_NOTE_PATH, extension: "md" });
     assert.deepEqual(plugin.activeMarkdownFile, { path: "last-note.md", extension: "md" });
+});
+
+test("draft can stay tied to the source file while rendering in SideNote2 index", () => {
+    const plugin = new MockPlugin();
+    plugin.draftComment = { id: "comment-1", filePath: "Folder/Note.md" };
+    plugin.draftHostFilePath = ALL_COMMENTS_NOTE_PATH;
+
+    assert.deepEqual(plugin.getDraftForFile("Folder/Note.md"), {
+        id: "comment-1",
+        filePath: "Folder/Note.md",
+    });
+    assert.deepEqual(plugin.getDraftForView(ALL_COMMENTS_NOTE_PATH), {
+        id: "comment-1",
+        filePath: "Folder/Note.md",
+    });
+    assert.equal(plugin.getDraftForView("Folder/Note.md"), null);
 });
