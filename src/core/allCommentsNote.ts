@@ -8,6 +8,15 @@ export const LEGACY_ALL_COMMENTS_NOTE_PATH = "SideNote2 comments.md";
 export const COMMENT_LOCATION_PROTOCOL = "side-note2-comment";
 const MAX_PREVIEW_LENGTH = 80;
 
+export interface CommentLocationTarget {
+    filePath: string;
+    commentId: string;
+}
+
+export interface AllCommentsNoteBuildOptions {
+    getMentionedPageLabels?: (comment: Comment) => string[];
+}
+
 function toInlinePreview(value: string): string {
     const normalized = value.replace(/\r\n/g, "\n").replace(/\s+/g, " ").trim();
     if (!normalized) {
@@ -27,11 +36,18 @@ function escapeMarkdownText(value: string): string {
         .replace(/([`*_[\]()~<>])/g, "\\$1");
 }
 
-function formatCommentLinkLabel(comment: Comment): string {
+function formatFileHeadingLabel(filePath: string): string {
+    return escapeMarkdownText(filePath);
+}
+
+function formatCommentLinkLabel(comment: Comment, mentionedPageLabel?: string): string {
     const selectedPreview = escapeMarkdownText(toInlinePreview(getCommentSelectionLabel(comment)));
+    const normalizedMentionLabel = mentionedPageLabel
+        ? escapeMarkdownText(toInlinePreview(mentionedPageLabel))
+        : null;
     const prefixedPreview = isAnchoredComment(comment)
-        ? selectedPreview
-        : `${getCommentStatusLabel(comment)} · ${selectedPreview}`;
+        ? (normalizedMentionLabel ? `${selectedPreview} · ${normalizedMentionLabel}` : selectedPreview)
+        : `${getCommentStatusLabel(comment)} · ${normalizedMentionLabel ?? selectedPreview}`;
     if (comment.resolved) {
         return `~~${prefixedPreview}~~`;
     }
@@ -56,7 +72,67 @@ export function buildCommentLocationUrl(vaultName: string, comment: Pick<Comment
     return `obsidian://${COMMENT_LOCATION_PROTOCOL}?vault=${encodeURIComponent(vaultName)}&file=${encodeURIComponent(comment.filePath)}&commentId=${encodeURIComponent(comment.id)}`;
 }
 
-export function buildAllCommentsNoteContent(vaultName: string, comments: Comment[]): string {
+export function parseCommentLocationUrl(url: string): CommentLocationTarget | null {
+    try {
+        const parsed = new URL(url);
+        if (parsed.protocol !== "obsidian:" || parsed.hostname !== COMMENT_LOCATION_PROTOCOL) {
+            return null;
+        }
+
+        const filePath = parsed.searchParams.get("file");
+        const commentId = parsed.searchParams.get("commentId");
+        if (!(filePath && commentId)) {
+            return null;
+        }
+
+        return {
+            filePath,
+            commentId,
+        };
+    } catch {
+        return null;
+    }
+}
+
+export function findCommentLocationTargetInMarkdownLine(line: string): CommentLocationTarget | null {
+    const markdownLinkPattern = /\[[^\]]*]\((obsidian:\/\/side-note2-comment\?[^)\s]+)\)/g;
+    for (const match of line.matchAll(markdownLinkPattern)) {
+        const url = match[1];
+        if (!url) {
+            continue;
+        }
+
+        const target = parseCommentLocationUrl(url);
+        if (target) {
+            return target;
+        }
+    }
+
+    return null;
+}
+
+function dedupeMentionedPageLabels(labels: string[]): string[] {
+    const seen = new Set<string>();
+    const deduped: string[] = [];
+
+    for (const label of labels) {
+        const normalized = label.trim();
+        if (!normalized || seen.has(normalized)) {
+            continue;
+        }
+
+        seen.add(normalized);
+        deduped.push(normalized);
+    }
+
+    return deduped;
+}
+
+export function buildAllCommentsNoteContent(
+    vaultName: string,
+    comments: Comment[],
+    options: AllCommentsNoteBuildOptions = {},
+): string {
     const lines: string[] = [];
     const visibleComments = comments.filter((comment) => !isAllCommentsNotePath(comment.filePath));
 
@@ -76,16 +152,21 @@ export function buildAllCommentsNoteContent(vaultName: string, comments: Comment
 
     const filePaths = Array.from(commentsByFile.keys()).sort((left, right) => left.localeCompare(right));
     for (const filePath of filePaths) {
-        lines.push(`**[[${filePath}]]**`);
+        lines.push(`**${formatFileHeadingLabel(filePath)}**`);
 
         const fileComments = sortCommentsByPosition(commentsByFile.get(filePath) ?? []);
         for (const comment of fileComments) {
             const tagLine = formatCommentTags(comment);
-            lines.push(
-                tagLine
-                    ? `- [${formatCommentLinkLabel(comment)}](${buildCommentLocationUrl(vaultName, comment)})  ${tagLine}`
-                    : `- [${formatCommentLinkLabel(comment)}](${buildCommentLocationUrl(vaultName, comment)})`
-            );
+            const mentionedPageLabels = dedupeMentionedPageLabels(options.getMentionedPageLabels?.(comment) ?? []);
+            const labels = mentionedPageLabels.length ? mentionedPageLabels : [null];
+
+            for (const mentionedPageLabel of labels) {
+                lines.push(
+                    tagLine
+                        ? `- [${formatCommentLinkLabel(comment, mentionedPageLabel ?? undefined)}](${buildCommentLocationUrl(vaultName, comment)})  ${tagLine}`
+                        : `- [${formatCommentLinkLabel(comment, mentionedPageLabel ?? undefined)}](${buildCommentLocationUrl(vaultName, comment)})`
+                );
+            }
         }
 
         lines.push("");

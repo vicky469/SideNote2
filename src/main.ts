@@ -1,12 +1,14 @@
 import { addIcon, WorkspaceLeaf, TFile, MarkdownView, Notice, Plugin, normalizePath } from "obsidian";
+import type { CachedMetadata } from "obsidian";
 import { Decoration, DecorationSet, EditorView, ViewPlugin, ViewUpdate } from "@codemirror/view";
 import { Range, StateEffect } from "@codemirror/state";
 import { Comment, CommentManager } from "./commentManager";
 import { getPageCommentLabel, isAnchoredComment, isPageComment } from "./core/commentAnchors";
 import { DraftComment, DraftSelection } from "./domain/drafts";
 import { parsePromptDeleteSetting } from "./core/appConfig";
-import { ALL_COMMENTS_NOTE_PATH, buildAllCommentsNoteContent, isAllCommentsNotePath, LEGACY_ALL_COMMENTS_NOTE_PATH } from "./core/allCommentsNote";
+import { ALL_COMMENTS_NOTE_PATH, buildAllCommentsNoteContent, findCommentLocationTargetInMarkdownLine, isAllCommentsNotePath, LEGACY_ALL_COMMENTS_NOTE_PATH } from "./core/allCommentsNote";
 import { pickExactTextMatch, resolveAnchorRange } from "./core/anchorResolver";
+import { buildDerivedCommentLinks, extractWikiLinkPaths } from "./core/commentMentions";
 import { buildEditorHighlightRanges } from "./core/editorHighlightRanges";
 import { chooseCommentStateForOpenEditor, shouldDeferManagedCommentPersist, syncLoadedCommentsForCurrentNote } from "./core/commentSyncPolicy";
 import { AggregateCommentIndex } from "./index/AggregateCommentIndex";
@@ -31,6 +33,19 @@ function generateCommentId(): string {
 }
 
 const forceHighlightRefreshEffect = StateEffect.define<null>();
+const derivedMetadataCacheMarker = Symbol("sideNote2DerivedMetadata");
+
+type MutableMetadataCache = {
+    getCache(path: string): CachedMetadata | null;
+    getFileCache(file: TFile): CachedMetadata | null;
+    resolvedLinks: Record<string, Record<string, number>>;
+    unresolvedLinks: Record<string, Record<string, number>>;
+    trigger(name: string, ...data: unknown[]): void;
+};
+
+type DerivedMetadataCache = CachedMetadata & {
+    [derivedMetadataCacheMarker]?: true;
+};
 
 // Main plugin class
 export default class SideNote2 extends Plugin {
@@ -49,6 +64,10 @@ export default class SideNote2 extends Plugin {
     private aggregateCommentIndex = new AggregateCommentIndex();
     private parsedNoteCache = new ParsedNoteCache(20);
     private readonly pendingCommentPersistTimers: Record<string, number> = {};
+    private readonly derivedCommentLinksByFilePath = new Map<string, ReturnType<typeof buildDerivedCommentLinks>>();
+    private readonly derivedCommentLinkSignaturesByFilePath = new Map<string, string>();
+    private originalMetadataGetCache: ((path: string) => CachedMetadata | null) | null = null;
+    private originalMetadataGetFileCache: ((file: TFile) => CachedMetadata | null) | null = null;
     private showResolvedComments = false;
     private revealedCommentState: { filePath: string; commentId: string } | null = null;
 
@@ -58,12 +77,14 @@ export default class SideNote2 extends Plugin {
         addIcon(SIDE_NOTE2_ICON_ID, SIDE_NOTE2_ICON_SVG);
 
         this.commentManager = new CommentManager([]);
+        this.installMetadataCacheAugmentation();
         this.activeMarkdownFile = this.app.workspace.getActiveFile();
         await this.loadVisibleFiles();
 
         this.registerEditorExtension([
             this.createLivePreviewManagedBlockPlugin(),
             this.createEditorHighlightPlugin(),
+            this.createAllCommentsLivePreviewLinkPlugin(),
         ]);
 
         // Also highlight commented text inside rendered Markdown (Live Preview/Reading view)
@@ -209,6 +230,8 @@ export default class SideNote2 extends Plugin {
                     this.clearParsedNoteCache(oldPath);
                     this.clearParsedNoteCache(file.path);
                     this.aggregateCommentIndex.renameFile(oldPath, file.path);
+                    this.clearDerivedCommentLinksForFile(oldPath);
+                    void this.loadCommentsForFile(file);
                     // Update views
                     this.app.workspace.getLeavesOfType("sidenote2-view").forEach(leaf => {
                         if (leaf.view instanceof SideNote2View) {
@@ -230,6 +253,7 @@ export default class SideNote2 extends Plugin {
                 this.commentManager.replaceCommentsForFile(file.path, []);
                 this.clearParsedNoteCache(file.path);
                 this.aggregateCommentIndex.deleteFile(file.path);
+                this.clearDerivedCommentLinksForFile(file.path);
                 this.scheduleAggregateNoteRefresh();
             })
         );
@@ -302,6 +326,11 @@ export default class SideNote2 extends Plugin {
         await this.loadSettings();
         setDebugEnabled(this.settings.enableDebugMode);
         this.addSettingTab(new SideNote2SettingTab(this.app, this));
+    }
+
+    onunload() {
+        this.restoreMetadataCacheAugmentation();
+        this.clearAllDerivedCommentLinks();
     }
 
     async loadSettings() {
@@ -524,6 +553,197 @@ export default class SideNote2 extends Plugin {
         this.parsedNoteCache.clear(filePath);
     }
 
+    private installMetadataCacheAugmentation() {
+        if (this.originalMetadataGetCache && this.originalMetadataGetFileCache) {
+            return;
+        }
+
+        const metadataCache = this.app.metadataCache as unknown as MutableMetadataCache;
+        this.originalMetadataGetCache = metadataCache.getCache.bind(this.app.metadataCache);
+        this.originalMetadataGetFileCache = metadataCache.getFileCache.bind(this.app.metadataCache);
+
+        metadataCache.getCache = ((path: string) =>
+            this.mergeDerivedLinksIntoCache(path, this.originalMetadataGetCache?.(path) ?? null)
+        ) as MutableMetadataCache["getCache"];
+
+        metadataCache.getFileCache = ((file: TFile) =>
+            this.mergeDerivedLinksIntoCache(file.path, this.originalMetadataGetFileCache?.(file) ?? null)
+        ) as MutableMetadataCache["getFileCache"];
+    }
+
+    private restoreMetadataCacheAugmentation() {
+        const metadataCache = this.app.metadataCache as unknown as MutableMetadataCache;
+        if (this.originalMetadataGetCache) {
+            metadataCache.getCache = this.originalMetadataGetCache as MutableMetadataCache["getCache"];
+            this.originalMetadataGetCache = null;
+        }
+
+        if (this.originalMetadataGetFileCache) {
+            metadataCache.getFileCache = this.originalMetadataGetFileCache as MutableMetadataCache["getFileCache"];
+            this.originalMetadataGetFileCache = null;
+        }
+    }
+
+    private mergeDerivedLinksIntoCache(filePath: string, baseCache: CachedMetadata | null): CachedMetadata | null {
+        const derivedLinks = this.derivedCommentLinksByFilePath.get(filePath);
+        const derivedCache = baseCache as DerivedMetadataCache | null;
+        if (!derivedLinks || derivedLinks.links.length === 0 || derivedCache?.[derivedMetadataCacheMarker]) {
+            return baseCache;
+        }
+
+        const mergedCache: DerivedMetadataCache = {
+            ...(baseCache ?? {}),
+            links: [...(baseCache?.links ?? []), ...derivedLinks.links],
+        };
+        Object.defineProperty(mergedCache, derivedMetadataCacheMarker, {
+            configurable: false,
+            enumerable: false,
+            value: true,
+        });
+        return mergedCache;
+    }
+
+    private clearAllDerivedCommentLinks() {
+        const filePaths = Array.from(this.derivedCommentLinksByFilePath.keys());
+        for (const filePath of filePaths) {
+            this.clearDerivedCommentLinksForFile(filePath, false);
+        }
+    }
+
+    private clearDerivedCommentLinksForFile(filePath: string, notify = true) {
+        const previous = this.derivedCommentLinksByFilePath.get(filePath);
+        if (!previous) {
+            return;
+        }
+
+        this.mergeDerivedLinkCounts(
+            (this.app.metadataCache as unknown as MutableMetadataCache).resolvedLinks,
+            filePath,
+            previous.resolved,
+            {},
+        );
+        this.mergeDerivedLinkCounts(
+            (this.app.metadataCache as unknown as MutableMetadataCache).unresolvedLinks,
+            filePath,
+            previous.unresolved,
+            {},
+        );
+        this.derivedCommentLinksByFilePath.delete(filePath);
+        this.derivedCommentLinkSignaturesByFilePath.delete(filePath);
+
+        if (notify) {
+            this.notifyDerivedLinksChanged(filePath);
+        }
+    }
+
+    private syncDerivedCommentLinksForFile(file: TFile, noteContent: string, comments: Comment[]) {
+        const nextDerivedLinks = buildDerivedCommentLinks(
+            comments,
+            noteContent,
+            (linkPath, sourcePath) => {
+                const linkedFile = this.app.metadataCache.getFirstLinkpathDest(linkPath, sourcePath);
+                return linkedFile instanceof TFile ? linkedFile.path : null;
+            },
+        );
+        const nextSignature = this.getDerivedCommentLinksSignature(nextDerivedLinks);
+        const previousSignature = this.derivedCommentLinkSignaturesByFilePath.get(file.path) ?? "";
+        if (nextSignature === previousSignature) {
+            return;
+        }
+
+        const previousDerivedLinks = this.derivedCommentLinksByFilePath.get(file.path) ?? {
+            links: [],
+            resolved: {},
+            unresolved: {},
+        };
+
+        this.mergeDerivedLinkCounts(
+            (this.app.metadataCache as unknown as MutableMetadataCache).resolvedLinks,
+            file.path,
+            previousDerivedLinks.resolved,
+            nextDerivedLinks.resolved,
+        );
+        this.mergeDerivedLinkCounts(
+            (this.app.metadataCache as unknown as MutableMetadataCache).unresolvedLinks,
+            file.path,
+            previousDerivedLinks.unresolved,
+            nextDerivedLinks.unresolved,
+        );
+
+        if (
+            nextDerivedLinks.links.length === 0 &&
+            Object.keys(nextDerivedLinks.resolved).length === 0 &&
+            Object.keys(nextDerivedLinks.unresolved).length === 0
+        ) {
+            this.derivedCommentLinksByFilePath.delete(file.path);
+            this.derivedCommentLinkSignaturesByFilePath.delete(file.path);
+        } else {
+            this.derivedCommentLinksByFilePath.set(file.path, nextDerivedLinks);
+            this.derivedCommentLinkSignaturesByFilePath.set(file.path, nextSignature);
+        }
+
+        this.notifyDerivedLinksChanged(file.path);
+    }
+
+    private getDerivedCommentLinksSignature(derivedLinks: ReturnType<typeof buildDerivedCommentLinks>): string {
+        const sortedResolved = Object.entries(derivedLinks.resolved).sort(([left], [right]) => left.localeCompare(right));
+        const sortedUnresolved = Object.entries(derivedLinks.unresolved).sort(([left], [right]) => left.localeCompare(right));
+        const linkEntries = derivedLinks.links.map((link) => ({
+            link: link.link,
+            original: link.original,
+            displayText: link.displayText ?? "",
+            line: link.position.start.line,
+            col: link.position.start.col,
+        }));
+
+        return JSON.stringify({
+            links: linkEntries,
+            resolved: sortedResolved,
+            unresolved: sortedUnresolved,
+        });
+    }
+
+    private mergeDerivedLinkCounts(
+        countsByFile: Record<string, Record<string, number>>,
+        filePath: string,
+        previousCounts: Record<string, number>,
+        nextCounts: Record<string, number>,
+    ) {
+        const mergedCounts = { ...(countsByFile[filePath] ?? {}) };
+
+        for (const [targetPath, count] of Object.entries(previousCounts)) {
+            if (!(targetPath in mergedCounts)) {
+                continue;
+            }
+
+            const nextCount = (mergedCounts[targetPath] ?? 0) - count;
+            if (nextCount > 0) {
+                mergedCounts[targetPath] = nextCount;
+            } else {
+                delete mergedCounts[targetPath];
+            }
+        }
+
+        for (const [targetPath, count] of Object.entries(nextCounts)) {
+            mergedCounts[targetPath] = (mergedCounts[targetPath] ?? 0) + count;
+        }
+
+        if (Object.keys(mergedCounts).length === 0) {
+            delete countsByFile[filePath];
+            return;
+        }
+
+        countsByFile[filePath] = mergedCounts;
+    }
+
+    private notifyDerivedLinksChanged(filePath: string) {
+        const file = this.getMarkdownFileByPath(filePath);
+        if (file) {
+            this.app.metadataCache.trigger("resolve", file);
+        }
+        this.app.metadataCache.trigger("resolved");
+    }
+
     private async ensureAggregateCommentIndexInitialized() {
         if (this.aggregateIndexInitialized) {
             return;
@@ -598,6 +818,7 @@ export default class SideNote2 extends Plugin {
             this.commentManager,
             this.aggregateCommentIndex,
         );
+        this.syncDerivedCommentLinksForFile(file, parsed.mainContent, syncedComments);
         return {
             mainContent: parsed.mainContent,
             comments: syncedComments,
@@ -717,7 +938,9 @@ export default class SideNote2 extends Plugin {
     private async refreshAggregateNote() {
         await this.ensureAggregateCommentIndexInitialized();
         const comments = this.aggregateCommentIndex.getAllComments();
-        const nextContent = buildAllCommentsNoteContent(this.app.vault.getName(), comments);
+        const nextContent = buildAllCommentsNoteContent(this.app.vault.getName(), comments, {
+            getMentionedPageLabels: (comment) => this.getCommentMentionedPageLabels(comment),
+        });
         let existingFile = this.getMarkdownFileByPath(ALL_COMMENTS_NOTE_PATH);
 
         if (!existingFile) {
@@ -744,6 +967,27 @@ export default class SideNote2 extends Plugin {
         }
 
         await this.app.vault.modify(existingFile, nextContent);
+    }
+
+    private getCommentMentionedPageLabels(comment: Comment): string[] {
+        const seenPaths = new Set<string>();
+        const labels: string[] = [];
+
+        for (const linkPath of extractWikiLinkPaths(comment.comment ?? "")) {
+            const linkedFile = this.app.metadataCache.getFirstLinkpathDest(linkPath, comment.filePath);
+            if (!(linkedFile instanceof TFile) || linkedFile.path === comment.filePath) {
+                continue;
+            }
+
+            if (seenPaths.has(linkedFile.path)) {
+                continue;
+            }
+
+            seenPaths.add(linkedFile.path);
+            labels.push(this.app.metadataCache.fileToLinktext(linkedFile, comment.filePath, true));
+        }
+
+        return labels;
     }
 
     public async revealComment(comment: Comment) {
@@ -1475,6 +1719,64 @@ export default class SideNote2 extends Plugin {
             }
         }, {
             decorations: (value) => value.decorations,
+        });
+    }
+
+    private createAllCommentsLivePreviewLinkPlugin() {
+        const plugin = this;
+
+        return EditorView.domEventHandlers({
+            click(event, view) {
+                if (
+                    event.button !== 0
+                    || event.metaKey
+                    || event.ctrlKey
+                    || event.shiftKey
+                    || event.altKey
+                ) {
+                    return false;
+                }
+
+                const target = event.target;
+                if (!(target instanceof HTMLElement)) {
+                    return false;
+                }
+
+                const linkEl = target.closest(".cm-link");
+                if (!(linkEl instanceof HTMLElement)) {
+                    return false;
+                }
+
+                const markdownView = plugin.getMarkdownViewForEditorView(view);
+                const filePath = markdownView?.file?.path ?? null;
+                if (!filePath || !isAllCommentsNotePath(filePath)) {
+                    return false;
+                }
+
+                const lineEl = linkEl.closest(".cm-line");
+                if (!(lineEl instanceof HTMLElement)) {
+                    return false;
+                }
+
+                let pos: number;
+                try {
+                    pos = view.posAtDOM(lineEl, 0);
+                } catch {
+                    return false;
+                }
+
+                const safePos = Math.max(0, Math.min(pos, view.state.doc.length));
+                const lineText = view.state.doc.lineAt(safePos).text;
+                const commentTarget = findCommentLocationTargetInMarkdownLine(lineText);
+                if (!commentTarget) {
+                    return false;
+                }
+
+                event.preventDefault();
+                event.stopPropagation();
+                void plugin.openCommentById(commentTarget.filePath, commentTarget.commentId);
+                return true;
+            },
         });
     }
 

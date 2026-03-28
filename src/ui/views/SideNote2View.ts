@@ -95,7 +95,10 @@ export default class SideNote2View extends ItemView {
         }
     };
     private shouldSaveDraftFromEnter(event: KeyboardEvent): boolean {
-        return event.key === "Enter" && !event.shiftKey && !event.altKey && !event.isComposing;
+        return event.key === "Enter"
+            && !event.shiftKey
+            && !event.altKey
+            && !event.isComposing;
     }
     private readonly documentKeydownHandler = (event: KeyboardEvent) => {
         const consumeShortcut = () => {
