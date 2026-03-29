@@ -1,9 +1,7 @@
 # SideNote2 (Beta)
-
 <p align="center">
-  <img src="./logo.svg" alt="SideNote2 logo" width="72">
+  <img src="./logo-readme.svg" alt="SideNote2 logo" width="72">
 </p>
-
 SideNote2 is an [Obsidian](https://obsidian.md) plugin for side comments that stay attached to the note.
 
 It is built for a minimal workflow: humans work in the sidebar, while agents can read the same comments directly from the markdown file. Inspired by [mofukuru/SideNote](https://github.com/mofukuru/SideNote).
