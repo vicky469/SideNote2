@@ -1,4 +1,4 @@
-import { ItemView, MarkdownRenderer, MarkdownView, TFile, WorkspaceLeaf, setIcon, type ViewStateResult } from "obsidian";
+import { ItemView, MarkdownRenderer, TFile, WorkspaceLeaf, setIcon, type ViewStateResult } from "obsidian";
 import type { Comment } from "../../commentManager";
 import { isAllCommentsNotePath } from "../../core/allCommentsNote";
 import { isOrphanedComment, isPageComment } from "../../core/commentAnchors";
@@ -342,41 +342,12 @@ export default class SideNote2View extends ItemView {
         return !!this.getSidebarOwner(selection.anchorNode) || !!this.getSidebarOwner(selection.focusNode);
     }
 
-    private getPreferredMarkdownLeaf(filePath: string): WorkspaceLeaf | null {
-        let matchedLeaf: WorkspaceLeaf | null = null;
-        this.app.workspace.iterateAllLeaves((leaf) => {
-            if (matchedLeaf) {
-                return;
-            }
-
-            if (leaf.view instanceof MarkdownView && leaf.view.file?.path === filePath) {
-                matchedLeaf = leaf;
-            }
-        });
-        if (matchedLeaf) {
-            return matchedLeaf;
-        }
-
-        const recentLeaf = this.app.workspace.getMostRecentLeaf(this.app.workspace.rootSplit);
-        if (recentLeaf?.view instanceof MarkdownView) {
-            return recentLeaf;
-        }
-
-        this.app.workspace.iterateAllLeaves((leaf) => {
-            if (!matchedLeaf && leaf.view instanceof MarkdownView) {
-                matchedLeaf = leaf;
-            }
-        });
-
-        return matchedLeaf;
-    }
-
     private async openSidebarInternalLink(
         href: string,
         sourcePath: string,
         focusTarget: HTMLElement,
     ): Promise<void> {
-        const targetLeaf = this.getPreferredMarkdownLeaf(sourcePath);
+        const targetLeaf = this.plugin.getPreferredFileLeaf();
         if (targetLeaf) {
             this.app.workspace.setActiveLeaf(targetLeaf, { focus: false });
         }
@@ -384,7 +355,7 @@ export default class SideNote2View extends ItemView {
         await this.app.workspace.openLinkText(
             href,
             sourcePath,
-            targetLeaf ? false : "tab",
+            false,
         );
 
         this.claimSidebarInteractionOwnership(focusTarget);

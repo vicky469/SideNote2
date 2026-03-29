@@ -34,6 +34,10 @@ export class CommentManager {
         return this.comments.find(comment => comment.id === id);
     }
 
+    getAllComments(): Comment[] {
+        return this.comments.map((comment) => ({ ...comment }));
+    }
+
     replaceCommentsForFile(filePath: string, nextComments: Comment[]) {
         this.comments = this.comments
             .filter(comment => comment.filePath !== filePath)

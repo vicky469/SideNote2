@@ -1,4 +1,4 @@
-import { addIcon, WorkspaceLeaf, TFile, MarkdownView, Notice, Plugin, normalizePath } from "obsidian";
+import { addIcon, FileView, WorkspaceLeaf, TFile, MarkdownView, Notice, Plugin, normalizePath } from "obsidian";
 import type { CachedMetadata } from "obsidian";
 import { Decoration, DecorationSet, EditorView, ViewPlugin, ViewUpdate } from "@codemirror/view";
 import { Range, StateEffect } from "@codemirror/state";
@@ -7,7 +7,9 @@ import { getPageCommentLabel, isAnchoredComment, isPageComment } from "./core/co
 import { DraftComment, DraftSelection } from "./domain/drafts";
 import { parsePromptDeleteSetting } from "./core/appConfig";
 import { ALL_COMMENTS_NOTE_PATH, buildAllCommentsNoteContent, findCommentLocationTargetInMarkdownLine, isAllCommentsNotePath, LEGACY_ALL_COMMENTS_NOTE_PATH } from "./core/allCommentsNote";
+import { buildAttachmentComments, parseAttachmentComments } from "./core/attachmentCommentStorage";
 import { pickExactTextMatch, resolveAnchorRange } from "./core/anchorResolver";
+import { isAttachmentCommentableFile, isAttachmentCommentablePath, isMarkdownCommentableFile, isSidebarSupportedFile, isSidebarSupportedPath } from "./core/commentableFiles";
 import { buildDerivedCommentLinks, extractWikiLinkPaths } from "./core/commentMentions";
 import { buildEditorHighlightRanges } from "./core/editorHighlightRanges";
 import { chooseCommentStateForOpenEditor, shouldDeferManagedCommentPersist, syncLoadedCommentsForCurrentNote } from "./core/commentSyncPolicy";
@@ -47,6 +49,10 @@ type DerivedMetadataCache = CachedMetadata & {
     [derivedMetadataCacheMarker]?: true;
 };
 
+type PersistedPluginData = Partial<SideNote2Settings> & {
+    attachmentComments?: unknown;
+};
+
 // Main plugin class
 export default class SideNote2 extends Plugin {
     commentManager: CommentManager;
@@ -55,10 +61,13 @@ export default class SideNote2 extends Plugin {
     private readonly duplicateAddWindowMs = 800;
     private lastAddFingerprint: { key: string; at: number } | null = null;
     private activeMarkdownFile: TFile | null = null;
+    private activeSidebarFile: TFile | null = null;
     private draftComment: DraftComment | null = null;
     private draftHostFilePath: string | null = null;
     private savingDraftCommentId: string | null = null;
     private aggregateRefreshTimer: number | null = null;
+    private aggregateRefreshPromise: Promise<void> | null = null;
+    private aggregateRefreshQueued = false;
     private aggregateIndexInitialized = false;
     private aggregateIndexInitializationPromise: Promise<void> | null = null;
     private aggregateCommentIndex = new AggregateCommentIndex();
@@ -77,8 +86,16 @@ export default class SideNote2 extends Plugin {
         addIcon(SIDE_NOTE2_ICON_ID, SIDE_NOTE2_ICON_SVG);
 
         this.commentManager = new CommentManager([]);
+        await this.loadSettings();
+        setDebugEnabled(this.settings.enableDebugMode);
         this.installMetadataCacheAugmentation();
-        this.activeMarkdownFile = this.app.workspace.getActiveFile();
+        const activeFile = this.app.workspace.getActiveFile();
+        if (isMarkdownCommentableFile(activeFile)) {
+            this.activeMarkdownFile = activeFile;
+        }
+        if (activeFile instanceof TFile && isSidebarSupportedPath(activeFile.path)) {
+            this.activeSidebarFile = activeFile;
+        }
         await this.loadVisibleFiles();
 
         this.registerEditorExtension([
@@ -173,20 +190,16 @@ export default class SideNote2 extends Plugin {
         // Listen for active leaf changes to update the comment view
         this.registerEvent(
             this.app.workspace.on('file-open', (file) => {
-                if (!(file instanceof TFile) || file.extension !== "md") {
-                    return;
-                }
-
-                if (!isAllCommentsNotePath(file.path)) {
+                const sidebarFile = isSidebarSupportedFile(file) ? file : null;
+                if (isMarkdownCommentableFile(file)) {
                     this.activeMarkdownFile = file;
                 }
+                this.activeSidebarFile = sidebarFile;
 
-                const syncPromise = isAllCommentsNotePath(file.path)
-                    ? this.ensureIndexedCommentsLoaded()
-                    : this.loadCommentsForFile(file);
+                const syncPromise = this.syncSidebarFile(sidebarFile);
 
                 void syncPromise.finally(async () => {
-                    await this.updateSidebarViews(file);
+                    await this.updateSidebarViews(sidebarFile);
                     this.refreshEditorDecorations();
                 });
             })
@@ -200,23 +213,17 @@ export default class SideNote2 extends Plugin {
                     return;
                 }
 
-                const file = leaf && leaf.view instanceof MarkdownView && leaf.view.file
-                    ? leaf.view.file
-                    : null;
-                if (!file) {
-                    return;
-                }
-
-                if (!isAllCommentsNotePath(file.path)) {
+                const file = this.getFileForLeaf(leaf);
+                const sidebarFile = isSidebarSupportedFile(file) ? file : null;
+                if (isMarkdownCommentableFile(file)) {
                     this.activeMarkdownFile = file;
                 }
+                this.activeSidebarFile = sidebarFile;
 
-                const syncPromise = isAllCommentsNotePath(file.path)
-                    ? this.ensureIndexedCommentsLoaded()
-                    : this.loadCommentsForFile(file);
+                const syncPromise = this.syncSidebarFile(sidebarFile);
 
                 void syncPromise.finally(async () => {
-                    await this.updateSidebarViews(file);
+                    await this.updateSidebarViews(sidebarFile);
                     this.refreshEditorDecorations();
                 });
             })
@@ -231,6 +238,9 @@ export default class SideNote2 extends Plugin {
                     this.clearParsedNoteCache(file.path);
                     this.aggregateCommentIndex.renameFile(oldPath, file.path);
                     this.clearDerivedCommentLinksForFile(oldPath);
+                    if (isAttachmentCommentablePath(oldPath) || isAttachmentCommentableFile(file)) {
+                        void this.saveSettings();
+                    }
                     void this.loadCommentsForFile(file);
                     // Update views
                     this.app.workspace.getLeavesOfType("sidenote2-view").forEach(leaf => {
@@ -246,7 +256,7 @@ export default class SideNote2 extends Plugin {
 
         this.registerEvent(
             this.app.vault.on('delete', (file) => {
-                if (!(file instanceof TFile) || file.extension !== "md") {
+                if (!(file instanceof TFile) || !this.isCommentableFile(file)) {
                     return;
                 }
 
@@ -254,6 +264,9 @@ export default class SideNote2 extends Plugin {
                 this.clearParsedNoteCache(file.path);
                 this.aggregateCommentIndex.deleteFile(file.path);
                 this.clearDerivedCommentLinksForFile(file.path);
+                if (isAttachmentCommentableFile(file)) {
+                    void this.saveSettings();
+                }
                 this.scheduleAggregateNoteRefresh();
             })
         );
@@ -261,7 +274,7 @@ export default class SideNote2 extends Plugin {
         // Keep in-memory comments in sync with their managed appendix section.
         this.registerEvent(
             this.app.vault.on('modify', async (file) => {
-                if (!(file instanceof TFile) || file.extension !== 'md' || isAllCommentsNotePath(file.path)) {
+                if (!(file instanceof TFile) || file.extension !== 'md') {
                     return;
                 }
 
@@ -322,9 +335,6 @@ export default class SideNote2 extends Plugin {
             })
         );
 
-        // Load settings
-        await this.loadSettings();
-        setDebugEnabled(this.settings.enableDebugMode);
         this.addSettingTab(new SideNote2SettingTab(this.app, this));
     }
 
@@ -334,12 +344,32 @@ export default class SideNote2 extends Plugin {
     }
 
     async loadSettings() {
-        const loaded = await this.loadData() as Partial<SideNote2Settings> | null;
+        const loaded = await this.loadData() as PersistedPluginData | null;
         this.settings = {
             enableDebugMode: typeof loaded?.enableDebugMode === "boolean"
                 ? loaded.enableDebugMode
                 : DEFAULT_SETTINGS.enableDebugMode,
         };
+
+        const persistedAttachmentComments = parseAttachmentComments(loaded?.attachmentComments);
+        const existingAttachmentCommentPaths = new Set(
+            this.commentManager
+                .getAllComments()
+                .filter((comment) => isAttachmentCommentablePath(comment.filePath))
+                .map((comment) => comment.filePath),
+        );
+        for (const filePath of existingAttachmentCommentPaths) {
+            this.commentManager.replaceCommentsForFile(filePath, []);
+        }
+        for (const comment of persistedAttachmentComments) {
+            const file = this.getFileByPath(comment.filePath);
+            if (!isAttachmentCommentableFile(file)) {
+                continue;
+            }
+
+            const nextComments = this.commentManager.getCommentsForFile(comment.filePath).concat(comment);
+            this.commentManager.replaceCommentsForFile(comment.filePath, nextComments);
+        }
 
         if (loaded && Object.prototype.hasOwnProperty.call(loaded, "confirmDelete")) {
             await this.saveSettings();
@@ -347,7 +377,10 @@ export default class SideNote2 extends Plugin {
     }
 
     async saveSettings() {
-        await this.saveData(this.settings);
+        await this.saveData({
+            ...this.settings,
+            attachmentComments: buildAttachmentComments(this.commentManager.getAllComments()),
+        });
     }
 
     public async shouldConfirmDelete(): Promise<boolean> {
@@ -408,10 +441,10 @@ export default class SideNote2 extends Plugin {
         }
     }
 
-    private getOpenMarkdownFiles(): TFile[] {
+    private getOpenSidebarFiles(): TFile[] {
         const files = new Map<string, TFile>();
         this.app.workspace.iterateAllLeaves((leaf) => {
-            if (leaf.view instanceof MarkdownView && leaf.view.file) {
+            if (leaf.view instanceof FileView && isSidebarSupportedFile(leaf.view.file)) {
                 files.set(leaf.view.file.path, leaf.view.file);
             }
         });
@@ -420,8 +453,21 @@ export default class SideNote2 extends Plugin {
 
     public getPinnedMarkdownFile(): TFile | null {
         const activeFile = this.app.workspace.getActiveFile();
-        if (activeFile instanceof TFile && activeFile.extension === "md" && !isAllCommentsNotePath(activeFile.path)) {
+        if (isMarkdownCommentableFile(activeFile)) {
             return activeFile;
+        }
+
+        return this.activeMarkdownFile;
+    }
+
+    public getPinnedCommentableFile(): TFile | null {
+        const activeFile = this.app.workspace.getActiveFile();
+        if (this.isCommentableFile(activeFile)) {
+            return activeFile;
+        }
+
+        if (this.isCommentableFile(this.activeSidebarFile)) {
+            return this.activeSidebarFile;
         }
 
         return this.activeMarkdownFile;
@@ -429,11 +475,55 @@ export default class SideNote2 extends Plugin {
 
     public getSidebarTargetFile(): TFile | null {
         const activeFile = this.app.workspace.getActiveFile();
-        if (activeFile instanceof TFile && activeFile.extension === "md") {
+        if (isSidebarSupportedFile(activeFile)) {
             return activeFile;
         }
 
-        return this.activeMarkdownFile;
+        return this.activeSidebarFile;
+    }
+
+    private getFileForLeaf(leaf: WorkspaceLeaf | null): TFile | null {
+        return leaf?.view instanceof FileView && leaf.view.file instanceof TFile
+            ? leaf.view.file
+            : null;
+    }
+
+    public getPreferredFileLeaf(filePath?: string): WorkspaceLeaf | null {
+        let matchedLeaf: WorkspaceLeaf | null = null;
+
+        if (filePath) {
+            this.app.workspace.iterateAllLeaves((leaf) => {
+                if (matchedLeaf) {
+                    return;
+                }
+
+                if (leaf.view instanceof FileView && leaf.view.file?.path === filePath) {
+                    matchedLeaf = leaf;
+                }
+            });
+        }
+
+        if (matchedLeaf) {
+            return matchedLeaf;
+        }
+
+        const activeLeaf = this.app.workspace.activeLeaf;
+        if (activeLeaf?.view instanceof FileView && !(activeLeaf.view instanceof SideNote2View)) {
+            return activeLeaf;
+        }
+
+        const recentLeaf = this.app.workspace.getMostRecentLeaf(this.app.workspace.rootSplit);
+        if (recentLeaf?.view instanceof FileView && !(recentLeaf.view instanceof SideNote2View)) {
+            return recentLeaf;
+        }
+
+        this.app.workspace.iterateAllLeaves((leaf) => {
+            if (!matchedLeaf && leaf.view instanceof FileView && !(leaf.view instanceof SideNote2View)) {
+                matchedLeaf = leaf;
+            }
+        });
+
+        return matchedLeaf;
     }
 
     private getMarkdownViewForFile(file: TFile): MarkdownView | null {
@@ -521,7 +611,7 @@ export default class SideNote2 extends Plugin {
     }
 
     private isCommentableFile(file: TFile | null): file is TFile {
-        return !!file && file.extension === "md" && !isAllCommentsNotePath(file.path);
+        return isMarkdownCommentableFile(file) || isAttachmentCommentableFile(file);
     }
 
     private async getCurrentNoteContent(file: TFile): Promise<string> {
@@ -534,15 +624,29 @@ export default class SideNote2 extends Plugin {
     }
 
     private async loadVisibleFiles() {
-        const visibleFiles = this.getOpenMarkdownFiles();
+        const visibleFiles = this.getOpenSidebarFiles();
         for (const file of visibleFiles) {
-            await this.loadCommentsForFile(file);
+            await this.syncSidebarFile(file);
         }
 
         const activeFile = this.app.workspace.getActiveFile();
-        if (activeFile) {
-            await this.loadCommentsForFile(activeFile);
+        if (isSidebarSupportedFile(activeFile)) {
+            await this.syncSidebarFile(activeFile);
         }
+    }
+
+    private async syncSidebarFile(file: TFile | null): Promise<void> {
+        if (!file) {
+            return;
+        }
+
+        if (isAllCommentsNotePath(file.path)) {
+            await this.ensureIndexedCommentsLoaded();
+            await this.refreshAggregateNoteNow();
+            return;
+        }
+
+        await this.loadCommentsForFile(file);
     }
 
     private getParsedNoteComments(filePath: string, noteContent: string): ParsedNoteComments {
@@ -744,11 +848,12 @@ export default class SideNote2 extends Plugin {
         this.app.metadataCache.trigger("resolved");
     }
 
-    private async ensureAggregateCommentIndexInitialized() {
+    private async ensureAggregateCommentIndexInitialized(): Promise<boolean> {
         if (this.aggregateIndexInitialized) {
-            return;
+            return false;
         }
 
+        let initializedNow = false;
         if (!this.aggregateIndexInitializationPromise) {
             this.aggregateIndexInitializationPromise = (async () => {
                 const markdownFiles = this.app.vault
@@ -762,13 +867,32 @@ export default class SideNote2 extends Plugin {
                     this.aggregateCommentIndex.updateFile(file.path, parsed.comments);
                 }
 
+                const attachmentCommentsByFile = new Map<string, Comment[]>();
+                for (const comment of this.commentManager.getAllComments()) {
+                    if (!isAttachmentCommentablePath(comment.filePath)) {
+                        continue;
+                    }
+
+                    const existingComments = attachmentCommentsByFile.get(comment.filePath) ?? [];
+                    existingComments.push(comment);
+                    attachmentCommentsByFile.set(comment.filePath, existingComments);
+                }
+
+                for (const [filePath, comments] of Array.from(attachmentCommentsByFile.entries()).sort(([left], [right]) =>
+                    left.localeCompare(right),
+                )) {
+                    this.aggregateCommentIndex.updateFile(filePath, comments);
+                }
+
                 this.aggregateIndexInitialized = true;
+                initializedNow = true;
             })().finally(() => {
                 this.aggregateIndexInitializationPromise = null;
             });
         }
 
         await this.aggregateIndexInitializationPromise;
+        return initializedNow;
     }
 
     private async parseAndNormalizeFileComments(filePath: string, noteContent: string): Promise<ParsedNoteComments> {
@@ -826,8 +950,14 @@ export default class SideNote2 extends Plugin {
     }
 
     async loadCommentsForFile(file: TFile | null): Promise<Comment[]> {
-        if (!file || file.extension !== "md") {
+        if (!file || isAllCommentsNotePath(file.path) || !this.isCommentableFile(file)) {
             return [];
+        }
+
+        if (isAttachmentCommentableFile(file)) {
+            const comments = this.commentManager.getCommentsForFile(file.path);
+            this.aggregateCommentIndex.updateFile(file.path, comments);
+            return comments;
         }
 
         const noteContent = await this.getCurrentNoteContent(file);
@@ -836,7 +966,10 @@ export default class SideNote2 extends Plugin {
     }
 
     public async ensureIndexedCommentsLoaded(): Promise<void> {
-        await this.ensureAggregateCommentIndexInitialized();
+        const initializedNow = await this.ensureAggregateCommentIndexInitialized();
+        if (initializedNow) {
+            await this.refreshAggregateNoteNow();
+        }
     }
 
     private async updateSidebarViews(file: TFile | null): Promise<void> {
@@ -882,7 +1015,10 @@ export default class SideNote2 extends Plugin {
         this.refreshMarkdownPreviews();
     }
 
-    private async writeCommentsForFile(file: TFile): Promise<string> {
+    private async writeCommentsForFile(
+        file: TFile,
+        options: { immediateAggregateRefresh?: boolean } = {},
+    ): Promise<string> {
         this.clearPendingCommentPersistTimer(file.path);
         const comments = this.commentManager.getCommentsForFile(file.path);
         const openView = this.getMarkdownViewForFile(file);
@@ -901,7 +1037,11 @@ export default class SideNote2 extends Plugin {
             await this.syncFileCommentsFromContent(file, nextContent);
             await this.refreshCommentViews();
             this.refreshEditorDecorations();
-            this.scheduleAggregateNoteRefresh();
+            if (options.immediateAggregateRefresh) {
+                await this.refreshAggregateNoteNow();
+            } else {
+                this.scheduleAggregateNoteRefresh();
+            }
             return nextContent;
         }
 
@@ -911,17 +1051,42 @@ export default class SideNote2 extends Plugin {
         await this.syncFileCommentsFromContent(file, nextContent);
         await this.refreshCommentViews();
         this.refreshEditorDecorations();
-        this.scheduleAggregateNoteRefresh();
+        if (options.immediateAggregateRefresh) {
+            await this.refreshAggregateNoteNow();
+        } else {
+            this.scheduleAggregateNoteRefresh();
+        }
         return nextContent;
     }
 
-    private async persistCommentsForFile(file: TFile): Promise<void> {
-        await this.writeCommentsForFile(file);
+    private async persistCommentsForFile(
+        file: TFile,
+        options: { immediateAggregateRefresh?: boolean } = {},
+    ): Promise<void> {
+        if (isAttachmentCommentableFile(file)) {
+            this.aggregateCommentIndex.updateFile(file.path, this.commentManager.getCommentsForFile(file.path));
+            await this.saveSettings();
+            await this.refreshCommentViews();
+            this.refreshEditorDecorations();
+            if (options.immediateAggregateRefresh) {
+                await this.refreshAggregateNoteNow();
+            } else {
+                this.scheduleAggregateNoteRefresh();
+            }
+            return;
+        }
+
+        await this.writeCommentsForFile(file, options);
+    }
+
+    private getFileByPath(filePath: string): TFile | null {
+        const file = this.app.vault.getAbstractFileByPath(filePath);
+        return file instanceof TFile ? file : null;
     }
 
     private getMarkdownFileByPath(filePath: string): TFile | null {
-        const file = this.app.vault.getAbstractFileByPath(filePath);
-        return file instanceof TFile ? file : null;
+        const file = this.getFileByPath(filePath);
+        return file?.extension === "md" ? file : null;
     }
 
     private scheduleAggregateNoteRefresh() {
@@ -931,8 +1096,35 @@ export default class SideNote2 extends Plugin {
 
         this.aggregateRefreshTimer = window.setTimeout(() => {
             this.aggregateRefreshTimer = null;
-            void this.refreshAggregateNote();
+            void this.enqueueAggregateNoteRefresh();
         }, 150);
+    }
+
+    private async refreshAggregateNoteNow(): Promise<void> {
+        if (this.aggregateRefreshTimer !== null) {
+            window.clearTimeout(this.aggregateRefreshTimer);
+            this.aggregateRefreshTimer = null;
+        }
+
+        await this.enqueueAggregateNoteRefresh();
+    }
+
+    private async enqueueAggregateNoteRefresh(): Promise<void> {
+        if (this.aggregateRefreshPromise) {
+            this.aggregateRefreshQueued = true;
+            await this.aggregateRefreshPromise;
+            return;
+        }
+
+        do {
+            this.aggregateRefreshQueued = false;
+            this.aggregateRefreshPromise = this.refreshAggregateNote();
+            try {
+                await this.aggregateRefreshPromise;
+            } finally {
+                this.aggregateRefreshPromise = null;
+            }
+        } while (this.aggregateRefreshQueued);
     }
 
     private async refreshAggregateNote() {
@@ -963,7 +1155,12 @@ export default class SideNote2 extends Plugin {
 
         const openView = this.getMarkdownViewForFile(existingFile);
         if (openView) {
-            openView.editor.setValue(nextContent);
+            if (openView.getViewData() !== nextContent) {
+                openView.setViewData(nextContent, false);
+            }
+            if (openView.getMode() === "preview") {
+                openView.previewMode.rerender(true);
+            }
         }
 
         await this.app.vault.modify(existingFile, nextContent);
@@ -991,29 +1188,42 @@ export default class SideNote2 extends Plugin {
     }
 
     public async revealComment(comment: Comment) {
-        let targetLeaf: WorkspaceLeaf | null = null;
-        this.app.workspace.iterateAllLeaves((leaf: WorkspaceLeaf) => {
-            if (leaf.view instanceof MarkdownView && leaf.view.file?.path === comment.filePath) {
-                targetLeaf = leaf;
-                return false;
-            }
-        });
-
-        if (!targetLeaf) {
-            const file = this.getMarkdownFileByPath(comment.filePath);
-            if (file instanceof TFile) {
-                const newLeaf = this.app.workspace.getLeaf(true);
-                await newLeaf.openFile(file);
-                targetLeaf = newLeaf;
-            }
+        const file = this.getFileByPath(comment.filePath);
+        if (!file) {
+            new Notice("Unable to find that file.");
+            return;
         }
 
-        if (!(targetLeaf && targetLeaf.view instanceof MarkdownView)) {
+        let targetLeaf = this.getPreferredFileLeaf(comment.filePath);
+        if (!targetLeaf) {
+            targetLeaf = this.app.workspace.getLeaf(false);
+        }
+
+        if (!targetLeaf) {
+            new Notice("Failed to open that file.");
+            return;
+        }
+
+        if (!(targetLeaf.view instanceof FileView) || targetLeaf.view.file?.path !== file.path) {
+            await targetLeaf.openFile(file);
+        }
+
+        this.app.workspace.setActiveLeaf(targetLeaf, { focus: true });
+
+        if (isAttachmentCommentableFile(file)) {
+            await this.activateViewAndHighlightComment(comment.id);
+            return;
+        }
+
+        if (!(targetLeaf.view instanceof MarkdownView)) {
+            await targetLeaf.openFile(file);
+        }
+
+        if (!(targetLeaf.view instanceof MarkdownView)) {
             new Notice("Failed to jump to Markdown view.");
             return;
         }
 
-        this.app.workspace.setActiveLeaf(targetLeaf, { focus: true });
         const editor = targetLeaf.view.editor;
         if (isPageComment(comment)) {
             editor.setSelection({ line: 0, ch: 0 }, { line: 0, ch: 0 });
@@ -1085,9 +1295,9 @@ export default class SideNote2 extends Plugin {
     }
 
     private async openCommentById(filePath: string, commentId: string) {
-        const file = this.getMarkdownFileByPath(filePath);
+        const file = this.getFileByPath(filePath);
         if (!file) {
-            new Notice("Unable to find that note.");
+            new Notice("Unable to find that file.");
             return;
         }
 
@@ -1144,7 +1354,7 @@ export default class SideNote2 extends Plugin {
         hostFilePath: string | null = this.getSidebarTargetFile()?.path ?? null,
     ) {
         const existingComment = this.getKnownCommentById(commentId);
-        const file = existingComment ? this.getMarkdownFileByPath(existingComment.filePath) : null;
+        const file = existingComment ? this.getFileByPath(existingComment.filePath) : null;
         if (!existingComment || !file) {
             new Notice("Unable to find that side note.");
             return;
@@ -1204,7 +1414,7 @@ export default class SideNote2 extends Plugin {
         }
     }
 
-    public async startPageCommentDraft(file: TFile | null = this.getPinnedMarkdownFile()) {
+    public async startPageCommentDraft(file: TFile | null = this.getPinnedCommentableFile()) {
         if (!this.isCommentableFile(file)) {
             new Notice(`Cannot add comments to ${ALL_COMMENTS_NOTE_PATH}.`);
             return;
@@ -1226,6 +1436,10 @@ export default class SideNote2 extends Plugin {
             new Notice(`Cannot add comments to ${ALL_COMMENTS_NOTE_PATH}.`);
             return;
         }
+        if (selection.anchorKind !== "page" && !isMarkdownCommentableFile(selection.file)) {
+            new Notice("Text-anchored side notes are only supported in markdown files.");
+            return;
+        }
 
         await this.loadCommentsForFile(selection.file);
         const draft: DraftComment = {
@@ -1244,7 +1458,10 @@ export default class SideNote2 extends Plugin {
             mode: "new",
         };
 
-        this.activeMarkdownFile = selection.file;
+        if (isMarkdownCommentableFile(selection.file)) {
+            this.activeMarkdownFile = selection.file;
+        }
+        this.activeSidebarFile = selection.file;
         await this.setDraftComment(draft, selection.file.path);
         await this.activateViewAndHighlightComment(draft.id);
     }
@@ -1328,8 +1545,8 @@ export default class SideNote2 extends Plugin {
             return false;
         }
 
-        const file = this.getMarkdownFileByPath(newComment.filePath);
-        if (!file) {
+        const file = this.getFileByPath(newComment.filePath);
+        if (!this.isCommentableFile(file)) {
             new Notice("Unable to find the note for this side note.");
             return false;
         }
@@ -1346,7 +1563,7 @@ export default class SideNote2 extends Plugin {
         }
         this.lastAddFingerprint = { key: fingerprint, at: now };
         this.commentManager.addComment(newComment);
-        await this.persistCommentsForFile(file);
+        await this.persistCommentsForFile(file, { immediateAggregateRefresh: true });
         return true;
     }
 
@@ -1354,8 +1571,8 @@ export default class SideNote2 extends Plugin {
         debugCount("editComment");
         debugLog("editComment", { id: commentId, length: newCommentText.length });
         const existingComment = this.getKnownCommentById(commentId);
-        const file = existingComment ? this.getMarkdownFileByPath(existingComment.filePath) : null;
-        if (!existingComment || !file) {
+        const file = existingComment ? this.getFileByPath(existingComment.filePath) : null;
+        if (!existingComment || !this.isCommentableFile(file)) {
             new Notice("Unable to find that side note.");
             return false;
         }
@@ -1367,7 +1584,7 @@ export default class SideNote2 extends Plugin {
             return false;
         }
         this.commentManager.editComment(commentId, newCommentText);
-        await this.persistCommentsForFile(file);
+        await this.persistCommentsForFile(file, { immediateAggregateRefresh: true });
         return true;
     }
 
@@ -1375,8 +1592,8 @@ export default class SideNote2 extends Plugin {
         debugCount("deleteComment");
         debugLog("deleteComment", { id: commentId });
         const existingComment = this.getKnownCommentById(commentId);
-        const file = existingComment ? this.getMarkdownFileByPath(existingComment.filePath) : null;
-        if (!existingComment || !file) {
+        const file = existingComment ? this.getFileByPath(existingComment.filePath) : null;
+        if (!existingComment || !this.isCommentableFile(file)) {
             new Notice("Unable to find that side note.");
             return;
         }
@@ -1388,15 +1605,15 @@ export default class SideNote2 extends Plugin {
             return;
         }
         this.commentManager.deleteComment(commentId);
-        await this.persistCommentsForFile(file);
+        await this.persistCommentsForFile(file, { immediateAggregateRefresh: true });
     }
 
     async resolveComment(commentId: string) {
         debugCount("resolveComment");
         debugLog("resolveComment", { id: commentId });
         const existingComment = this.getKnownCommentById(commentId);
-        const file = existingComment ? this.getMarkdownFileByPath(existingComment.filePath) : null;
-        if (!existingComment || !file) {
+        const file = existingComment ? this.getFileByPath(existingComment.filePath) : null;
+        if (!existingComment || !this.isCommentableFile(file)) {
             new Notice("Unable to find that side note.");
             return;
         }
@@ -1408,15 +1625,15 @@ export default class SideNote2 extends Plugin {
             return;
         }
         this.commentManager.resolveComment(commentId);
-        await this.persistCommentsForFile(file);
+        await this.persistCommentsForFile(file, { immediateAggregateRefresh: true });
     }
 
     async unresolveComment(commentId: string) {
         debugCount("unresolveComment");
         debugLog("unresolveComment", { id: commentId });
         const existingComment = this.getKnownCommentById(commentId);
-        const file = existingComment ? this.getMarkdownFileByPath(existingComment.filePath) : null;
-        if (!existingComment || !file) {
+        const file = existingComment ? this.getFileByPath(existingComment.filePath) : null;
+        if (!existingComment || !this.isCommentableFile(file)) {
             new Notice("Unable to find that side note.");
             return;
         }
@@ -1428,7 +1645,7 @@ export default class SideNote2 extends Plugin {
             return;
         }
         this.commentManager.unresolveComment(commentId);
-        await this.persistCommentsForFile(file);
+        await this.persistCommentsForFile(file, { immediateAggregateRefresh: true });
     }
 
     /**

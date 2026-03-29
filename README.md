@@ -63,7 +63,11 @@ If multiple side comments in the same note use the same selected text, include a
 
 ## Storage
 
+For MD files:
 Each note stores its comments in a trailing hidden `<!-- SideNote2 comments -->` JSON block inside the same markdown file.
+
+For PDF files:
+The JSON block is stored in plugin data.
 
 `SideNote2 index.md` is just a generated index, not separate storage.
 

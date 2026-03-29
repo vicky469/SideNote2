@@ -34,7 +34,7 @@ export function isOrphanedComment(comment: AnchorLike): boolean {
 
 export function getPageCommentLabel(filePath: string): string {
     const lastSegment = filePath.split("/").pop() ?? filePath;
-    return lastSegment.replace(/\.md$/i, "") || filePath;
+    return lastSegment.replace(/\.[^.]+$/i, "") || filePath;
 }
 
 export function getCommentSelectionLabel(comment: AnchorLike): string {

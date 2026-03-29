@@ -18,6 +18,14 @@ interface MockComment {
     anchorKind?: "selection" | "page";
 }
 
+interface MockLeaf {
+    id: string;
+    kind: "file" | "sidebar";
+    filePath?: string;
+    active?: boolean;
+    recent?: boolean;
+}
+
 class MockPlugin {
     public activeMarkdownFile: MockFile | null = { path: "last-note.md", extension: "md" };
     public draftComment: MockDraftComment | null = null;
@@ -85,6 +93,31 @@ class MockPlugin {
     getDeleteTargetFixed(commentId: string): MockComment | null {
         return this.getKnownCommentById(commentId);
     }
+
+    getRevealTargetOld(leaves: MockLeaf[], filePath: string): string {
+        const matchedLeaf = leaves.find((leaf) => leaf.kind === "file" && leaf.filePath === filePath);
+        return matchedLeaf?.id ?? "new-tab";
+    }
+
+    getRevealTargetFixed(leaves: MockLeaf[], filePath: string): string {
+        const exactLeaf = leaves.find((leaf) => leaf.kind === "file" && leaf.filePath === filePath);
+        if (exactLeaf) {
+            return exactLeaf.id;
+        }
+
+        const activeFileLeaf = leaves.find((leaf) => leaf.kind === "file" && leaf.active);
+        if (activeFileLeaf) {
+            return activeFileLeaf.id;
+        }
+
+        const recentFileLeaf = leaves.find((leaf) => leaf.kind === "file" && leaf.recent);
+        if (recentFileLeaf) {
+            return recentFileLeaf.id;
+        }
+
+        const anyFileLeaf = leaves.find((leaf) => leaf.kind === "file");
+        return anyFileLeaf?.id ?? "existing-or-new";
+    }
 }
 
 test("old sidebar target falls back to the last normal note for SideNote2 index", () => {
@@ -148,4 +181,24 @@ test("fixed index actions can target a page note that only exists in the aggrega
         filePath: "Folder/Note.md",
         anchorKind: "page",
     });
+});
+
+test("old reveal flow creates a new tab when the target file is not already open", () => {
+    const plugin = new MockPlugin();
+    const target = plugin.getRevealTargetOld([
+        { id: "sidebar", kind: "sidebar", active: true },
+        { id: "main-1", kind: "file", filePath: ALL_COMMENTS_NOTE_PATH, recent: true },
+    ], "Folder/Note.md");
+
+    assert.equal(target, "new-tab");
+});
+
+test("fixed reveal flow reuses an existing file leaf instead of forcing a new tab", () => {
+    const plugin = new MockPlugin();
+    const target = plugin.getRevealTargetFixed([
+        { id: "sidebar", kind: "sidebar", active: true },
+        { id: "main-1", kind: "file", filePath: ALL_COMMENTS_NOTE_PATH, recent: true },
+    ], "Folder/Note.md");
+
+    assert.equal(target, "main-1");
 });
