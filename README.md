@@ -1,4 +1,4 @@
-# SideNote2
+# SideNote2 (Beta)
 
 <p align="center">
   <img src="./logo.svg" alt="SideNote2 logo" width="72">
@@ -13,10 +13,18 @@ It is built for a minimal workflow: humans work in the sidebar, while agents can
 - Uses a dedicated sidebar for drafting, editing, resolving, reopening, and deleting comments.
 - Supports Obsidian-style `[[wikilinks]]` inside side comments to link existing notes or create new markdown notes.
 - Type `#` in a side note to search existing tags or add a new one.
-- Highlights commented text directly in the note.
 - Keeps resolved comments archived instead of removing them.
 - Generates `SideNote2 index.md` as a vault-wide comment index.
 - Supports Codex CLI workflows so agents can read and update side comments from the note-backed storage format.
+
+## How to Get Started
+
+1. Install BRAT and SideNote2 plugin in Obsidian.
+   ![alt text](image.png)
+
+2. Install SideNote2 skill in Codex CLI:
+   `python ~/.codex/skills/.system/skill-installer/scripts/install-skill-from-github.py --url
+https://github.com/vicky469/SideNote2/tree/main/skills/side-note2-note-comments`
 
 ## Workflow
 
@@ -25,13 +33,13 @@ It is built for a minimal workflow: humans work in the sidebar, while agents can
    You can use the ribbon button to open the sidebar, or assign your own hotkey in Obsidian.
 3. Write the comment in the sidebar.
    Type `[[` to link a note, or type `#` to search existing tags or create a new one.
-4. Review it later from the sidebar.
+4. Review it later from the sidebar or from `SideNote2 index.md`.
 
 For power users:
 
-Agents can read the same note directly from markdown, including the trailing `<!-- SideNote2 comments -->` block.
+Agents can read the side notes from markdown.
 
-In Codex CLI, you can ask for a stored side comment directly:
+In Codex CLI, you can ask:
 
 ```text
 Show me the side comment for "selected text" in "/Users/path/to/note.md".
