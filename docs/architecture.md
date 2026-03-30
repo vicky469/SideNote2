@@ -88,7 +88,7 @@ Read this as the movement of one comment through the system.
 
 ```mermaid
 flowchart TD
-    A[User selects text in editor] --> B[Command or editor menu\nAdd comment to selection]
+    A[User selects text in editor] --> B["Command or editor menu<br/>Add comment to selection"]
     B --> C[main.ts starts draft]
     C --> D[SideNote2View sidebar draft]
     D --> E[Save draft]
