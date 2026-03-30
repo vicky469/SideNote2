@@ -3,7 +3,7 @@
   <img src="./logo-readme.svg" alt="SideNote2 logo" width="72">
 </p>
 <p align="center">
-  Current beta: <a href="https://github.com/vicky469/SideNote2/releases/tag/1.0.16">1.0.16</a>
+  Current beta: <a href="https://github.com/vicky469/SideNote2/releases/tag/1.0.17">1.0.17</a>
 </p>
 SideNote2 is an [Obsidian](https://obsidian.md) plugin for side comments that stay attached to the note.
 
