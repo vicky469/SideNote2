@@ -1,7 +1,12 @@
 import type { CommentAnchorKind } from "../../commentManager";
-import { isOrphanedComment, isPageComment } from "../../core/anchors/commentAnchors";
+import { isOrphanedComment } from "../../core/anchors/commentAnchors";
+import {
+    COMMENT_SECTION_DEFINITIONS,
+    getCommentSectionKey,
+    type CommentSectionKey,
+} from "../../core/anchors/commentSectionOrder";
 
-export type SidebarSectionKey = "page" | "anchored";
+export type SidebarSectionKey = CommentSectionKey;
 
 export interface SidebarCommentPresentationLike {
     timestamp: number;
@@ -36,23 +41,12 @@ export function formatSidebarCommentMeta(comment: SidebarCommentPresentationLike
     return segments.join(" · ");
 }
 
-export function getSidebarSectionKey(comment: SidebarCommentPresentationLike): SidebarSectionKey {
-    return isPageComment(comment) ? "page" : "anchored";
-}
+export const getSidebarSectionKey = getCommentSectionKey;
 
 export function buildSidebarSections<T extends SidebarCommentPresentationLike>(comments: T[]): SidebarSection<T>[] {
-    const pageComments = comments.filter((comment) => getSidebarSectionKey(comment) === "page");
-    const anchoredComments = comments.filter((comment) => getSidebarSectionKey(comment) === "anchored");
-    return [
-        {
-            key: "page",
-            title: "Page notes",
-            comments: pageComments,
-        },
-        {
-            key: "anchored",
-            title: "Anchored notes",
-            comments: anchoredComments,
-        },
-    ];
+    return COMMENT_SECTION_DEFINITIONS.map((section) => ({
+        key: section.key,
+        title: section.title,
+        comments: comments.filter((comment) => getSidebarSectionKey(comment) === section.key),
+    }));
 }

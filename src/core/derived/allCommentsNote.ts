@@ -1,4 +1,8 @@
 import type { Comment } from "../../commentManager";
+import {
+    COMMENT_SECTION_DEFINITIONS,
+    getCommentSectionKey,
+} from "../anchors/commentSectionOrder";
 import { getCommentSelectionLabel, getCommentStatusLabel, isAnchoredComment, isPageComment } from "../anchors/commentAnchors";
 import { sortCommentsByPosition } from "../storage/noteCommentStorage";
 import { extractTagsFromText } from "../text/commentTags";
@@ -21,6 +25,8 @@ export interface AllCommentsNoteBuildOptions {
     headerImageUrl?: string;
     headerImageCaption?: string | null;
     getMentionedPageLabels?: (comment: Comment) => string[];
+    resolveWikiLinkPath?: (linkPath: string, sourceFilePath: string) => string | null;
+    connectedChainDepth?: number;
 }
 
 function normalizeNotePath(filePath: string): string {
@@ -89,20 +95,34 @@ function formatFileHeadingLabel(filePath: string): string {
     return escapeMarkdownText(filePath);
 }
 
-function formatCommentLinkLabel(comment: Comment, mentionedPageLabel?: string, pageNoteOrdinal?: number): string {
-    const selectedPreview = escapeMarkdownText(toInlinePreview(getCommentSelectionLabel(comment)));
+function getCommentLinkLabelText(comment: Comment, mentionedPageLabel?: string, pageNoteOrdinal?: number): string {
+    const selectedPreview = toInlinePreview(getCommentSelectionLabel(comment));
     const normalizedMentionLabel = mentionedPageLabel
-        ? escapeMarkdownText(toInlinePreview(mentionedPageLabel))
+        ? toInlinePreview(mentionedPageLabel)
         : null;
     const pageNoteFallbackLabel = pageNoteOrdinal ? String(pageNoteOrdinal) : selectedPreview;
-    const prefixedPreview = isAnchoredComment(comment)
-        ? (normalizedMentionLabel ? `${selectedPreview} · ${normalizedMentionLabel}` : selectedPreview)
-        : `${getCommentStatusLabel(comment)} · ${normalizedMentionLabel ?? (isPageComment(comment) ? pageNoteFallbackLabel : selectedPreview)}`;
-    if (comment.resolved) {
-        return `~~${prefixedPreview}~~`;
+    if (isPageComment(comment)) {
+        return normalizedMentionLabel ?? `${getCommentStatusLabel(comment)} · ${pageNoteFallbackLabel}`;
     }
 
-    return prefixedPreview;
+    return isAnchoredComment(comment)
+        ? (normalizedMentionLabel ? `${selectedPreview} · ${normalizedMentionLabel}` : selectedPreview)
+        : `${getCommentStatusLabel(comment)} · ${selectedPreview}`;
+}
+
+function formatCommentLinkLabel(comment: Comment, mentionedPageLabel?: string, pageNoteOrdinal?: number): string {
+    const escapedLabel = escapeMarkdownText(getCommentLinkLabelText(comment, mentionedPageLabel, pageNoteOrdinal));
+    if (comment.resolved) {
+        return `~~${escapedLabel}~~`;
+    }
+
+    return escapedLabel;
+}
+
+function formatCommentKindMarker(comment: Comment): string {
+    return isPageComment(comment)
+        ? '<span class="sidenote2-index-kind-dot sidenote2-index-kind-page"></span>'
+        : '<span class="sidenote2-index-kind-dot sidenote2-index-kind-anchored"></span>';
 }
 
 function formatCommentTags(comment: Comment): string | null {
@@ -207,8 +227,8 @@ export function buildAllCommentsNoteContent(
             commentsByFile.set(comment.filePath, [comment]);
         }
     }
-
     const filePaths = Array.from(commentsByFile.keys()).sort((left, right) => left.localeCompare(right));
+
     for (const filePath of filePaths) {
         lines.push(`**${formatFileHeadingLabel(filePath)}**`);
 
@@ -224,18 +244,30 @@ export function buildAllCommentsNoteContent(
             nextPageNoteOrdinal += 1;
         }
 
-        for (const comment of fileComments) {
-            const tagLine = formatCommentTags(comment);
-            const mentionedPageLabels = dedupeMentionedPageLabels(options.getMentionedPageLabels?.(comment) ?? []);
-            const labels = mentionedPageLabels.length ? mentionedPageLabels : [null];
-
-            for (const mentionedPageLabel of labels) {
-                lines.push(
-                    tagLine
-                        ? `- [${formatCommentLinkLabel(comment, mentionedPageLabel ?? undefined, pageNoteOrdinals.get(comment.id))}](${buildCommentLocationUrl(vaultName, comment)})  ${tagLine}`
-                        : `- [${formatCommentLinkLabel(comment, mentionedPageLabel ?? undefined, pageNoteOrdinals.get(comment.id))}](${buildCommentLocationUrl(vaultName, comment)})`
-                );
+        let renderedSectionCount = 0;
+        for (const section of COMMENT_SECTION_DEFINITIONS) {
+            const sectionComments = fileComments.filter((comment) => getCommentSectionKey(comment) === section.key);
+            if (!sectionComments.length) {
+                continue;
             }
+
+            for (const comment of sectionComments) {
+                const tagLine = formatCommentTags(comment);
+                const mentionedPageLabels = dedupeMentionedPageLabels(options.getMentionedPageLabels?.(comment) ?? []);
+                const labels = mentionedPageLabels.length ? mentionedPageLabels : [null];
+                const commentUrl = `${buildCommentLocationUrl(vaultName, comment)}&kind=${section.key}`;
+                const marker = formatCommentKindMarker(comment);
+
+                for (const mentionedPageLabel of labels) {
+                    lines.push(
+                        tagLine
+                            ? `${marker} [${formatCommentLinkLabel(comment, mentionedPageLabel ?? undefined, pageNoteOrdinals.get(comment.id))}](${commentUrl})  ${tagLine}`
+                            : `${marker} [${formatCommentLinkLabel(comment, mentionedPageLabel ?? undefined, pageNoteOrdinals.get(comment.id))}](${commentUrl})`
+                    );
+                }
+            }
+
+            renderedSectionCount += 1;
         }
 
         lines.push("");

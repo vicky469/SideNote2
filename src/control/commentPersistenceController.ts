@@ -353,6 +353,10 @@ export class CommentPersistenceController {
             headerImageUrl: this.host.getIndexHeaderImageUrl(),
             headerImageCaption: this.host.getIndexHeaderImageCaption(),
             getMentionedPageLabels: (comment: Comment) => this.host.getCommentMentionedPageLabels(comment),
+            resolveWikiLinkPath: (linkPath: string, sourceFilePath: string) => {
+                const linkedFile = this.host.app.metadataCache.getFirstLinkpathDest(linkPath, sourceFilePath);
+                return linkedFile instanceof TFile ? linkedFile.path : null;
+            },
         };
         const nextContent = buildAllCommentsNoteContent(this.host.app.vault.getName(), comments, noteOptions);
         const allCommentsNotePath = this.host.getAllCommentsNotePath();

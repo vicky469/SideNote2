@@ -53,7 +53,7 @@ test("note-backed comment lifecycle stays aligned with aggregate output", () => 
     const aggregateWhenResolved = buildAllCommentsNoteContent("dev", parsed.comments);
     assert.match(
         aggregateWhenResolved,
-        /-\s+\[~~beta~~\]\(obsidian:\/\/side-note2-comment\?vault=dev&file=Folder%2FNote\.md&commentId=comment-1\)/
+        /\[~~beta~~\]\(obsidian:\/\/side-note2-comment\?vault=dev&file=Folder%2FNote\.md&commentId=comment-1&kind=anchored\)/
     );
 
     manager.replaceCommentsForFile(filePath, parsed.comments);
@@ -66,7 +66,7 @@ test("note-backed comment lifecycle stays aligned with aggregate output", () => 
     const aggregateWhenReopened = buildAllCommentsNoteContent("dev", parsed.comments);
     assert.match(
         aggregateWhenReopened,
-        /-\s+\[beta\]\(obsidian:\/\/side-note2-comment\?vault=dev&file=Folder%2FNote\.md&commentId=comment-1\)/
+        /\[beta\]\(obsidian:\/\/side-note2-comment\?vault=dev&file=Folder%2FNote\.md&commentId=comment-1&kind=anchored\)/
     );
 
     manager.replaceCommentsForFile(filePath, parsed.comments);

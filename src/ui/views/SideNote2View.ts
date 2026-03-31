@@ -1,5 +1,6 @@
-import { ItemView, MarkdownRenderer, TFile, WorkspaceLeaf, setIcon, type ViewStateResult } from "obsidian";
+import { ItemView, MarkdownRenderer, TFile, WorkspaceLeaf, normalizePath, setIcon, type Hotkey, type ViewStateResult } from "obsidian";
 import type { Comment } from "../../commentManager";
+import { buildThoughtTrailLines } from "../../core/derived/thoughtTrail";
 import type { DraftComment } from "../../domain/drafts";
 import type SideNote2 from "../../main";
 import ConfirmDeleteModal from "../modals/ConfirmDeleteModal";
@@ -8,8 +9,10 @@ import SideNoteTagSuggestModal from "../modals/SideNoteTagSuggestModal";
 import { SIDE_NOTE2_ICON_ID } from "../sideNote2Icon";
 import { buildSidebarSections, type SidebarSectionKey } from "./sidebarCommentSections";
 import {
+    DEFAULT_HIGHLIGHT_HOTKEY,
     SidebarDraftEditorController,
     getSidebarComments,
+    resolveHighlightHotkeysFromConfig,
 } from "./sidebarDraftEditor";
 import { renderDraftCommentCard } from "./sidebarDraftComment";
 import { SidebarInteractionController } from "./sidebarInteractionController";
@@ -20,12 +23,32 @@ function isDraftComment(comment: Comment | DraftComment): comment is DraftCommen
     return "mode" in comment;
 }
 
+type IndexSidebarMode = "list" | "thought-trail";
+
+async function loadConfiguredHighlightHotkeys(view: ItemView): Promise<Hotkey[]> {
+    const hotkeysPath = normalizePath(`${view.app.vault.configDir}/hotkeys.json`);
+
+    try {
+        if (!(await view.app.vault.adapter.exists(hotkeysPath))) {
+            return [DEFAULT_HIGHLIGHT_HOTKEY];
+        }
+
+        const rawConfig = await view.app.vault.adapter.read(hotkeysPath);
+        const parsed = JSON.parse(rawConfig) as Record<string, unknown>;
+        return resolveHighlightHotkeysFromConfig(parsed["editor:toggle-highlight"]);
+    } catch (error) {
+        console.warn("Failed to load configured highlight hotkeys for SideNote2 draft editor", error);
+        return [DEFAULT_HIGHLIGHT_HOTKEY];
+    }
+}
+
 export default class SideNote2View extends ItemView {
     private file: TFile | null = null;
     private plugin: SideNote2;
     private renderVersion = 0;
     private readonly draftEditorController: SidebarDraftEditorController;
     private readonly interactionController: SidebarInteractionController;
+    private indexSidebarMode: IndexSidebarMode = "list";
     private readonly sectionExpandedState: Record<SidebarSectionKey, boolean> = {
         page: true,
         anchored: true,
@@ -68,7 +91,7 @@ export default class SideNote2View extends ItemView {
             openTagSuggestModal: (options) => {
                 new SideNoteTagSuggestModal(this.app, options).open();
             },
-        });
+        }, () => loadConfiguredHighlightHotkeys(this));
     }
 
     getViewType() {
@@ -88,6 +111,7 @@ export default class SideNote2View extends ItemView {
         if (!this.file) {
             this.file = this.plugin.getSidebarTargetFile();
         }
+        await this.draftEditorController.refreshFormattingHotkeys();
         await this.renderComments();
         document.addEventListener("keydown", this.interactionController.documentKeydownHandler, true);
         document.addEventListener("copy", this.interactionController.documentCopyHandler, true);
@@ -156,7 +180,19 @@ export default class SideNote2View extends ItemView {
             const commentsForFile = getSidebarComments(persistedComments, draftComment, showResolved);
             const commentsContainer = this.containerEl.createDiv("sidenote2-comments-container");
 
-            this.renderSidebarToolbar(commentsContainer, resolvedCount, hasResolvedComments);
+            this.renderSidebarToolbar(commentsContainer, {
+                isAllCommentsView,
+                resolvedCount,
+                hasResolvedComments,
+            });
+
+            if (isAllCommentsView && this.indexSidebarMode === "thought-trail") {
+                const trailComments = showResolved
+                    ? persistedComments
+                    : persistedComments.filter((comment) => !comment.resolved);
+                await this.renderThoughtTrail(commentsContainer, trailComments, file);
+                return;
+            }
 
             const sections = buildSidebarSections(commentsForFile);
             for (const section of sections) {
@@ -211,46 +247,108 @@ export default class SideNote2View extends ItemView {
 
     private renderSidebarToolbar(
         container: HTMLElement,
-        resolvedCount: number,
-        hasResolvedComments: boolean,
+        options: {
+            isAllCommentsView: boolean;
+            resolvedCount: number;
+            hasResolvedComments: boolean;
+        },
     ) {
-        if (!hasResolvedComments) {
+        if (!options.isAllCommentsView && !options.hasResolvedComments) {
             return;
         }
 
         const toolbarEl = container.createDiv("sidenote2-sidebar-toolbar");
+        toolbarEl.classList.toggle("is-index-toolbar", options.isAllCommentsView);
+        if (options.isAllCommentsView) {
+            const modeGroup = toolbarEl.createDiv("sidenote2-sidebar-toolbar-group");
+            this.renderToolbarChip(modeGroup, {
+                label: "List",
+                active: this.indexSidebarMode === "list",
+                ariaLabel: "Show index list",
+                title: "Show index list",
+                onClick: () => {
+                    if (this.indexSidebarMode === "list") {
+                        return;
+                    }
+
+                    this.indexSidebarMode = "list";
+                    void this.renderComments();
+                },
+            });
+            this.renderToolbarChip(modeGroup, {
+                label: "Thought Trail",
+                active: this.indexSidebarMode === "thought-trail",
+                ariaLabel: "Show thought trail",
+                title: "Show thought trail",
+                onClick: () => {
+                    if (this.indexSidebarMode === "thought-trail") {
+                        return;
+                    }
+
+                    this.indexSidebarMode = "thought-trail";
+                    void this.renderComments();
+                },
+            });
+        }
+
+        if (!options.hasResolvedComments) {
+            return;
+        }
+
+        const filterGroup = toolbarEl.createDiv("sidenote2-sidebar-toolbar-group");
         const showResolved = this.plugin.shouldShowResolvedComments();
-        const toggleButton = toolbarEl.createEl("button", {
-            cls: `sidenote2-filter-chip${showResolved ? " is-active" : ""}`,
+        this.renderToolbarChip(filterGroup, {
+            label: "Resolved",
+            active: showResolved,
+            ariaLabel: showResolved ? "Hide resolved comments" : "Show resolved comments",
+            title: showResolved ? "Hide resolved comments" : "Show resolved comments",
+            count: String(options.resolvedCount),
+            showIndicator: true,
+            onClick: () => {
+                void this.plugin.setShowResolvedComments(!showResolved);
+            },
         });
-        toggleButton.setAttribute("type", "button");
-        toggleButton.setAttribute("aria-pressed", showResolved ? "true" : "false");
-        toggleButton.setAttribute(
-            "aria-label",
-            showResolved ? "Hide resolved comments" : "Show resolved comments"
-        );
-        toggleButton.setAttribute(
-            "title",
-            showResolved ? "Hide resolved comments" : "Show resolved comments"
-        );
+    }
 
-        toggleButton.createSpan({
-            cls: "sidenote2-filter-chip-indicator",
+    private renderToolbarChip(
+        container: HTMLElement,
+        options: {
+            label: string;
+            active: boolean;
+            ariaLabel: string;
+            title: string;
+            onClick: () => void;
+            count?: string;
+            showIndicator?: boolean;
+        },
+    ): void {
+        const button = container.createEl("button", {
+            cls: `sidenote2-filter-chip${options.active ? " is-active" : ""}`,
         });
+        button.setAttribute("type", "button");
+        button.setAttribute("aria-pressed", options.active ? "true" : "false");
+        button.setAttribute("aria-label", options.ariaLabel);
+        button.setAttribute("title", options.title);
 
-        toggleButton.createSpan({
-            text: "Resolved",
+        if (options.showIndicator) {
+            button.createSpan({
+                cls: "sidenote2-filter-chip-indicator",
+            });
+        }
+
+        button.createSpan({
+            text: options.label,
             cls: "sidenote2-filter-chip-label",
         });
 
-        toggleButton.createSpan({
-            text: String(resolvedCount),
-            cls: "sidenote2-filter-chip-count",
-        });
+        if (options.count !== undefined) {
+            button.createSpan({
+                text: options.count,
+                cls: "sidenote2-filter-chip-count",
+            });
+        }
 
-        toggleButton.onclick = () => {
-            this.plugin.setShowResolvedComments(!showResolved);
-        };
+        button.onclick = options.onClick;
     }
 
     private renderCommentSection(
@@ -360,6 +458,31 @@ export default class SideNote2View extends ItemView {
                 void this.plugin.cancelDraft(commentId);
             },
         }, this.draftEditorController);
+    }
+
+    private async renderThoughtTrail(commentsContainer: HTMLDivElement, comments: Comment[], file: TFile): Promise<void> {
+        const thoughtTrailEl = commentsContainer.createDiv("sidenote2-thought-trail");
+        const thoughtTrailLines = buildThoughtTrailLines(this.app.vault.getName(), comments, {
+            allCommentsNotePath: this.plugin.getAllCommentsNotePath(),
+            resolveWikiLinkPath: (linkPath, sourceFilePath) => {
+                const linkedFile = this.app.metadataCache.getFirstLinkpathDest(linkPath, sourceFilePath);
+                return linkedFile instanceof TFile ? linkedFile.path : null;
+            },
+        });
+
+        if (!thoughtTrailLines.length) {
+            const emptyStateEl = thoughtTrailEl.createDiv("sidenote2-empty-state sidenote2-section-empty-state");
+            emptyStateEl.createEl("p", { text: "No thought trail yet." });
+            emptyStateEl.createEl("p", { text: "Add wiki links inside side notes to connect files into a trail." });
+            return;
+        }
+
+        await MarkdownRenderer.renderMarkdown(
+            thoughtTrailLines.join("\n"),
+            thoughtTrailEl,
+            file.path,
+            this.plugin,
+        );
     }
 
     getState(): CustomViewState {

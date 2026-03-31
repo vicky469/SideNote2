@@ -46,7 +46,7 @@ export interface PluginRegistrationHost {
     addRibbonIcon(icon: string, title: string, callback: () => void): void;
     createSidebarView(leaf: unknown): unknown;
     startDraftFromEditorSelection(editor: EditorSelectionLike, file: TFile | null): Promise<unknown>;
-    openCommentById(filePath: string, commentId: string): Promise<void>;
+    activateViewAndHighlightComment(commentId: string): Promise<void>;
     activateView(): Promise<void> | void;
 }
 
@@ -72,7 +72,7 @@ export class PluginRegistrationController {
                 return;
             }
 
-            void this.host.openCommentById(target.filePath, target.commentId);
+            void this.host.activateViewAndHighlightComment(target.commentId);
         });
         this.host.removeCommand(`${this.host.manifestId}:activate-view`);
 
