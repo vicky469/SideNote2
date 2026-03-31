@@ -14,7 +14,7 @@ import {
     normalizeAllCommentsNoteImageUrl,
     normalizeAllCommentsNotePath,
     parseCommentLocationUrl,
-} from "../src/core/allCommentsNote";
+} from "../src/core/derived/allCommentsNote";
 import type { Comment } from "../src/commentManager";
 
 function createComment(overrides: Partial<Comment> = {}): Comment {

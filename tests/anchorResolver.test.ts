@@ -1,6 +1,6 @@
 import * as assert from "node:assert/strict";
 import test from "node:test";
-import { pickExactTextMatch, resolveAnchorRange } from "../src/core/anchorResolver";
+import { pickExactTextMatch, resolveAnchorRange } from "../src/core/anchors/anchorResolver";
 import type { Comment } from "../src/commentManager";
 import { CommentManager } from "../src/commentManager";
 

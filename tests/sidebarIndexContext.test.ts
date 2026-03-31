@@ -1,6 +1,16 @@
 import * as assert from "node:assert/strict";
 import test from "node:test";
-import { ALL_COMMENTS_NOTE_PATH } from "../src/core/allCommentsNote";
+import {
+    pickPinnedCommentableFile,
+    pickPreferredFileLeafCandidate,
+    pickSidebarTargetFile,
+} from "../src/control/commentNavigationPlanner";
+import {
+    resolveIndexLeafMode,
+    resolveWorkspaceFileTargets,
+} from "../src/control/workspaceContextPlanner";
+import { shouldSkipAggregateViewRefresh } from "../src/control/commentPersistencePlanner";
+import { ALL_COMMENTS_NOTE_PATH } from "../src/core/derived/allCommentsNote";
 
 interface MockFile {
     path: string;
@@ -43,11 +53,11 @@ class MockPlugin {
     }
 
     getSidebarTargetFileFixed(activeFile: MockFile | null): MockFile | null {
-        if (activeFile && activeFile.extension === "md") {
-            return activeFile;
-        }
-
-        return this.activeMarkdownFile;
+        return pickSidebarTargetFile(
+            activeFile,
+            this.activeMarkdownFile,
+            (file): file is MockFile => !!file && file.extension === "md",
+        );
     }
 
     handleFileOpenOld(file: MockFile | null): MockFile | null {
@@ -60,15 +70,14 @@ class MockPlugin {
     }
 
     handleFileOpenFixed(file: MockFile | null): MockFile | null {
-        if (!(file && file.extension === "md")) {
-            return null;
-        }
-
-        if (file.path !== ALL_COMMENTS_NOTE_PATH) {
-            this.activeMarkdownFile = file;
-        }
-
-        return file;
+        const nextState = resolveWorkspaceFileTargets(
+            file,
+            this.activeMarkdownFile,
+            (candidate): candidate is MockFile => !!candidate && candidate.extension === "md" && candidate.path !== ALL_COMMENTS_NOTE_PATH,
+            (candidate): candidate is MockFile => !!candidate && candidate.extension === "md",
+        );
+        this.activeMarkdownFile = nextState.activeMarkdownFile;
+        return nextState.sidebarFile;
     }
 
     getDraftForFile(filePath: string): MockDraftComment | null {
@@ -101,31 +110,18 @@ class MockPlugin {
     }
 
     getRevealTargetFixed(leaves: MockLeaf[], filePath: string): string {
-        const exactLeaf = leaves.find((leaf) => leaf.kind === "file" && leaf.filePath === filePath);
-        if (exactLeaf) {
-            return exactLeaf.id;
-        }
+        const leaf = pickPreferredFileLeafCandidate(
+            leaves.map((candidate) => ({
+                value: candidate,
+                filePath: candidate.filePath ?? null,
+                eligible: candidate.kind === "file",
+                active: candidate.active === true,
+                recent: candidate.recent === true,
+            })),
+            filePath,
+        );
 
-        const activeFileLeaf = leaves.find((leaf) => leaf.kind === "file" && leaf.active);
-        if (activeFileLeaf) {
-            return activeFileLeaf.id;
-        }
-
-        const recentFileLeaf = leaves.find((leaf) => leaf.kind === "file" && leaf.recent);
-        if (recentFileLeaf) {
-            return recentFileLeaf.id;
-        }
-
-        const anyFileLeaf = leaves.find((leaf) => leaf.kind === "file");
-        return anyFileLeaf?.id ?? "existing-or-new";
-    }
-
-    shouldSkipAggregateViewRefreshOld(currentContent: string, nextContent: string): boolean {
-        return currentContent === nextContent;
-    }
-
-    shouldSkipAggregateViewRefreshFixed(currentContent: string, nextContent: string, hasOpenView: boolean): boolean {
-        return currentContent === nextContent && !hasOpenView;
+        return leaf?.id ?? "existing-or-new";
     }
 
     syncIndexLeafModeOld(leaf: MockLeaf): MockLeaf {
@@ -137,15 +133,14 @@ class MockPlugin {
     }
 
     syncIndexLeafModeFixed(leaf: MockLeaf): MockLeaf {
-        if (leaf.kind !== "file") {
-            return leaf;
-        }
+        const nextMode = resolveIndexLeafMode({
+            isMarkdownLeaf: leaf.kind === "file",
+            isIndexLeaf: leaf.filePath === ALL_COMMENTS_NOTE_PATH,
+            currentMode: leaf.mode ?? "source",
+            sourceFlag: leaf.mode === "preview",
+        });
 
-        if (leaf.filePath === ALL_COMMENTS_NOTE_PATH) {
-            return { ...leaf, mode: "preview" };
-        }
-
-        return { ...leaf, mode: "source" };
+        return nextMode ? { ...leaf, mode: nextMode } : leaf;
     }
 }
 
@@ -169,6 +164,17 @@ test("fixed sidebar target uses SideNote2 index when it is the active note", () 
     assert.deepEqual(target, { path: ALL_COMMENTS_NOTE_PATH, extension: "md" });
 });
 
+test("pinned commentable file falls back from an unsupported active file to the sidebar target", () => {
+    const target = pickPinnedCommentableFile(
+        { path: "image.png", extension: "png" },
+        { path: "doc.pdf", extension: "pdf" },
+        { path: "last-note.md", extension: "md" },
+        (file): file is MockFile => !!file && (file.extension === "md" || file.extension === "pdf"),
+    );
+
+    assert.deepEqual(target, { path: "doc.pdf", extension: "pdf" });
+});
+
 test("fixed file-open keeps the last normal note while still targeting SideNote2 index", () => {
     const plugin = new MockPlugin();
     const openedFile = plugin.handleFileOpenFixed({
@@ -178,6 +184,19 @@ test("fixed file-open keeps the last normal note while still targeting SideNote2
 
     assert.deepEqual(openedFile, { path: ALL_COMMENTS_NOTE_PATH, extension: "md" });
     assert.deepEqual(plugin.activeMarkdownFile, { path: "last-note.md", extension: "md" });
+});
+
+test("workspace file targets preserve the last markdown note while pointing the sidebar at index", () => {
+    const target = resolveWorkspaceFileTargets(
+        { path: ALL_COMMENTS_NOTE_PATH, extension: "md" },
+        { path: "last-note.md", extension: "md" },
+        (file): file is MockFile => !!file && file.extension === "md" && file.path !== ALL_COMMENTS_NOTE_PATH,
+        (file): file is MockFile => !!file && file.extension === "md",
+    );
+
+    assert.deepEqual(target.activeMarkdownFile, { path: "last-note.md", extension: "md" });
+    assert.deepEqual(target.activeSidebarFile, { path: ALL_COMMENTS_NOTE_PATH, extension: "md" });
+    assert.deepEqual(target.sidebarFile, { path: ALL_COMMENTS_NOTE_PATH, extension: "md" });
 });
 
 test("draft can stay tied to the source file while rendering in SideNote2 index", () => {
@@ -233,11 +252,12 @@ test("fixed reveal flow reuses an existing file leaf instead of forcing a new ta
 });
 
 test("fixed aggregate refresh still updates an open index view when content is unchanged", () => {
-    const plugin = new MockPlugin();
+    const shouldSkipOldAggregateRefresh = (currentContent: string, nextContent: string): boolean =>
+        currentContent === nextContent;
 
-    assert.equal(plugin.shouldSkipAggregateViewRefreshOld("same", "same"), true);
-    assert.equal(plugin.shouldSkipAggregateViewRefreshFixed("same", "same", true), false);
-    assert.equal(plugin.shouldSkipAggregateViewRefreshFixed("same", "same", false), true);
+    assert.equal(shouldSkipOldAggregateRefresh("same", "same"), true);
+    assert.equal(shouldSkipAggregateViewRefresh("same", "same", true), false);
+    assert.equal(shouldSkipAggregateViewRefresh("same", "same", false), true);
 });
 
 test("fixed index preview mode returns non-index files to the default editing mode", () => {

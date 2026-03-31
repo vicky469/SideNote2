@@ -1,5 +1,5 @@
 import type { LinkCache, Pos } from "obsidian";
-import type { Comment } from "../commentManager";
+import type { Comment } from "../../commentManager";
 
 export interface ExtractedWikiLink {
     linkPath: string;

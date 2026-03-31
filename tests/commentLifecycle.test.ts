@@ -5,8 +5,8 @@ import {
     ALL_COMMENTS_NOTE_IMAGE_CAPTION,
     ALL_COMMENTS_NOTE_IMAGE_URL,
     buildAllCommentsNoteContent,
-} from "../src/core/allCommentsNote";
-import { parseNoteComments, serializeNoteComments } from "../src/core/noteCommentStorage";
+} from "../src/core/derived/allCommentsNote";
+import { parseNoteComments, serializeNoteComments } from "../src/core/storage/noteCommentStorage";
 import type { Comment } from "../src/commentManager";
 import { CommentManager } from "../src/commentManager";
 

@@ -1,6 +1,6 @@
-import type { Comment } from "../commentManager";
-import { isAnchoredComment } from "./commentAnchors";
-import { sortCommentsByPosition } from "./noteCommentStorage";
+import type { Comment } from "../../commentManager";
+import { isAnchoredComment } from "../anchors/commentAnchors";
+import { sortCommentsByPosition } from "../storage/noteCommentStorage";
 
 export interface EditorHighlightRange {
     commentId: string;

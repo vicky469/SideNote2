@@ -1,12 +1,12 @@
 import * as assert from "node:assert/strict";
 import test from "node:test";
-import { ALL_COMMENTS_NOTE_PATH } from "../src/core/allCommentsNote";
+import { ALL_COMMENTS_NOTE_PATH } from "../src/core/derived/allCommentsNote";
 import {
     isAttachmentCommentablePath,
     isMarkdownCommentablePath,
     isSidebarSupportedPath,
-} from "../src/core/commentableFiles";
-import { getPageCommentLabel } from "../src/core/commentAnchors";
+} from "../src/core/rules/commentableFiles";
+import { getPageCommentLabel } from "../src/core/anchors/commentAnchors";
 
 test("commentable file helpers distinguish markdown, PDF, and index files", () => {
     assert.equal(isMarkdownCommentablePath("notes/tmp.md"), true);

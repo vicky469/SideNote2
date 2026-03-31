@@ -1,6 +1,6 @@
 import * as assert from "node:assert/strict";
 import test from "node:test";
-import { buildDerivedCommentLinks, extractWikiLinkPaths, extractWikiLinks } from "../src/core/commentMentions";
+import { buildDerivedCommentLinks, extractWikiLinkPaths, extractWikiLinks } from "../src/core/text/commentMentions";
 import type { Comment } from "../src/commentManager";
 
 function createComment(overrides: Partial<Comment> = {}): Comment {

@@ -1,7 +1,7 @@
 import * as assert from "node:assert/strict";
 import test from "node:test";
 import type { Comment } from "../src/commentManager";
-import { buildEditorHighlightRanges } from "../src/core/editorHighlightRanges";
+import { buildEditorHighlightRanges } from "../src/core/derived/editorHighlightRanges";
 
 function createComment(overrides: Partial<Comment> = {}): Comment {
     return {

@@ -180,7 +180,7 @@ async function loadCommentBody(options) {
 }
 
 async function loadStorageModule(repoRoot) {
-    const entryPoint = path.resolve(repoRoot, "src/core/noteCommentStorage.ts");
+    const entryPoint = path.resolve(repoRoot, "src/core/storage/noteCommentStorage.ts");
     const result = await esbuild.build({
         entryPoints: [entryPoint],
         bundle: true,

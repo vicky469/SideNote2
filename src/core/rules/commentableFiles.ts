@@ -1,5 +1,5 @@
 import type { TFile } from "obsidian";
-import { isAllCommentsNotePath } from "./allCommentsNote";
+import { isAllCommentsNotePath } from "../derived/allCommentsNote";
 
 export function isMarkdownCommentablePath(filePath: string, allCommentsNotePath?: string): boolean {
     return /\.md$/i.test(filePath) && !isAllCommentsNotePath(filePath, allCommentsNotePath);

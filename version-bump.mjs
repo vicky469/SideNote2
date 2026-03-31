@@ -1,4 +1,4 @@
-import { readFileSync, writeFileSync } from "fs";
+import { existsSync, readFileSync, writeFileSync } from "fs";
 
 const targetVersion = process.env.npm_package_version;
 
@@ -24,22 +24,24 @@ function getNextPatchVersion(version) {
 }
 
 function syncBetaDocs(version) {
-	const nextPatchVersion = getNextPatchVersion(version);
+    const nextPatchVersion = getNextPatchVersion(version);
 
 	const betaReleasePath = "docs/README-beta-release.md";
-	const betaReleaseContent = readFileSync(betaReleasePath, "utf8");
-	const nextBetaReleaseContent = replaceRequired(
-		replaceRequired(
-			betaReleaseContent,
-			/- Current beta tag: `[^`]+`/,
-			`- Current beta tag: \`${version}\``,
-			`${betaReleasePath} current beta tag`,
-		),
-		/Ship fixes as new patch releases, for example `[^`]+`, `[^`]+`, and so on\./,
-		`Ship fixes as new patch releases, for example \`${version}\`, \`${nextPatchVersion}\`, and so on.`,
-		`${betaReleasePath} patch example line`,
-	);
-	writeFileSync(betaReleasePath, nextBetaReleaseContent);
+	if (existsSync(betaReleasePath)) {
+		const betaReleaseContent = readFileSync(betaReleasePath, "utf8");
+		const nextBetaReleaseContent = replaceRequired(
+			replaceRequired(
+				betaReleaseContent,
+				/- Current beta tag: `[^`]+`/,
+				`- Current beta tag: \`${version}\``,
+				`${betaReleasePath} current beta tag`,
+			),
+			/Ship fixes as new patch releases, for example `[^`]+`, `[^`]+`, and so on\./,
+			`Ship fixes as new patch releases, for example \`${version}\`, \`${nextPatchVersion}\`, and so on.`,
+			`${betaReleasePath} patch example line`,
+		);
+		writeFileSync(betaReleasePath, nextBetaReleaseContent);
+	}
 
 	const readmePath = "README.md";
 	const readmeContent = readFileSync(readmePath, "utf8");

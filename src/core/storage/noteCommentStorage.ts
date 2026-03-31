@@ -1,4 +1,4 @@
-import type { Comment } from "../commentManager";
+import type { Comment } from "../../commentManager";
 
 const HIDDEN_SECTION_OPEN = "<!-- SideNote2 comments";
 const HIDDEN_SECTION_CLOSE = "-->";

@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import * as path from "node:path";
 import test from "node:test";
 import { promisify } from "node:util";
-import { parseNoteComments, serializeNoteComments } from "../src/core/noteCommentStorage";
+import { parseNoteComments, serializeNoteComments } from "../src/core/storage/noteCommentStorage";
 import type { Comment } from "../src/commentManager";
 
 const execFile = promisify(execFileCallback);

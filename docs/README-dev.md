@@ -71,7 +71,7 @@ npm run dev
 - `npm test` runs the Node test suite.
 - `npm run skill:install` copies the packaged SideNote2 Codex skill into the default Codex skills directory. This matches the end-user install flow.
 - `npm run comment:update -- --file "/abs/path/note.md" --id "<comment-id>" --comment-file "/abs/path/comment.md"` updates one stored comment body using the same managed block format as the plugin.
-- `npm version patch|minor|major` updates `package.json`, `manifest.json`, `versions.json`, and the beta release docs together for a release bump.
+- `npm version patch|minor|major` updates `package.json`, `manifest.json`, `versions.json`, and the README beta badge together for a release bump.
 - The test suite covers the note-backed comment lifecycle, comment retargeting and pruning, JSON storage updates, aggregate note generation, and the parsed-note cache plus aggregate index behavior.
 
 The canonical repo skill lives in `skills/side-note2-note-comments/`.

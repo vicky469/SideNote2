@@ -3,7 +3,7 @@ import {
     normalizeAllCommentsNoteImageCaption,
     normalizeAllCommentsNoteImageUrl,
     normalizeAllCommentsNotePath,
-} from "../../core/allCommentsNote";
+} from "../../core/derived/allCommentsNote";
 import { setDebugEnabled } from "../../debug";
 import type SideNote2 from "../../main";
 

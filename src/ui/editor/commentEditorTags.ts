@@ -1,4 +1,4 @@
-import { isTagCharacter } from "../../core/commentTags";
+import { isTagCharacter } from "../../core/text/commentTags";
 import type { TextEditResult } from "./commentEditorFormatting";
 
 export interface TagQueryMatch {

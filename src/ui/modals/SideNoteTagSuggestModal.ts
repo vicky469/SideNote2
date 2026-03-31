@@ -1,5 +1,5 @@
 import { App, SuggestModal, getAllTags } from "obsidian";
-import { isTagCharacter, normalizeTagText } from "../../core/commentTags";
+import { isTagCharacter, normalizeTagText } from "../../core/text/commentTags";
 
 interface ExistingTagSuggestion {
     type: "existing";

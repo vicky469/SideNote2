@@ -5,7 +5,7 @@ import {
     chooseCommentStateForOpenEditor,
     shouldDeferManagedCommentPersist,
     syncLoadedCommentsForCurrentNote,
-} from "../src/core/commentSyncPolicy";
+} from "../src/core/rules/commentSyncPolicy";
 
 function createComment(overrides: Partial<Comment> = {}): Comment {
     return {

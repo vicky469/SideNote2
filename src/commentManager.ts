@@ -1,5 +1,5 @@
-import { resolveAnchorRange } from "./core/anchorResolver";
-import { getPageCommentLabel, isPageComment } from "./core/commentAnchors";
+import { resolveAnchorRange } from "./core/anchors/anchorResolver";
+import { getPageCommentLabel, isPageComment } from "./core/anchors/commentAnchors";
 
 export type CommentAnchorKind = "selection" | "page";
 

@@ -1,6 +1,6 @@
 import * as assert from "node:assert/strict";
 import test from "node:test";
-import { parsePromptDeleteSetting } from "../src/core/appConfig";
+import { parsePromptDeleteSetting } from "../src/core/config/appConfig";
 
 test("parsePromptDeleteSetting returns the core promptDelete toggle when present", () => {
     assert.equal(parsePromptDeleteSetting('{"promptDelete":true}'), true);

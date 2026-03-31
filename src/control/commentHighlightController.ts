@@ -1,0 +1,425 @@
+import { Range, StateEffect, StateField } from "@codemirror/state";
+import { Decoration, DecorationSet, EditorView, ViewPlugin, ViewUpdate } from "@codemirror/view";
+import { MarkdownView, Plugin, TFile } from "obsidian";
+import type { MarkdownPostProcessorContext } from "obsidian";
+import type { Comment as SideNoteComment } from "../commentManager";
+import type { DraftComment } from "../domain/drafts";
+import { isAnchoredComment } from "../core/anchors/commentAnchors";
+import { findCommentLocationTargetInMarkdownLine } from "../core/derived/allCommentsNote";
+import { buildEditorHighlightRanges } from "../core/derived/editorHighlightRanges";
+import { chooseCommentStateForOpenEditor } from "../core/rules/commentSyncPolicy";
+import { buildPreviewHighlightWraps } from "./commentHighlightPlanner";
+import {
+    getManagedSectionRange,
+    getManagedSectionStartLine,
+    type ParsedNoteComments,
+} from "../core/storage/noteCommentStorage";
+
+const forceHighlightRefreshEffect = StateEffect.define<null>();
+const setManagedBlockHiddenEffect = StateEffect.define<boolean>();
+
+interface ManagedBlockDecorationState {
+    hidden: boolean;
+    decorations: DecorationSet;
+}
+
+function buildManagedBlockDecorations(noteContent: string, hidden: boolean): DecorationSet {
+    if (!hidden) {
+        return Decoration.none;
+    }
+
+    const range = getManagedSectionRange(noteContent);
+    if (!range || range.toOffset <= range.fromOffset) {
+        return Decoration.none;
+    }
+
+    return Decoration.set([
+        Decoration.replace({}).range(range.fromOffset, range.toOffset),
+    ], true);
+}
+
+const managedBlockField = StateField.define<ManagedBlockDecorationState>({
+    create(state) {
+        return {
+            hidden: false,
+            decorations: buildManagedBlockDecorations(state.doc.toString(), false),
+        };
+    },
+    update(value, transaction) {
+        let hidden = value.hidden;
+
+        for (const effect of transaction.effects) {
+            if (effect.is(setManagedBlockHiddenEffect)) {
+                hidden = effect.value;
+            }
+        }
+
+        if (!transaction.docChanged && hidden === value.hidden) {
+            return value;
+        }
+
+        return {
+            hidden,
+            decorations: buildManagedBlockDecorations(transaction.state.doc.toString(), hidden),
+        };
+    },
+    provide: (field) => EditorView.decorations.from(field, (value) => value.decorations),
+});
+
+export interface CommentHighlightHost {
+    app: Plugin["app"];
+    getCommentsForFile(filePath: string): SideNoteComment[];
+    getMarkdownViewForEditorView(editorView: EditorView): MarkdownView | null;
+    getMarkdownFileByPath(path: string): TFile | null;
+    getCurrentNoteContent(file: TFile): Promise<string>;
+    getParsedNoteComments(filePath: string, noteContent: string): ParsedNoteComments;
+    isAllCommentsNotePath(path: string): boolean;
+    shouldShowResolvedComments(): boolean;
+    getDraftForFile(filePath: string): DraftComment | null;
+    getRevealedCommentId(filePath: string): string | null;
+    activateViewAndHighlightComment(commentId: string): Promise<void>;
+    openCommentById(filePath: string, commentId: string): Promise<void>;
+}
+
+export class CommentHighlightController {
+    constructor(private readonly host: CommentHighlightHost) {}
+
+    public registerMarkdownPreviewHighlights(plugin: Plugin) {
+        plugin.registerMarkdownPostProcessor(async (element, context) => {
+            await this.applyPreviewHighlights(element, context);
+        });
+    }
+
+    public createLivePreviewManagedBlockPlugin() {
+        const host = this.host;
+
+        return [
+            managedBlockField,
+            ViewPlugin.fromClass(class {
+                private hidden = false;
+                private destroyed = false;
+                private syncScheduled = false;
+
+                constructor(private readonly view: EditorView) {
+                    this.scheduleManagedBlockSync();
+                }
+
+                destroy() {
+                    this.destroyed = true;
+                    this.syncScheduled = false;
+                }
+
+                update(_update: ViewUpdate) {
+                    this.scheduleManagedBlockSync();
+                }
+
+                private scheduleManagedBlockSync() {
+                    if (this.syncScheduled || this.destroyed) {
+                        return;
+                    }
+
+                    this.syncScheduled = true;
+                    queueMicrotask(() => {
+                        this.syncScheduled = false;
+                        if (this.destroyed) {
+                            return;
+                        }
+
+                        this.syncManagedBlockVisibility();
+                    });
+                }
+
+                private syncManagedBlockVisibility() {
+                    const markdownView = host.getMarkdownViewForEditorView(this.view);
+                    const nextHidden = !!markdownView
+                        && markdownView.getMode() === "source"
+                        && markdownView.getState().source !== true
+                        && !!getManagedSectionRange(this.view.state.doc.toString());
+
+                    if (nextHidden === this.hidden) {
+                        return;
+                    }
+
+                    this.hidden = nextHidden;
+                    this.view.dispatch({
+                        effects: [setManagedBlockHiddenEffect.of(nextHidden)],
+                    });
+                }
+            }),
+        ];
+    }
+
+    public createEditorHighlightPlugin() {
+        const host = this.host;
+
+        return ViewPlugin.fromClass(class {
+            decorations: DecorationSet;
+
+            constructor(readonly view: EditorView) {
+                this.decorations = this.buildDecorations();
+            }
+
+            update(update: ViewUpdate) {
+                if (
+                    update.docChanged ||
+                    update.viewportChanged ||
+                    update.transactions.some((tr) =>
+                        tr.effects.some((effect) => effect.is(forceHighlightRefreshEffect))
+                    )
+                ) {
+                    this.decorations = this.buildDecorations();
+                }
+            }
+
+            private buildDecorations(): DecorationSet {
+                const markdownView = host.getMarkdownViewForEditorView(this.view);
+                const filePath = markdownView?.file?.path ?? null;
+                if (!filePath || host.isAllCommentsNotePath(filePath)) {
+                    return Decoration.none;
+                }
+
+                const doc = this.view.state.doc;
+                const currentNoteText = doc.toString();
+                const parsed = host.getParsedNoteComments(filePath, currentNoteText);
+                const searchableText = parsed.mainContent;
+                const decorations: Range<Decoration>[] = [];
+                const storedComments = chooseCommentStateForOpenEditor(
+                    host.getCommentsForFile(filePath),
+                    parsed.comments,
+                );
+                const draftComment = host.getDraftForFile(filePath);
+                const showResolved = host.shouldShowResolvedComments();
+                const ranges = buildEditorHighlightRanges(
+                    currentNoteText,
+                    searchableText,
+                    storedComments,
+                    draftComment,
+                    showResolved,
+                    host.getRevealedCommentId(filePath),
+                );
+
+                ranges.forEach((range) => {
+                    const classes = ["sidenote2-highlight"];
+                    if (range.resolved) {
+                        classes.push("sidenote2-highlight-resolved");
+                    }
+                    if (range.active) {
+                        classes.push("sidenote2-highlight-active");
+                    }
+
+                    decorations.push(
+                        Decoration.mark({
+                            class: classes.join(" "),
+                            attributes: {
+                                "data-comment-id": range.commentId,
+                            },
+                        }).range(range.from, range.to),
+                    );
+                });
+
+                return Decoration.set(decorations, true);
+            }
+        }, {
+            decorations: (value) => value.decorations,
+        });
+    }
+
+    public createAllCommentsLivePreviewLinkPlugin() {
+        const host = this.host;
+
+        return EditorView.domEventHandlers({
+            click(event, view) {
+                if (
+                    event.button !== 0
+                    || event.metaKey
+                    || event.ctrlKey
+                    || event.shiftKey
+                    || event.altKey
+                ) {
+                    return false;
+                }
+
+                const target = event.target;
+                if (!(target instanceof HTMLElement)) {
+                    return false;
+                }
+
+                const linkEl = target.closest(".cm-link");
+                if (!(linkEl instanceof HTMLElement)) {
+                    return false;
+                }
+
+                const markdownView = host.getMarkdownViewForEditorView(view);
+                const filePath = markdownView?.file?.path ?? null;
+                if (!filePath || !host.isAllCommentsNotePath(filePath)) {
+                    return false;
+                }
+
+                const lineEl = linkEl.closest(".cm-line");
+                if (!(lineEl instanceof HTMLElement)) {
+                    return false;
+                }
+
+                let pos: number;
+                try {
+                    pos = view.posAtDOM(lineEl, 0);
+                } catch {
+                    return false;
+                }
+
+                const safePos = Math.max(0, Math.min(pos, view.state.doc.length));
+                const lineText = view.state.doc.lineAt(safePos).text;
+                const commentTarget = findCommentLocationTargetInMarkdownLine(lineText);
+                if (!commentTarget) {
+                    return false;
+                }
+
+                event.preventDefault();
+                event.stopPropagation();
+                void host.openCommentById(commentTarget.filePath, commentTarget.commentId);
+                return true;
+            },
+        });
+    }
+
+    public refreshEditorDecorations() {
+        this.host.app.workspace.iterateAllLeaves((leaf) => {
+            if (!(leaf.view instanceof MarkdownView)) {
+                return;
+            }
+
+            const cm = (leaf.view.editor as { cm?: EditorView } | null)?.cm;
+            if (!cm?.dispatch) {
+                return;
+            }
+
+            cm.dispatch({
+                effects: [forceHighlightRefreshEffect.of(null)],
+            });
+        });
+    }
+
+    private async applyPreviewHighlights(
+        element: HTMLElement,
+        context: MarkdownPostProcessorContext,
+    ): Promise<void> {
+        const previewContainer = element.closest(".markdown-preview-view");
+        if (!previewContainer) {
+            return;
+        }
+
+        const sectionInfo = context.getSectionInfo(element);
+        if (!sectionInfo) {
+            return;
+        }
+
+        const file = this.host.getMarkdownFileByPath(context.sourcePath);
+        if (file) {
+            const noteContent = await this.host.getCurrentNoteContent(file);
+            const managedSectionStartLine = getManagedSectionStartLine(noteContent);
+            if (managedSectionStartLine !== null && sectionInfo.lineStart >= managedSectionStartLine) {
+                element.remove();
+                return;
+            }
+        }
+
+        const comments = this.host
+            .getCommentsForFile(context.sourcePath)
+            .filter((comment) =>
+                isAnchoredComment(comment)
+                && !!comment.selectedText
+                && comment.startLine >= sectionInfo.lineStart
+                && comment.endLine <= sectionInfo.lineEnd
+                && (this.host.shouldShowResolvedComments() || !comment.resolved),
+            );
+        if (!comments.length) {
+            return;
+        }
+
+        const textNodes: Array<{ node: Text; start: number; end: number }> = [];
+        const walker = document.createTreeWalker(element, NodeFilter.SHOW_TEXT);
+        let offset = 0;
+
+        while (walker.nextNode()) {
+            const node = walker.currentNode as Text;
+            const value = node.nodeValue || "";
+            if (!value.length) {
+                continue;
+            }
+
+            const start = offset;
+            const end = start + value.length;
+            textNodes.push({ node, start, end });
+            offset = end;
+        }
+
+        const fullText = textNodes.map((entry) => entry.node.nodeValue || "").join("");
+        if (!fullText.length) {
+            return;
+        }
+
+        const wraps = buildPreviewHighlightWraps(
+            sectionInfo.text,
+            sectionInfo.lineStart,
+            fullText,
+            comments,
+        );
+        if (!wraps.length) {
+            return;
+        }
+
+        const activeCommentId = this.host.getRevealedCommentId(context.sourcePath);
+        const findPos = (absolute: number): { node: Text; offsetInNode: number } | null => {
+            for (const entry of textNodes) {
+                if (absolute >= entry.start && absolute <= entry.end) {
+                    return {
+                        node: entry.node,
+                        offsetInNode: absolute - entry.start,
+                    };
+                }
+            }
+
+            return null;
+        };
+
+        wraps.sort((left, right) => right.start - left.start);
+
+        for (const wrap of wraps) {
+            const startPos = findPos(wrap.start);
+            const endPos = findPos(wrap.end);
+            if (!startPos || !endPos) {
+                continue;
+            }
+
+            try {
+                const range = document.createRange();
+                range.setStart(startPos.node, startPos.offsetInNode);
+                range.setEnd(endPos.node, endPos.offsetInNode);
+
+                const span = document.createElement("span");
+                span.classList.add("sidenote2-highlight", "sidenote2-highlight-preview");
+                if (wrap.comment.resolved) {
+                    span.classList.add("sidenote2-highlight-resolved");
+                }
+                if (wrap.comment.id === activeCommentId) {
+                    span.classList.add("sidenote2-highlight-active");
+                }
+                span.dataset.commentId = wrap.comment.id;
+                span.addEventListener("click", (event: MouseEvent) => {
+                    if (event.button !== 0) {
+                        return;
+                    }
+
+                    void this.host.activateViewAndHighlightComment(wrap.comment.id);
+                });
+                span.addEventListener("contextmenu", () => {
+                    /* keep default behavior */
+                });
+
+                range.surroundContents(span);
+            } catch (error) {
+                console.warn("Failed to wrap preview highlight", error);
+            }
+        }
+    }
+}

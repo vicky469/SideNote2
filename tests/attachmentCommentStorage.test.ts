@@ -1,7 +1,7 @@
 import * as assert from "node:assert/strict";
 import test from "node:test";
 import type { Comment } from "../src/commentManager";
-import { buildAttachmentComments, parseAttachmentComments } from "../src/core/attachmentCommentStorage";
+import { buildAttachmentComments, parseAttachmentComments } from "../src/core/storage/attachmentCommentStorage";
 
 function createComment(overrides: Partial<Comment> = {}): Comment {
     return {

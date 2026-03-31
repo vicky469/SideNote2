@@ -1,6 +1,6 @@
 import * as assert from "node:assert/strict";
 import test from "node:test";
-import { extractTagsFromText } from "../src/core/commentTags";
+import { extractTagsFromText } from "../src/core/text/commentTags";
 import {
     findOpenTagQuery,
     replaceOpenTagQuery,

@@ -1,8 +1,9 @@
 import * as assert from "node:assert/strict";
 import test from "node:test";
 import type { Comment } from "../src/commentManager";
-import { AggregateCommentIndex, ParsedNoteCache } from "../src/core/commentIndexes";
-import type { ParsedNoteComments } from "../src/core/noteCommentStorage";
+import { ParsedNoteCache } from "../src/cache/ParsedNoteCache";
+import { AggregateCommentIndex } from "../src/index/AggregateCommentIndex";
+import type { ParsedNoteComments } from "../src/core/storage/noteCommentStorage";
 
 function createComment(overrides: Partial<Comment> = {}): Comment {
     return {

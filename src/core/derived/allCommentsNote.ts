@@ -1,7 +1,7 @@
-import type { Comment } from "../commentManager";
-import { getCommentSelectionLabel, getCommentStatusLabel, isAnchoredComment, isPageComment } from "./commentAnchors";
-import { extractTagsFromText } from "./commentTags";
-import { sortCommentsByPosition } from "./noteCommentStorage";
+import type { Comment } from "../../commentManager";
+import { getCommentSelectionLabel, getCommentStatusLabel, isAnchoredComment, isPageComment } from "../anchors/commentAnchors";
+import { sortCommentsByPosition } from "../storage/noteCommentStorage";
+import { extractTagsFromText } from "../text/commentTags";
 
 export const ALL_COMMENTS_NOTE_PATH = "SideNote2 index.md";
 export const LEGACY_ALL_COMMENTS_NOTE_PATH = "SideNote2 comments.md";

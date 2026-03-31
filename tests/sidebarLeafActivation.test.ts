@@ -1,5 +1,6 @@
 import * as assert from "node:assert/strict";
 import test from "node:test";
+import { shouldIgnoreWorkspaceLeafChange } from "../src/control/workspaceContextPlanner";
 
 type LeafKind = "markdown" | "sidenote" | "other";
 
@@ -26,7 +27,7 @@ class MockPlugin {
     }
 
     async handleActiveLeafChangeFixed(kind: LeafKind): Promise<void> {
-        if (kind === "sidenote") {
+        if (shouldIgnoreWorkspaceLeafChange(kind === "sidenote" ? "sidenote2-view" : "markdown")) {
             return;
         }
 

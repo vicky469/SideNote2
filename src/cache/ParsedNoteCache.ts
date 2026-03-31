@@ -1,5 +1,5 @@
 import type { Comment } from "../commentManager";
-import type { ParsedNoteComments } from "../core/noteCommentStorage";
+import type { ParsedNoteComments } from "../core/storage/noteCommentStorage";
 
 function cloneComments(comments: Comment[]): Comment[] {
     return comments.map((comment) => ({ ...comment }));

@@ -1,6 +1,6 @@
-import type { Comment } from "../commentManager";
-import { isPageComment } from "./commentAnchors";
-import { isAttachmentCommentablePath } from "./commentableFiles";
+import type { Comment } from "../../commentManager";
+import { isPageComment } from "../anchors/commentAnchors";
+import { isAttachmentCommentablePath } from "../rules/commentableFiles";
 
 interface StoredAttachmentComment {
     id: string;

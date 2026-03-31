@@ -1,5 +1,5 @@
 import type { CommentAnchorKind } from "../../commentManager";
-import { isOrphanedComment, isPageComment } from "../../core/commentAnchors";
+import { isOrphanedComment, isPageComment } from "../../core/anchors/commentAnchors";
 
 export type SidebarSectionKey = "page" | "anchored";
 

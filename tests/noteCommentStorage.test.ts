@@ -1,6 +1,6 @@
 import * as assert from "node:assert/strict";
 import test from "node:test";
-import { getManagedSectionEdit, getManagedSectionLineRange, getManagedSectionRange, getManagedSectionStartLine, parseNoteComments, replaceNoteCommentBodyById, serializeNoteComments } from "../src/core/noteCommentStorage";
+import { getManagedSectionEdit, getManagedSectionLineRange, getManagedSectionRange, getManagedSectionStartLine, parseNoteComments, replaceNoteCommentBodyById, serializeNoteComments } from "../src/core/storage/noteCommentStorage";
 import type { Comment } from "../src/commentManager";
 
 function createComment(overrides: Partial<Comment> = {}): Comment {

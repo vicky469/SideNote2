@@ -2,6 +2,7 @@
     --sidenote2-highlight-bg-alpha: 0.16;
     --sidenote2-highlight-hover-alpha: 0.24;
     --sidenote2-highlight-line-alpha: 0.38;
+    --sidenote2-index-header-max-width: 26em;
 }
 
 .theme-dark {
@@ -36,9 +37,19 @@
     margin-bottom: 0.2rem;
 }
 
+.markdown-preview-view img[alt="SideNote2 index header image"],
+.markdown-source-view.mod-cm6 .markdown-rendered img[alt="SideNote2 index header image"] {
+    display: block;
+    width: min(100%, var(--sidenote2-index-header-max-width));
+    max-width: var(--sidenote2-index-header-max-width);
+    height: auto;
+    margin: 0 auto;
+}
+
 .sidenote2-index-header-caption {
     display: block;
-    width: 100%;
+    width: min(100%, var(--sidenote2-index-header-max-width));
+    max-width: var(--sidenote2-index-header-max-width);
     margin: 0 auto 0.75rem;
     text-align: center !important;
     color: var(--text-faint) !important;
@@ -547,10 +558,6 @@
 
 .sidenote2-highlight-preview {
     border-radius: 2px;
-}
-
-.markdown-source-view.mod-cm6 .cm-line.sidenote2-managed-live-preview-line {
-    display: none;
 }
 
 @media (max-width: 768px) {

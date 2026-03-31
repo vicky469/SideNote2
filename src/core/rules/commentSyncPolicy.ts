@@ -1,4 +1,4 @@
-import type { Comment } from "../commentManager";
+import type { Comment } from "../../commentManager";
 
 interface ManagedCommentPersistDecisionOptions {
     isEditorFocused: boolean;
