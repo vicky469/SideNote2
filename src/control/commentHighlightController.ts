@@ -84,6 +84,17 @@ export interface CommentHighlightHost {
 export class CommentHighlightController {
     constructor(private readonly host: CommentHighlightHost) {}
 
+    private stripIndexCommentLinkTooltips(element: HTMLElement): void {
+        element.querySelectorAll('a.external-link[href^="obsidian://side-note2-comment"]').forEach((link) => {
+            if (!(link instanceof HTMLAnchorElement)) {
+                return;
+            }
+
+            link.removeAttribute("aria-label");
+            link.removeAttribute("data-tooltip-position");
+        });
+    }
+
     public registerMarkdownPreviewHighlights(plugin: Plugin) {
         plugin.registerMarkdownPostProcessor(async (element, context) => {
             await this.applyPreviewHighlights(element, context);
@@ -334,6 +345,11 @@ export class CommentHighlightController {
         element: HTMLElement,
         context: MarkdownPostProcessorContext,
     ): Promise<void> {
+        if (this.host.isAllCommentsNotePath(context.sourcePath)) {
+            this.stripIndexCommentLinkTooltips(element);
+            return;
+        }
+
         const previewContainer = element.closest(".markdown-preview-view");
         if (!previewContainer) {
             return;

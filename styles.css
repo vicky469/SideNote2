@@ -63,6 +63,9 @@
     padding-right: 0;
     text-decoration: none;
     color: var(--text-normal) !important;
+    font-weight: 500;
+    opacity: 0.9;
+    transition: opacity 120ms ease, color 120ms ease;
 }
 
 .sidenote2-index-note-view .markdown-preview-view a.external-link[href^="obsidian://side-note2-comment"]:hover,
@@ -70,6 +73,8 @@
 .sidenote2-index-note-view .markdown-source-view.mod-cm6 .markdown-rendered a.external-link[href^="obsidian://side-note2-comment"]:hover,
 .sidenote2-index-note-view .markdown-source-view.mod-cm6 .markdown-rendered a.external-link[href^="obsidian://side-note2-comment"]:focus-visible {
     color: var(--text-normal) !important;
+    font-weight: 700;
+    opacity: 1;
 }
 
 .sidenote2-index-heading-label {
