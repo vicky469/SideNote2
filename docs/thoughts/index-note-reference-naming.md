@@ -13,7 +13,6 @@ The index note currently renders these reference shapes:
 - anchored-note references
 - orphaned-note references
 - resolved references
-- anchored target suffixes
 - tag suffixes
 
 The current source of truth is:
@@ -53,6 +52,8 @@ Rule:
 - HTML-escape the path text
 - Sort files lexicographically by path
 - Do not make the file heading itself clickable
+- if the heading is longer than 60 characters, truncate it with `...`
+- when truncated, keep the full path in a `title` attribute for hover
 
 ## Common Label Normalization Rule
 
@@ -61,9 +62,14 @@ Before a text fragment is shown inside a label, it is normalized like this:
 - convert CRLF to LF
 - collapse repeated whitespace to single spaces
 - trim outer whitespace
-- if longer than 80 characters, truncate with `...`
 
 After that, Markdown-sensitive characters are escaped.
+
+Length rules:
+
+- selected-text previews truncate at 80 characters with `...`
+- mentioned-page labels truncate at 36 characters with `...`
+- file headings truncate at 60 characters with `...`
 
 The blank fallback currently matters only for non-page comments:
 
@@ -108,9 +114,9 @@ Rule:
 
 ## Anchored Note Naming
 
-Anchored notes use one of two label forms.
+Anchored notes use one label form.
 
-### Anchored Note Without Mentioned Page Label
+### Anchored Note Label
 
 Format:
 
@@ -127,48 +133,8 @@ Example:
 Rule:
 
 - use the normalized selection preview only
-
-### Anchored Note With Mentioned Page Label
-
-Format:
-
-```md
-[Selected Preview · Mentioned Page](...)
-```
-
-Example:
-
-```md
-[hello · Roadmap](...)
-```
-
-Rule:
-
-- keep the selection preview first
-- append the mentioned page label after ` · `
-
-## Anchored Target Suffix Rule
-
-When an anchored side note contains a resolved wiki link target, the rendered row appends a separate target suffix.
-
-Format:
-
-```html
-[Selected Preview · Mentioned Page](...) -> <a class="external-link sidenote2-index-target-link" ...>Mentioned Page</a>
-```
-
-Example:
-
-```html
-[hello · Roadmap](...) -> <a class="external-link sidenote2-index-target-link" ...>Roadmap</a>
-```
-
-Rule:
-
-- only anchored and orphaned-style rows currently use this suffix behavior
-- the suffix uses ` -> `
-- the target link opens the resolved note with `obsidian://open`
-- duplicate resolved targets for the same comment are collapsed before rendering
+- ignore mentioned-page labels for the index-note row text
+- anchored rows do not append a separate `-> target` suffix
 
 ## Orphaned Note Naming
 
@@ -265,7 +231,7 @@ If the goal is more clarity and simplicity, these are the main decision points:
 1. Should `pn` remain the visible page-note prefix, or should page-note labels become more descriptive?
 2. Should orphaned notes keep the `orphaned ·` prefix, or should orphaned state be visual only?
 3. Should anchored notes always include a stable prefix like `anchored ·`, or is plain selected text better?
-4. Should anchored rows keep both the inline mentioned-page label and the separate `-> target` suffix, or is that redundant?
+4. Should anchored rows keep rendering one row per resolved target when a side note mentions multiple distinct pages, or should that collapse further?
 5. Is the extra `kind` query param useful enough to keep if it does not affect routing today?
 
 ## Recommended Simplification Target

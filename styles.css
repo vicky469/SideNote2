@@ -26,7 +26,7 @@
     display: inline-block;
     width: 0.38em;
     height: 0.38em;
-    margin-right: 0.42em;
+    margin-right: 0.56em;
     border-radius: 999px;
     vertical-align: 0.05em;
     opacity: 0.92;
@@ -40,10 +40,16 @@
     background: var(--color-orange, var(--text-warning, var(--text-accent)));
 }
 
-.markdown-preview-view p:has(.sidenote2-index-kind-dot),
-.markdown-source-view.mod-cm6 .markdown-rendered p:has(.sidenote2-index-kind-dot) {
-    margin-block: 0.55rem;
-    line-height: 1.24;
+.sidenote2-index-note-view .markdown-preview-view p:has(.sidenote2-index-kind-dot),
+.sidenote2-index-note-view .markdown-source-view.mod-cm6 .markdown-rendered p:has(.sidenote2-index-kind-dot) {
+    margin-block: 0.42rem;
+    line-height: 1.28;
+}
+
+.sidenote2-index-note-view .markdown-preview-view p:has(.sidenote2-index-heading-label),
+.sidenote2-index-note-view .markdown-source-view.mod-cm6 .markdown-rendered p:has(.sidenote2-index-heading-label) {
+    margin-top: 0.95rem;
+    margin-bottom: 0.18rem;
 }
 
 .markdown-preview-view p:has(> img[alt="SideNote2 index header image"]),

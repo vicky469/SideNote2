@@ -163,6 +163,20 @@ test("buildAllCommentsNoteContent escapes markdown-heavy selections and truncate
     assert.match(content, /\[Use \\`\/path\/to\/SideNote2\\`, \\`\\\[Vault\\\]\\`, and \\`\\<tag\\>\\` placeholders instead of mach\.\.\.\]/);
 });
 
+test("buildAllCommentsNoteContent trims long file headings and preserves the full path on hover", () => {
+    const longPath = "Clippings/Vlad Tenev and Tudor Achim on mathematical superintelligence and the end of buggy software.md";
+    const content = buildAllCommentsNoteContent("dev", [
+        createComment({
+            filePath: longPath,
+        }),
+    ]);
+
+    assert.match(
+        content,
+        /<strong class="sidenote2-index-heading-label" title="Clippings\/Vlad Tenev and Tudor Achim on mathematical superintelligence and the end of buggy software\.md">Clippings\/Vlad Tenev and Tudor Achim on mathematical supe\.\.\.<\/strong>/,
+    );
+});
+
 test("buildAllCommentsNoteContent includes extracted comment tags for search", () => {
     const content = buildAllCommentsNoteContent("dev", [
         createComment({
@@ -238,7 +252,7 @@ test("buildAllCommentsNoteContent numbers page notes per file when no mentioned 
     assert.match(content, /<strong class="sidenote2-index-heading-label">Folder\/Other\.md<\/strong>[\s\S]*\[pn1\]\(obsidian:\/\/side-note2-comment\?vault=dev&file=Folder%2FOther\.md&commentId=page-note-other-file&kind=page\)/);
 });
 
-test("buildAllCommentsNoteContent keeps page note rows clean and expands anchored mentioned pages", () => {
+test("buildAllCommentsNoteContent keeps anchored index rows to the selected text only", () => {
     const content = buildAllCommentsNoteContent("dev", [
         createComment({
             id: "page-note",
@@ -253,7 +267,7 @@ test("buildAllCommentsNoteContent keeps page note rows clean and expands anchore
         createComment({
             id: "anchored-note",
             selectedText: "hello",
-            comment: "Track [[Roadmap]] for this",
+            comment: "Track [[note_French School of Programming, B-Method, and Line 14]] for this",
             startLine: 4,
         }),
     ], {
@@ -263,7 +277,7 @@ test("buildAllCommentsNoteContent keeps page note rows clean and expands anchore
             }
 
             if (comment.id === "anchored-note") {
-                return ["Roadmap"];
+                return ["note_French School of Programming, B-Method, and Line 14"];
             }
 
             return [];
@@ -276,10 +290,19 @@ test("buildAllCommentsNoteContent keeps page note rows clean and expands anchore
         content.match(/\[pn1\]\(obsidian:\/\/side-note2-comment\?vault=dev&file=Folder%2FNote\.md&commentId=page-note&kind=page\)/g)?.length ?? 0,
         1,
     );
-    assert.match(content, /<span class="sidenote2-index-kind-dot sidenote2-index-kind-anchored"><\/span> \[hello · Roadmap\]\(obsidian:\/\/side-note2-comment\?vault=dev&file=Folder%2FNote\.md&commentId=anchored-note&kind=anchored\)/);
+    assert.match(
+        content,
+        /<span class="sidenote2-index-kind-dot sidenote2-index-kind-anchored"><\/span> \[hello\]\(obsidian:\/\/side-note2-comment\?vault=dev&file=Folder%2FNote\.md&commentId=anchored-note&kind=anchored\)/,
+    );
+    assert.equal(
+        content.match(/\[hello\]\(obsidian:\/\/side-note2-comment\?vault=dev&file=Folder%2FNote\.md&commentId=anchored-note&kind=anchored\)/g)?.length ?? 0,
+        1,
+    );
+    assert.doesNotMatch(content, /note\\_French School of Programming/);
     assert.doesNotMatch(content, />Another page<\/a>/);
     assert.doesNotMatch(content, />Third page<\/a>/);
-    assert.match(content, /-> <a class="external-link sidenote2-index-target-link" href="obsidian:\/\/open\?vault=dev&amp;file=Roadmap\.md" target="_blank" rel="noopener nofollow">Roadmap<\/a>/);
+    assert.doesNotMatch(content, /sidenote2-index-target-link/);
+    assert.doesNotMatch(content, / -> /);
 });
 
 test("isAllCommentsNotePath matches the generated note path", () => {

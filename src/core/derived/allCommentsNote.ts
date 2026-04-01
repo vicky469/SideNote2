@@ -5,7 +5,6 @@ import {
 } from "../anchors/commentSectionOrder";
 import { getCommentSelectionLabel, getCommentStatusLabel, isAnchoredComment, isPageComment } from "../anchors/commentAnchors";
 import { sortCommentsByPosition } from "../storage/noteCommentStorage";
-import { extractWikiLinks } from "../text/commentMentions";
 import { extractTagsFromText } from "../text/commentTags";
 
 export const ALL_COMMENTS_NOTE_PATH = "SideNote2 index.md";
@@ -15,6 +14,7 @@ export const ALL_COMMENTS_NOTE_IMAGE_URL = "https://ichef.bbci.co.uk/images/ic/1
 export const ALL_COMMENTS_NOTE_IMAGE_CAPTION = "Relativity (Credit: 2015 The M.C. Escher Company - Baarn, The Netherlands)";
 export const ALL_COMMENTS_NOTE_IMAGE_ALT = "SideNote2 index header image";
 const MAX_PREVIEW_LENGTH = 80;
+const MAX_FILE_HEADING_LENGTH = 60;
 
 export interface CommentLocationTarget {
     filePath: string;
@@ -73,17 +73,17 @@ export function normalizeAllCommentsNoteImageCaption(caption: string | null | un
     return caption.trim();
 }
 
-function toInlinePreview(value: string): string {
+function toInlinePreview(value: string, maxLength: number = MAX_PREVIEW_LENGTH): string {
     const normalized = value.replace(/\r\n/g, "\n").replace(/\s+/g, " ").trim();
     if (!normalized) {
         return "(blank selection)";
     }
 
-    if (normalized.length <= MAX_PREVIEW_LENGTH) {
+    if (normalized.length <= maxLength) {
         return normalized;
     }
 
-    return `${normalized.slice(0, MAX_PREVIEW_LENGTH - 3).trimEnd()}...`;
+    return `${normalized.slice(0, maxLength - 3).trimEnd()}...`;
 }
 
 function escapeMarkdownText(value: string): string {
@@ -101,39 +101,32 @@ function escapeHtmlText(value: string): string {
         .replace(/'/g, "&#39;");
 }
 
-function buildNoteOpenUrl(vaultName: string, filePath: string): string {
-    return `obsidian://open?vault=${encodeURIComponent(vaultName)}&file=${encodeURIComponent(normalizeNotePath(filePath))}`;
-}
-
-function formatNoteOpenAnchor(vaultName: string, filePath: string, className: string, label?: string): string {
-    const normalizedLabel = label?.trim() || normalizeNotePath(filePath);
-    return `<a class="external-link ${className}" href="${escapeHtmlText(buildNoteOpenUrl(vaultName, filePath))}" target="_blank" rel="noopener nofollow">${escapeHtmlText(normalizedLabel)}</a>`;
-}
-
 function formatFileHeadingLabel(filePath: string): string {
-    return `<strong class="sidenote2-index-heading-label">${escapeHtmlText(filePath)}</strong>`;
+    const headingLabel = toInlinePreview(filePath, MAX_FILE_HEADING_LENGTH);
+    if (headingLabel === filePath) {
+        return `<strong class="sidenote2-index-heading-label">${escapeHtmlText(filePath)}</strong>`;
+    }
+
+    return `<strong class="sidenote2-index-heading-label" title="${escapeHtmlText(filePath)}">${escapeHtmlText(headingLabel)}</strong>`;
 }
 
 function formatPageNoteLabel(pageNoteOrdinal?: number): string {
     return pageNoteOrdinal ? `pn${pageNoteOrdinal}` : "pn";
 }
 
-function getCommentLinkLabelText(comment: Comment, mentionedPageLabel?: string, pageNoteOrdinal?: number): string {
+function getCommentLinkLabelText(comment: Comment, pageNoteOrdinal?: number): string {
     const selectedPreview = toInlinePreview(getCommentSelectionLabel(comment));
-    const normalizedMentionLabel = mentionedPageLabel
-        ? toInlinePreview(mentionedPageLabel)
-        : null;
     if (isPageComment(comment)) {
         return formatPageNoteLabel(pageNoteOrdinal);
     }
 
     return isAnchoredComment(comment)
-        ? (normalizedMentionLabel ? `${selectedPreview} · ${normalizedMentionLabel}` : selectedPreview)
+        ? selectedPreview
         : `${getCommentStatusLabel(comment)} · ${selectedPreview}`;
 }
 
-function formatCommentLinkLabel(comment: Comment, mentionedPageLabel?: string, pageNoteOrdinal?: number): string {
-    const escapedLabel = escapeMarkdownText(getCommentLinkLabelText(comment, mentionedPageLabel, pageNoteOrdinal));
+function formatCommentLinkLabel(comment: Comment, pageNoteOrdinal?: number): string {
+    const escapedLabel = escapeMarkdownText(getCommentLinkLabelText(comment, pageNoteOrdinal));
     if (comment.resolved) {
         return `~~${escapedLabel}~~`;
     }
@@ -203,59 +196,6 @@ export function findCommentLocationTargetInMarkdownLine(line: string): CommentLo
     return null;
 }
 
-function dedupeMentionedPageLabels(labels: string[]): string[] {
-    const seen = new Set<string>();
-    const deduped: string[] = [];
-
-    for (const label of labels) {
-        const normalized = label.trim();
-        if (!normalized || seen.has(normalized)) {
-            continue;
-        }
-
-        seen.add(normalized);
-        deduped.push(normalized);
-    }
-
-    return deduped;
-}
-
-type ResolvedMentionTarget = {
-    filePath: string;
-    label: string;
-};
-
-function buildResolvedMentionTargets(
-    comment: Comment,
-    options: AllCommentsNoteBuildOptions,
-): ResolvedMentionTarget[] {
-    const resolveWikiLinkPath = options.resolveWikiLinkPath;
-    if (!resolveWikiLinkPath) {
-        return [];
-    }
-
-    const targets: ResolvedMentionTarget[] = [];
-    const seen = new Set<string>();
-    for (const match of extractWikiLinks(comment.comment ?? "")) {
-        const resolvedPath = resolveWikiLinkPath(match.linkPath, comment.filePath);
-        if (!resolvedPath || resolvedPath === comment.filePath || isAllCommentsNotePath(resolvedPath, options.allCommentsNotePath)) {
-            continue;
-        }
-
-        if (seen.has(resolvedPath)) {
-            continue;
-        }
-
-        seen.add(resolvedPath);
-        targets.push({
-            filePath: resolvedPath,
-            label: toInlinePreview(match.displayText?.trim() || match.linkPath.trim()),
-        });
-    }
-
-    return targets;
-}
-
 export function buildAllCommentsNoteContent(
     vaultName: string,
     comments: Comment[],
@@ -311,27 +251,14 @@ export function buildAllCommentsNoteContent(
 
             for (const comment of sectionComments) {
                 const tagLine = formatCommentTags(comment);
-                const resolvedMentionTargets = buildResolvedMentionTargets(comment, options);
-                const mentionedPageLabels = resolvedMentionTargets.length
-                    ? resolvedMentionTargets.map((target) => target.label)
-                    : dedupeMentionedPageLabels(options.getMentionedPageLabels?.(comment) ?? []);
-                const labels = isPageComment(comment)
-                    ? [null]
-                    : (mentionedPageLabels.length ? mentionedPageLabels : [null]);
                 const commentUrl = `${buildCommentLocationUrl(vaultName, comment)}&kind=${section.key}`;
                 const marker = formatCommentKindMarker(comment);
 
-                for (const [index, mentionedPageLabel] of labels.entries()) {
-                    const mentionedTarget = isPageComment(comment) ? null : resolvedMentionTargets[index];
-                    const targetSuffix = mentionedTarget
-                        ? ` -> ${formatNoteOpenAnchor(vaultName, mentionedTarget.filePath, "sidenote2-index-target-link", mentionedTarget.label)}`
-                        : "";
-                    lines.push(
-                        tagLine
-                            ? `${marker} [${formatCommentLinkLabel(comment, mentionedPageLabel ?? undefined, pageNoteOrdinals.get(comment.id))}](${commentUrl})${targetSuffix}  ${tagLine}`
-                            : `${marker} [${formatCommentLinkLabel(comment, mentionedPageLabel ?? undefined, pageNoteOrdinals.get(comment.id))}](${commentUrl})${targetSuffix}`
-                    );
-                }
+                lines.push(
+                    tagLine
+                        ? `${marker} [${formatCommentLinkLabel(comment, pageNoteOrdinals.get(comment.id))}](${commentUrl})  ${tagLine}`
+                        : `${marker} [${formatCommentLinkLabel(comment, pageNoteOrdinals.get(comment.id))}](${commentUrl})`
+                );
             }
 
             renderedSectionCount += 1;
