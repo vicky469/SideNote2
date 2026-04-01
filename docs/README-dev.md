@@ -11,6 +11,7 @@ Examples:
 - `README-dev.md`
 - `architecture.md`
 - `architecture.canvas`
+- `feature-map.canvas`
 - `comment-route-map.canvas`
 - `comment-lifecycle.canvas`
 
@@ -19,6 +20,7 @@ Use `docs/thoughts/` for working notes, refactor logs, and naming or design thou
 ## Architecture
 
 See [architecture.md](./architecture.md) for the visual module map, comment route map, and lifecycle state machine.
+See [feature-map.canvas](./feature-map.canvas) for the feature-first overview.
 
 
 ## Storage

@@ -1049,17 +1049,6 @@ At the end of the refactor pass:
     "timestamp": 1774934181006
   },
   {
-    "id": "bf4de0b4-1acb-470f-9c39-6ecf51faf617",
-    "startLine": 66,
-    "startChar": 0,
-    "endLine": 66,
-    "endChar": 34,
-    "selectedText": "That produced a dependency ladder:",
-    "selectedTextHash": "e21fd8ac16c87b93f06cb9142442272b168771e0e35866f93525005b755672dc",
-    "comment": "The two lists are playing different roles.\n\nThe first 1-6 list is the decision rubric: the questions used to judge each possible seam.\n\nThe dependency ladder is the route that fell out after applying that rubric to this codebase. It is not meant to map one-to-one line by line.\n\nThe connection is more like this:\n- responsibility density + narrow host interfaces pushed `main.ts` orchestration seams upward\n- read-path-before-write-path pushed safer projection/control extractions earlier than persistence-heavy cleanup\n- persistent vs transient vs derived state pushed store extraction before later UI glue cleanup\n- unlock-later-steps is why naming/packaging came first and why thinning `main.ts` came before splitting `SideNote2View.ts`\n- testability-vs-fragmentation is why the ladder stops at a cohesive shell instead of continuing forever\n\nSo the checklist is the evaluation logic, and the ladder is the concrete move order chosen after those questions were combined.\n\nsee [[rubric-to-dependency-ladder.canvas|rubric -\u003e dependency ladder]] for how the checklist questions combine into this order.",
-    "timestamp": 1774937547719
-  },
-  {
     "id": "7437f21c-0eb8-477c-9658-1b62b189e9e1",
     "startLine": 75,
     "startChar": 0,
