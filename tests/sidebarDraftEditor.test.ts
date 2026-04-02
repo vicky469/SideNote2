@@ -65,6 +65,27 @@ test("getSidebarComments replaces the persisted version of the draft, hides reso
     ]);
 });
 
+test("getSidebarComments applies file filters to both persisted comments and drafts", () => {
+    const persistedComments = [
+        createComment({ id: "comment-a", filePath: "docs/a.md", timestamp: 100 }),
+        createComment({ id: "comment-b", filePath: "docs/b.md", timestamp: 200 }),
+    ];
+    const draft = createDraft({
+        id: "draft-1",
+        filePath: "docs/c.md",
+        timestamp: 300,
+    });
+
+    assert.deepEqual(
+        getSidebarComments(persistedComments, draft, false, ["docs/b.md"]).map((comment) => comment.id),
+        ["comment-b"],
+    );
+    assert.deepEqual(
+        getSidebarComments(persistedComments, draft, false, ["docs/c.md"]).map((comment) => comment.id),
+        ["draft-1"],
+    );
+});
+
 test("estimateDraftTextareaRows keeps draft editors within their intended bounds", () => {
     assert.equal(estimateDraftTextareaRows("Short", false), 4);
     assert.equal(estimateDraftTextareaRows("Short", true), 6);

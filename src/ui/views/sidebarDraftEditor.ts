@@ -121,15 +121,25 @@ export function getSidebarComments(
     persistedComments: Comment[],
     draftComment: DraftComment | null,
     showResolved: boolean,
+    selectedFilePaths: readonly string[] = [],
 ): Array<Comment | DraftComment> {
+    const selectedFileSet = selectedFilePaths.length
+        ? new Set(selectedFilePaths)
+        : null;
     const commentsWithoutDraft = draftComment
         ? persistedComments.filter((comment) => comment.id !== draftComment.id)
         : persistedComments.slice();
+    const fileScopedComments = selectedFileSet
+        ? commentsWithoutDraft.filter((comment) => selectedFileSet.has(comment.filePath))
+        : commentsWithoutDraft;
     const visibleComments = showResolved
-        ? commentsWithoutDraft
-        : commentsWithoutDraft.filter((comment) => !comment.resolved);
-    const mergedComments = draftComment
-        ? visibleComments.concat(draftComment)
+        ? fileScopedComments
+        : fileScopedComments.filter((comment) => !comment.resolved);
+    const visibleDraft = !draftComment || !selectedFileSet || selectedFileSet.has(draftComment.filePath)
+        ? draftComment
+        : null;
+    const mergedComments = visibleDraft
+        ? visibleComments.concat(visibleDraft)
         : visibleComments;
 
     return mergedComments

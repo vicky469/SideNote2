@@ -125,6 +125,46 @@
     gap: 8px;
 }
 
+.sidenote2-file-filter-suggestion {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+}
+
+.sidenote2-file-filter-suggestion-main {
+    min-width: 0;
+    flex: 1 1 auto;
+}
+
+.sidenote2-file-filter-suggestion-title {
+    font-size: var(--font-ui-small);
+    font-weight: 500;
+    color: var(--text-normal);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.sidenote2-file-filter-suggestion.is-selected .sidenote2-file-filter-suggestion-title {
+    font-weight: 600;
+}
+
+.sidenote2-file-filter-suggestion-status {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 14px;
+    height: 14px;
+    flex: 0 0 14px;
+    color: var(--interactive-accent);
+}
+
+.sidenote2-file-filter-suggestion-status svg {
+    width: 14px;
+    height: 14px;
+}
+
 .sidenote2-view-container {
     height: 100%;
     overflow-y: auto;
@@ -183,6 +223,11 @@
     box-shadow: 0 0 0 1px var(--interactive-accent-translucent);
 }
 
+.sidenote2-filter-chip:disabled {
+    opacity: 0.55;
+    cursor: not-allowed;
+}
+
 .sidenote2-filter-chip.is-active {
     border-color: hsla(var(--interactive-accent-hsl), 0.38);
     background: hsla(var(--interactive-accent-hsl), 0.12);
@@ -220,6 +265,81 @@
 .sidenote2-filter-chip.is-active .sidenote2-filter-chip-count {
     background: hsla(var(--interactive-accent-hsl), 0.16);
     color: var(--interactive-accent);
+}
+
+.sidenote2-active-file-filters {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin: 0 0 8px;
+}
+
+.sidenote2-active-file-filter,
+.sidenote2-active-file-filter-clear {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    min-height: 24px;
+    padding: 3px 8px;
+    border: 1px solid var(--background-modifier-border);
+    border-radius: 999px;
+    background: var(--background-primary);
+    color: var(--text-muted);
+    font-size: var(--font-ui-small);
+    line-height: 1.2;
+    cursor: pointer;
+    transition: border-color 0.15s ease, background-color 0.15s ease, color 0.15s ease;
+}
+
+.sidenote2-active-file-filter:hover,
+.sidenote2-active-file-filter-clear:hover,
+.sidenote2-active-file-filter:focus-visible,
+.sidenote2-active-file-filter-clear:focus-visible {
+    outline: none;
+    border-color: var(--background-modifier-border-hover, var(--interactive-accent-hover));
+    background: var(--background-modifier-hover);
+}
+
+.sidenote2-active-file-filter-label {
+    max-width: 190px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.sidenote2-active-file-filter-count {
+    min-width: auto;
+    padding: 0;
+    border-radius: 0;
+    background: transparent;
+    color: var(--text-faint, var(--text-muted));
+    font-size: var(--font-ui-smaller);
+    text-align: center;
+}
+
+.sidenote2-active-file-filter-remove {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 10px;
+    height: 10px;
+    color: var(--text-faint, var(--text-muted));
+}
+
+.sidenote2-active-file-filter-remove svg {
+    width: 10px;
+    height: 10px;
+}
+
+.sidenote2-active-file-filter-clear {
+    background: transparent;
+    color: var(--text-muted);
+}
+
+.sidenote2-file-filter-note {
+    color: var(--text-faint, var(--text-muted));
+    font-size: var(--font-ui-small);
 }
 
 .sidenote2-thought-trail {
