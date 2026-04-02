@@ -40,6 +40,7 @@ interface MockLeaf {
 
 class MockPlugin {
     public activeMarkdownFile: MockFile | null = { path: "last-note.md", extension: "md" };
+    public activeSidebarFile: MockFile | null = null;
     public draftComment: MockDraftComment | null = null;
     public draftHostFilePath: string | null = null;
     public commentManagerComments: MockComment[] = [];
@@ -74,10 +75,12 @@ class MockPlugin {
         const nextState = resolveWorkspaceFileTargets(
             file,
             this.activeMarkdownFile,
+            this.activeSidebarFile,
             (candidate): candidate is MockFile => !!candidate && candidate.extension === "md" && candidate.path !== ALL_COMMENTS_NOTE_PATH,
             (candidate): candidate is MockFile => !!candidate && candidate.extension === "md",
         );
         this.activeMarkdownFile = nextState.activeMarkdownFile;
+        this.activeSidebarFile = nextState.activeSidebarFile;
         return nextState.sidebarFile;
     }
 
@@ -191,6 +194,21 @@ test("workspace file targets preserve the last markdown note while pointing the 
     const target = resolveWorkspaceFileTargets(
         { path: ALL_COMMENTS_NOTE_PATH, extension: "md" },
         { path: "last-note.md", extension: "md" },
+        null,
+        (file): file is MockFile => !!file && file.extension === "md" && file.path !== ALL_COMMENTS_NOTE_PATH,
+        (file): file is MockFile => !!file && file.extension === "md",
+    );
+
+    assert.deepEqual(target.activeMarkdownFile, { path: "last-note.md", extension: "md" });
+    assert.deepEqual(target.activeSidebarFile, { path: ALL_COMMENTS_NOTE_PATH, extension: "md" });
+    assert.deepEqual(target.sidebarFile, { path: ALL_COMMENTS_NOTE_PATH, extension: "md" });
+});
+
+test("workspace file targets preserve the current sidebar file when leaf changes temporarily lose the file", () => {
+    const target = resolveWorkspaceFileTargets(
+        null,
+        { path: "last-note.md", extension: "md" },
+        { path: ALL_COMMENTS_NOTE_PATH, extension: "md" },
         (file): file is MockFile => !!file && file.extension === "md" && file.path !== ALL_COMMENTS_NOTE_PATH,
         (file): file is MockFile => !!file && file.extension === "md",
     );

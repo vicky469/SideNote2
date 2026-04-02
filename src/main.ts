@@ -223,6 +223,7 @@ export default class SideNote2 extends Plugin {
     private readonly workspaceContextController = new WorkspaceContextController({
         app: this.app,
         getActiveMarkdownFile: () => this.activeMarkdownFile,
+        getActiveSidebarFile: () => this.activeSidebarFile,
         setWorkspaceFiles: (activeMarkdownFile, activeSidebarFile) => {
             this.activeMarkdownFile = activeMarkdownFile;
             this.activeSidebarFile = activeSidebarFile;

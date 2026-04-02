@@ -9,6 +9,7 @@ export interface WorkspaceFileTargets<T> {
 export function resolveWorkspaceFileTargets<T>(
     file: T | null,
     activeMarkdownFile: T | null,
+    activeSidebarFile: T | null,
     isMarkdownCommentableFile: (file: T | null) => file is T,
     isSidebarSupportedFile: (file: T | null) => file is T,
 ): WorkspaceFileTargets<T> {
@@ -17,12 +18,19 @@ export function resolveWorkspaceFileTargets<T>(
         : activeMarkdownFile;
     const nextActiveSidebarFile = isSidebarSupportedFile(file)
         ? file
-        : null;
+        : file === null
+            ? activeSidebarFile
+            : null;
+    const sidebarFile = isSidebarSupportedFile(file)
+        ? file
+        : file === null
+            ? activeSidebarFile
+            : null;
 
     return {
         activeMarkdownFile: nextActiveMarkdownFile,
         activeSidebarFile: nextActiveSidebarFile,
-        sidebarFile: nextActiveSidebarFile,
+        sidebarFile,
     };
 }
 

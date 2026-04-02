@@ -10,6 +10,7 @@ import {
 export interface WorkspaceContextHost {
     app: Plugin["app"];
     getActiveMarkdownFile(): TFile | null;
+    getActiveSidebarFile(): TFile | null;
     setWorkspaceFiles(activeMarkdownFile: TFile | null, activeSidebarFile: TFile | null): void;
     isAllCommentsNotePath(path: string): boolean;
     isMarkdownCommentableFile(file: TFile | null): file is TFile;
@@ -25,6 +26,7 @@ export class WorkspaceContextController {
     public initializeActiveFiles(activeFile: TFile | null): void {
         const nextState = resolveWorkspaceFileTargets(
             activeFile,
+            null,
             null,
             (file): file is TFile => this.host.isMarkdownCommentableFile(file),
             (file): file is TFile => this.host.isSidebarSupportedFile(file),
@@ -86,6 +88,7 @@ export class WorkspaceContextController {
         const nextState = resolveWorkspaceFileTargets(
             file,
             this.host.getActiveMarkdownFile(),
+            this.host.getActiveSidebarFile(),
             (candidate): candidate is TFile => this.host.isMarkdownCommentableFile(candidate),
             (candidate): candidate is TFile => this.host.isSidebarSupportedFile(candidate),
         );
