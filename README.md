@@ -49,14 +49,14 @@ It is built for a minimal workflow: humans work in the sidebar, while agents can
 
 ## How to Get Started
 
-1. Install BRAT, then install the SideNote2 beta in Obsidian.
-
+1. Install BRAT
+   settings -> install community plugins -> BRAT
+2. Install the SideNote2 beta
+   Open BRAT, then follow the instruction showing in the image below.
    <p align="center">
      <img src="./image.png" alt="Install SideNote2 with BRAT" width="420">
    </p>
-
-2. Install the bundled SideNote2 skills in Codex CLI.
-
+3. Install the bundled SideNote2 skills in Codex CLI.
 ```bash
 python ~/.codex/skills/.system/skill-installer/scripts/install-skill-from-github.py --repo \
   vicky469/SideNote2 --path skills/side-note2-note-comments skills/canvas-design
