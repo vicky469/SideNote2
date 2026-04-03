@@ -294,6 +294,41 @@ test("comment mutation controller re-resolves a moved anchor before saving a new
     assert.deepEqual(host.notices, []);
 });
 
+test("comment mutation controller preserves visible whitespace around a hidden block when saving a new draft", async () => {
+    const selectedText = "reason for having both ZohoBooks and QuickBooks before digging deeper.\n\n\nTrailing text";
+    const draft = toDraft(createComment({
+        id: "draft-1",
+        comment: "  Ship it  ",
+        selectedText,
+        startLine: 0,
+        startChar: 0,
+        endLine: 2,
+        endChar: 13,
+    }));
+    const host = createHost({
+        draftComment: draft,
+        knownComments: [draft],
+        loadedComments: [],
+        currentNoteContentByPath: {
+            [draft.filePath]: [
+                "We can start prototyping stuff right now. But I want to find out reason for having both ZohoBooks and QuickBooks before digging deeper.",
+                "",
+                "<!-- SideNote2 comments",
+                "[]",
+                "-->",
+                "Trailing text",
+                "",
+            ].join("\n"),
+        },
+    });
+
+    await host.controller.saveDraft(draft.id);
+
+    assert.equal(host.manager.getAllComments().length, 1);
+    assert.equal(host.manager.getAllComments()[0].selectedText, selectedText);
+    assert.deepEqual(host.notices, []);
+});
+
 test("comment mutation controller suppresses duplicate adds inside the dedupe window", async () => {
     const comment = createComment();
     const host = createHost({

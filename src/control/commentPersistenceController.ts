@@ -299,6 +299,8 @@ export class CommentPersistenceController {
             const nextContent = serializeNoteComments(currentContent, comments);
             if (currentContent !== nextContent) {
                 const edit = getManagedSectionEdit(currentContent, comments);
+                const shouldClampSelectionToManagedSectionStart = openView.getMode() === "source"
+                    && openView.getState().source !== true;
                 const selectionFromOffset = openView.editor.posToOffset(openView.editor.getCursor("from"));
                 const selectionToOffset = openView.editor.posToOffset(openView.editor.getCursor("to"));
                 openView.editor.replaceRange(
@@ -307,8 +309,12 @@ export class CommentPersistenceController {
                     openView.editor.offsetToPos(edit.toOffset),
                 );
                 openView.editor.setSelection(
-                    openView.editor.offsetToPos(remapSelectionOffsetAfterManagedSectionEdit(selectionFromOffset, edit)),
-                    openView.editor.offsetToPos(remapSelectionOffsetAfterManagedSectionEdit(selectionToOffset, edit)),
+                    openView.editor.offsetToPos(remapSelectionOffsetAfterManagedSectionEdit(selectionFromOffset, edit, {
+                        clampToManagedSectionStart: shouldClampSelectionToManagedSectionStart,
+                    })),
+                    openView.editor.offsetToPos(remapSelectionOffsetAfterManagedSectionEdit(selectionToOffset, edit, {
+                        clampToManagedSectionStart: shouldClampSelectionToManagedSectionStart,
+                    })),
                 );
             }
             await this.syncFileCommentsFromContent(file, nextContent);

@@ -1,6 +1,6 @@
 import * as assert from "node:assert/strict";
 import test from "node:test";
-import { getManagedSectionEdit, getManagedSectionLineRange, getManagedSectionRange, getManagedSectionStartLine, parseNoteComments, replaceNoteCommentBodyById, serializeNoteComments } from "../src/core/storage/noteCommentStorage";
+import { getManagedSectionEdit, getManagedSectionLineRange, getManagedSectionRange, getManagedSectionStartLine, getVisibleNoteContent, parseNoteComments, replaceNoteCommentBodyById, serializeNoteComments } from "../src/core/storage/noteCommentStorage";
 import type { Comment } from "../src/commentManager";
 
 function createComment(overrides: Partial<Comment> = {}): Comment {
@@ -286,6 +286,78 @@ test("getManagedSectionRange still finds a managed block after visible text is t
     assert.ok(range);
     assert.equal(inlineManagedBlock.slice(0, range.fromOffset), "a");
     assert.equal(inlineManagedBlock.slice(range.fromOffset, range.toOffset).startsWith("<!-- SideNote2 comments"), true);
+});
+
+test("parseNoteComments still recognizes a managed block after visible text is typed after it", () => {
+    const trailingVisibleContent = [
+        "# Title",
+        "",
+        "<!-- SideNote2 comments",
+        "[",
+        "  {",
+        '    "id": "comment-1",',
+        '    "startLine": 0,',
+        '    "startChar": 0,',
+        '    "endLine": 0,',
+        '    "endChar": 0,',
+        '    "selectedText": "Note",',
+        '    "selectedTextHash": "hash-1",',
+        '    "comment": "Page note",',
+        '    "timestamp": 1710000000000,',
+        '    "anchorKind": "page"',
+        "  }",
+        "]",
+        "-->",
+        "Trailing text",
+        "",
+    ].join("\n");
+
+    const parsed = parseNoteComments(trailingVisibleContent, "note.md");
+    assert.equal(parsed.mainContent, "# Title\nTrailing text");
+    assert.equal(parsed.comments.length, 1);
+    assert.equal(parsed.comments[0].anchorKind, "page");
+    assert.equal(parsed.comments[0].comment, "Page note");
+});
+
+test("getManagedSectionEdit moves visible trailing text back before the managed block", () => {
+    const original = [
+        "# Title",
+        "",
+        "<!-- SideNote2 comments",
+        "[]",
+        "-->",
+        "Trailing text",
+        "",
+    ].join("\n");
+    const replacement = createComment({
+        comment: "Updated",
+        selectedText: "Title",
+        startLine: 0,
+        startChar: 2,
+        endLine: 0,
+        endChar: 7,
+    });
+
+    const edit = getManagedSectionEdit(original, [replacement]);
+    const patched = original.slice(0, edit.fromOffset) + edit.replacement + original.slice(edit.toOffset);
+
+    assert.equal(patched, serializeNoteComments(original, [replacement]));
+    assert.match(patched, /^# Title\nTrailing text\n\n<!-- SideNote2 comments/m);
+    assert.doesNotMatch(patched, /-->\nTrailing text/);
+});
+
+test("getVisibleNoteContent preserves visible whitespace around the hidden block", () => {
+    const content = [
+        "Body line",
+        "",
+        "<!-- SideNote2 comments",
+        "[]",
+        "-->",
+        "Trailing text",
+        "",
+    ].join("\n");
+
+    assert.equal(getVisibleNoteContent(content), "Body line\n\n\nTrailing text\n");
 });
 
 test("parseNoteComments ignores non-JSON comment sections", () => {

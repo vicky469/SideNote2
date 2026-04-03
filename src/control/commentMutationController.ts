@@ -1,7 +1,7 @@
 import type { TFile } from "obsidian";
 import type { Comment, CommentManager } from "../commentManager";
 import { resolveAnchorRange } from "../core/anchors/anchorResolver";
-import { parseNoteComments } from "../core/storage/noteCommentStorage";
+import { getVisibleNoteContent } from "../core/storage/noteCommentStorage";
 import type { DraftComment } from "../domain/drafts";
 import { debugCount, debugLog } from "../debug";
 
@@ -229,8 +229,8 @@ export class CommentMutationController {
         }
 
         const currentNoteContent = await this.host.getCurrentNoteContent(file);
-        const parsed = parseNoteComments(currentNoteContent, draftComment.filePath);
-        const resolvedAnchor = resolveAnchorRange(parsed.mainContent, draftComment);
+        const visibleNoteContent = getVisibleNoteContent(currentNoteContent);
+        const resolvedAnchor = resolveAnchorRange(visibleNoteContent, draftComment);
         if (!resolvedAnchor) {
             this.host.showNotice("Selected text changed before save. Review the draft and reselect the anchor text.");
             return null;

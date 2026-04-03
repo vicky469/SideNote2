@@ -1,4 +1,4 @@
-import { Range, StateEffect, StateField } from "@codemirror/state";
+import { EditorSelection, Range, StateEffect, StateField } from "@codemirror/state";
 import { Decoration, DecorationSet, EditorView, ViewPlugin, ViewUpdate } from "@codemirror/view";
 import { MarkdownView, Plugin, TFile } from "obsidian";
 import type { MarkdownPostProcessorContext } from "obsidian";
@@ -15,6 +15,7 @@ import {
     getManagedSectionStartLine,
     type ParsedNoteComments,
 } from "../core/storage/noteCommentStorage";
+import { clampOffsetBeforeManagedSection } from "../core/text/editOffsets";
 
 const forceHighlightRefreshEffect = StateEffect.define<null>();
 const setManagedBlockHiddenEffect = StateEffect.define<boolean>();
@@ -37,6 +38,27 @@ function buildManagedBlockDecorations(noteContent: string, hidden: boolean): Dec
     return Decoration.set([
         Decoration.replace({}).range(range.fromOffset, range.toOffset),
     ], true);
+}
+
+function clampSelectionBeforeManagedSection(
+    selection: EditorSelection,
+    managedSectionStartOffset: number,
+): EditorSelection | null {
+    let changed = false;
+    const ranges = selection.ranges.map((range) => {
+        const anchor = clampOffsetBeforeManagedSection(range.anchor, managedSectionStartOffset);
+        const head = clampOffsetBeforeManagedSection(range.head, managedSectionStartOffset);
+        if (anchor === range.anchor && head === range.head) {
+            return range;
+        }
+
+        changed = true;
+        return EditorSelection.range(anchor, head);
+    });
+
+    return changed
+        ? EditorSelection.create(ranges, selection.mainIndex)
+        : null;
 }
 
 const managedBlockField = StateField.define<ManagedBlockDecorationState>({
@@ -146,14 +168,22 @@ export class CommentHighlightController {
                         && markdownView.getMode() === "source"
                         && markdownView.getState().source !== true
                         && !!getManagedSectionRange(this.view.state.doc.toString());
+                    const managedSectionRange = nextHidden
+                        ? getManagedSectionRange(this.view.state.doc.toString())
+                        : null;
+                    const selection = managedSectionRange
+                        ? clampSelectionBeforeManagedSection(this.view.state.selection, managedSectionRange.fromOffset)
+                        : null;
+                    const didHiddenChange = nextHidden !== this.hidden;
 
-                    if (nextHidden === this.hidden) {
+                    if (!didHiddenChange && !selection) {
                         return;
                     }
 
                     this.hidden = nextHidden;
                     this.view.dispatch({
-                        effects: [setManagedBlockHiddenEffect.of(nextHidden)],
+                        effects: didHiddenChange ? [setManagedBlockHiddenEffect.of(nextHidden)] : [],
+                        selection: selection ?? undefined,
                     });
                 }
             }),

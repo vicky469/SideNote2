@@ -1,6 +1,6 @@
 import * as assert from "node:assert/strict";
 import test from "node:test";
-import { remapSelectionOffsetAfterManagedSectionEdit } from "../src/core/text/editOffsets";
+import { clampOffsetBeforeManagedSection, remapSelectionOffsetAfterManagedSectionEdit } from "../src/core/text/editOffsets";
 
 test("remapSelectionOffsetAfterManagedSectionEdit keeps the caret before a managed block inserted at offset zero", () => {
     const edit = {
@@ -30,4 +30,22 @@ test("remapSelectionOffsetAfterManagedSectionEdit clamps offsets inside the edit
     };
 
     assert.equal(remapSelectionOffsetAfterManagedSectionEdit(15, edit), 10);
+});
+
+test("remapSelectionOffsetAfterManagedSectionEdit can keep the caret before a hidden managed block", () => {
+    const edit = {
+        fromOffset: 10,
+        toOffset: 20,
+        replacement: "\n<!-- SideNote2 comments\n[]\n-->\n",
+    };
+
+    assert.equal(remapSelectionOffsetAfterManagedSectionEdit(25, edit, {
+        clampToManagedSectionStart: true,
+    }), 10);
+});
+
+test("clampOffsetBeforeManagedSection clamps offsets at or after the hidden block start", () => {
+    assert.equal(clampOffsetBeforeManagedSection(8, 10), 8);
+    assert.equal(clampOffsetBeforeManagedSection(10, 10), 10);
+    assert.equal(clampOffsetBeforeManagedSection(25, 10), 10);
 });

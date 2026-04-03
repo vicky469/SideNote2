@@ -49,11 +49,12 @@ interface SplitManagedSectionResult {
     sectionContent: string | null;
     sectionFromOffset: number;
     sectionToOffset: number;
+    hasVisibleContentAfterSection: boolean;
 }
 
 function splitManagedSection(noteContent: string): SplitManagedSectionResult {
     const normalized = noteContent.replace(/\r\n/g, "\n");
-    const section = findTrailingManagedSection(normalized);
+    const section = findManagedSection(normalized);
     if (section) {
         return section;
     }
@@ -64,6 +65,7 @@ function splitManagedSection(noteContent: string): SplitManagedSectionResult {
         sectionContent: null,
         sectionFromOffset: normalized.trimEnd().length,
         sectionToOffset: normalized.length,
+        hasVisibleContentAfterSection: false,
     };
 }
 
@@ -177,7 +179,7 @@ function parseJsonSection(sectionContent: string, filePath: string): Comment[] |
     return sortCommentsByPosition(comments);
 }
 
-function findTrailingManagedSection(normalized: string): SplitManagedSectionResult | null {
+function findManagedSection(normalized: string): SplitManagedSectionResult | null {
     const matches = Array.from(normalized.matchAll(/<!-- SideNote2 comments(?=$|[\s\[{])/g));
     for (let i = matches.length - 1; i >= 0; i--) {
         const match = matches[i];
@@ -186,18 +188,29 @@ function findTrailingManagedSection(normalized: string): SplitManagedSectionResu
         }
 
         const sectionStart = match.index;
-        const mainContent = normalized.slice(0, sectionStart).trimEnd();
-        const sectionContent = normalized.slice(sectionStart).trim();
+        const closeIndex = normalized.indexOf(`\n${HIDDEN_SECTION_CLOSE}`, sectionStart);
+        if (closeIndex === -1) {
+            continue;
+        }
+
+        const blockEnd = closeIndex + `\n${HIDDEN_SECTION_CLOSE}`.length;
+        const sectionContent = normalized.slice(sectionStart, blockEnd).trim();
         if (parseJsonSection(sectionContent, "__probe__") === null) {
             continue;
         }
+
+        const mainPrefix = normalized.slice(0, sectionStart).trimEnd();
+        const trailingContent = normalized.slice(blockEnd);
+        const hasVisibleContentAfterSection = trailingContent.trim().length > 0;
+        const mainContent = `${mainPrefix}${hasVisibleContentAfterSection ? trailingContent : ""}`.trimEnd();
 
         return {
             normalizedContent: normalized,
             mainContent,
             sectionContent,
-            sectionFromOffset: mainContent.length,
-            sectionToOffset: normalized.length,
+            sectionFromOffset: mainPrefix.length,
+            sectionToOffset: hasVisibleContentAfterSection ? blockEnd : normalized.length,
+            hasVisibleContentAfterSection,
         };
     }
 
@@ -255,6 +268,16 @@ export function getManagedSectionStartLine(noteContent: string): number | null {
     return getManagedSectionLineRange(noteContent)?.startLine ?? null;
 }
 
+export function getVisibleNoteContent(noteContent: string): string {
+    const normalized = noteContent.replace(/\r\n/g, "\n");
+    const range = getManagedSectionRange(normalized);
+    if (!range) {
+        return normalized;
+    }
+
+    return normalized.slice(0, range.fromOffset) + normalized.slice(range.toOffset);
+}
+
 export function getManagedSectionLineRange(noteContent: string): ManagedSectionLineRange | null {
     const normalized = noteContent.replace(/\r\n/g, "\n");
     const range = getManagedSectionRange(normalized);
@@ -287,7 +310,22 @@ export function serializeNoteComments(noteContent: string, comments: Comment[]):
 }
 
 export function getManagedSectionEdit(noteContent: string, comments: Comment[]): ManagedSectionEdit {
-    const { sectionFromOffset, sectionToOffset } = splitManagedSection(noteContent);
+    const {
+        normalizedContent,
+        sectionContent,
+        sectionFromOffset,
+        sectionToOffset,
+        hasVisibleContentAfterSection,
+    } = splitManagedSection(noteContent);
+
+    if (sectionContent && hasVisibleContentAfterSection) {
+        const nextContent = serializeNoteComments(noteContent, comments);
+        return {
+            fromOffset: sectionFromOffset,
+            toOffset: normalizedContent.length,
+            replacement: nextContent.slice(sectionFromOffset),
+        };
+    }
 
     if (!comments.length) {
         return {
