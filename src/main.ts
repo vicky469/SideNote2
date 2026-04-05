@@ -384,15 +384,19 @@ export default class SideNote2 extends Plugin {
     }
 
     async activateIndexComment(commentId: string, indexFilePath: string) {
+        await this.syncIndexCommentHighlightPair(commentId, indexFilePath);
+
+        const indexFile = this.workspaceViewController.getFileByPath(indexFilePath);
+        await this.commentNavigationController.syncSidebarSelection(commentId, indexFile);
+    }
+
+    public async syncIndexCommentHighlightPair(commentId: string, indexFilePath: string) {
         this.commentSessionController.setRevealedCommentState(
             indexFilePath,
             commentId,
             { refreshMarkdownPreviews: false },
         );
         await this.commentHighlightController.syncIndexPreviewSelection(indexFilePath, commentId);
-
-        const indexFile = this.workspaceViewController.getFileByPath(indexFilePath);
-        await this.commentNavigationController.syncSidebarSelection(commentId, indexFile);
     }
 
     public getPinnedMarkdownFile(): TFile | null {

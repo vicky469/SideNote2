@@ -28,6 +28,7 @@ import { filterCommentsByResolvedVisibility } from "../../core/rules/resolvedCom
 import { SidebarInteractionController } from "./sidebarInteractionController";
 import { renderPersistedCommentCard } from "./sidebarPersistedComment";
 import { extractThoughtTrailClickTargets, parseThoughtTrailOpenFilePath, resolveThoughtTrailNodeId } from "./thoughtTrailNodeLinks";
+import { getSidebarPersistedCommentPrimaryAction } from "./indexReverseHighlightMode";
 import {
     normalizeIndexFileFilterRootPath,
     resolveIndexFileFilterRootPathFromState,
@@ -158,6 +159,10 @@ export default class SideNote2View extends ItemView {
     public highlightComment(commentId: string) {
         this.ensureListModeForIndexCommentFocus();
         this.interactionController.highlightComment(commentId);
+        const currentFilePath = this.file?.path ?? null;
+        if (currentFilePath && this.plugin.isAllCommentsNotePath(currentFilePath)) {
+            void this.plugin.syncIndexCommentHighlightPair(commentId, currentFilePath);
+        }
     }
 
     public async highlightAndFocusDraft(commentId: string) {
@@ -584,6 +589,10 @@ export default class SideNote2View extends ItemView {
     private async renderPersistedComment(commentsContainer: HTMLDivElement, comment: Comment) {
         const currentFilePath = this.file?.path ?? null;
         const isIndexView = !!currentFilePath && this.plugin.isAllCommentsNotePath(currentFilePath);
+        const primaryAction = getSidebarPersistedCommentPrimaryAction(
+            currentFilePath,
+            (path) => this.plugin.isAllCommentsNotePath(path),
+        );
 
         await renderPersistedCommentCard(commentsContainer, comment, {
             activeCommentId: this.interactionController.getActiveCommentId(),
@@ -597,9 +606,15 @@ export default class SideNote2View extends ItemView {
             },
             openSidebarInternalLink: (href, sourcePath, focusTarget) =>
                 this.interactionController.openSidebarInternalLink(href, sourcePath, focusTarget),
-            // TODO: This is temporary. In index mode, restore reverse navigation here so
-            // clicking the card body scrolls/highlights the matching ref in index.md.
-            activateComment: (persistedComment) => this.interactionController.openCommentInEditor(persistedComment),
+            activateComment: async (persistedComment) => {
+                if (primaryAction === "index-highlight" && currentFilePath) {
+                    this.interactionController.setActiveComment(persistedComment.id);
+                    await this.plugin.syncIndexCommentHighlightPair(persistedComment.id, currentFilePath);
+                    return;
+                }
+
+                await this.interactionController.openCommentInEditor(persistedComment);
+            },
             openCommentInEditor: (persistedComment) => this.interactionController.openCommentInEditor(persistedComment),
             resolveComment: (commentId) => {
                 void this.plugin.resolveComment(commentId);

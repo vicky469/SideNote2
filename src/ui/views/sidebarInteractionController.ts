@@ -281,7 +281,7 @@ export class SidebarInteractionController {
         });
     }
 
-    private setActiveComment(commentId: string): void {
+    public setActiveComment(commentId: string): void {
         this.activeCommentId = commentId;
         this.host.containerEl.querySelectorAll(".sidenote2-comment-item.active").forEach((el) => {
             if (
