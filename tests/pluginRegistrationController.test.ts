@@ -74,7 +74,7 @@ function createHarness() {
     const createdSidebarLeaves: unknown[] = [];
     const draftCalls: Array<{ selected: boolean; filePath: string | null }> = [];
     const highlightedCommentTargets: Array<{ filePath: string; commentId: string }> = [];
-    let activateViewCount = 0;
+    let openIndexNoteCount = 0;
 
     const controller = new PluginRegistrationController({
         manifestId: "side-note2",
@@ -110,8 +110,8 @@ function createHarness() {
         highlightCommentById: async (filePath, commentId) => {
             highlightedCommentTargets.push({ filePath, commentId });
         },
-        activateView: async () => {
-            activateViewCount += 1;
+        openIndexNote: async () => {
+            openIndexNoteCount += 1;
         },
     });
 
@@ -126,7 +126,7 @@ function createHarness() {
         createdSidebarLeaves,
         draftCalls,
         highlightedCommentTargets,
-        getActivateViewCount: () => activateViewCount,
+        getOpenIndexNoteCount: () => openIndexNoteCount,
     };
 }
 
@@ -141,7 +141,7 @@ test("plugin registration controller registers the view, protocol handler, comma
     assert.deepEqual(harness.createdSidebarLeaves, [{ id: "leaf-1" }]);
     assert.deepEqual(harness.removedCommandIds, ["side-note2:activate-view"]);
     assert.deepEqual(harness.commands.map((command) => command.id), ["add-comment-to-selection"]);
-    assert.deepEqual(harness.ribbonActions.map((action) => action.title), ["SideNote2: Open in Sidebar"]);
+    assert.deepEqual(harness.ribbonActions.map((action) => action.title), ["Open SideNote2 index"]);
 
     await harness.commands[0].editorCallback(
         { somethingSelected: () => true },
@@ -165,7 +165,7 @@ test("plugin registration controller registers the view, protocol handler, comma
 
     harness.ribbonActions[0].callback();
     await Promise.resolve();
-    assert.equal(harness.getActivateViewCount(), 1);
+    assert.equal(harness.getOpenIndexNoteCount(), 1);
 });
 
 test("plugin registration controller only adds the editor menu item for active selections", async () => {

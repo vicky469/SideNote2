@@ -47,7 +47,7 @@ export interface PluginRegistrationHost {
     createSidebarView(leaf: unknown): unknown;
     startDraftFromEditorSelection(editor: EditorSelectionLike, file: TFile | null): Promise<unknown>;
     highlightCommentById(filePath: string, commentId: string): Promise<void>;
-    activateView(): Promise<void> | void;
+    openIndexNote(): Promise<void> | void;
 }
 
 export interface CommentProtocolTarget {
@@ -99,8 +99,8 @@ export class PluginRegistrationController {
             });
         });
 
-        this.host.addRibbonIcon(this.host.iconId, "SideNote2: Open in Sidebar", () => {
-            void this.host.activateView();
+        this.host.addRibbonIcon(this.host.iconId, "Open SideNote2 index", () => {
+            void this.host.openIndexNote();
         });
     }
 }

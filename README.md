@@ -3,8 +3,8 @@
   <img src="./logo-readme.svg" alt="SideNote2 logo" width="72">
 </p>
 <p align="center">
-  <a href="https://github.com/vicky469/SideNote2/releases/tag/1.0.32">
-    <img src="https://img.shields.io/badge/beta-1.0.32-f97316?style=flat-square" alt="Current beta">
+  <a href="https://github.com/vicky469/SideNote2/releases/tag/1.0.33">
+    <img src="https://img.shields.io/badge/beta-1.0.33-f97316?style=flat-square" alt="Current beta">
   </a>
   <a href="./docs/README-dev.md">
     <img src="https://img.shields.io/badge/docs-dev%20notes-0f766e?style=flat-square" alt="Dev docs">
@@ -111,9 +111,10 @@ If multiple side comments in the same note use the same selected text, include a
 
 ## Settings
 
+- `Index header image URL`
+- `Index header image caption`
 - `Debug mode`
   This is not implemented yet.
-- Others should be straightforward.
 
 ## Command
 

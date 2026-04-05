@@ -34,19 +34,6 @@ export default class SideNote2SettingTab extends PluginSettingTab {
         containerEl.empty();
 
         new Setting(containerEl)
-            .setName("Index note path")
-            .setDesc("File name or path for the generated SideNote2 index note.")
-            .addText((text) =>
-                text
-                    .setPlaceholder(DEFAULT_SETTINGS.indexNotePath)
-                    .setValue(this.plugin.settings.indexNotePath)
-                    .onChange(async (value) => {
-                        await this.plugin.setIndexNotePath(value);
-                        text.setValue(this.plugin.settings.indexNotePath);
-                    })
-            );
-
-        new Setting(containerEl)
             .setName("Index header image URL")
             .setDesc("Remote image shown at the top of the generated SideNote2 index note.")
             .addText((text) =>

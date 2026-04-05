@@ -1,11 +1,11 @@
-import { addIcon, WorkspaceLeaf, TFile, Notice, Plugin, normalizePath, type Editor } from "obsidian";
+import { addIcon, WorkspaceLeaf, TFile, Notice, Plugin, normalizePath, MarkdownView, type Editor } from "obsidian";
 import type { EditorView } from "@codemirror/view";
 import { Comment, CommentManager } from "./commentManager";
 import { CommentEntryController } from "./control/commentEntryController";
 import { CommentHighlightController } from "./control/commentHighlightController";
 import { CommentMutationController } from "./control/commentMutationController";
 import { CommentNavigationController } from "./control/commentNavigationController";
-import { pickPinnedCommentableFile, pickSidebarTargetFile } from "./control/commentNavigationPlanner";
+import { pickPinnedCommentableFile, pickPreferredFileLeafCandidate, pickSidebarTargetFile, type PreferredFileLeafCandidate } from "./control/commentNavigationPlanner";
 import { CommentPersistenceController } from "./control/commentPersistenceController";
 import { CommentSessionController } from "./control/commentSessionController";
 import { IndexNoteSettingsController } from "./control/indexNoteSettingsController";
@@ -224,7 +224,7 @@ export default class SideNote2 extends Plugin {
         startDraftFromEditorSelection: (editor, file) =>
             this.commentEntryController.startDraftFromEditorSelection(editor as unknown as Editor, file),
         highlightCommentById: (filePath, commentId) => this.highlightCommentById(filePath, commentId),
-        activateView: () => this.activateView(),
+        openIndexNote: () => this.openIndexNote(),
     });
     private readonly workspaceContextController = new WorkspaceContextController({
         app: this.app,
@@ -588,6 +588,43 @@ export default class SideNote2 extends Plugin {
      */
     async activateView(skipViewUpdate = false) {
         await this.commentNavigationController.activateView(skipViewUpdate);
+    }
+
+    async openIndexNote() {
+        await this.refreshAggregateNoteNow();
+
+        const indexFilePath = this.getAllCommentsNotePath();
+        if (!this.workspaceViewController.getMarkdownFileByPath(indexFilePath)) {
+            new Notice(`Unable to open ${indexFilePath}.`);
+            return;
+        }
+
+        const workspace = this.app.workspace;
+        const activeLeaf = workspace.activeLeaf;
+        const recentLeaf = workspace.getMostRecentLeaf(workspace.rootSplit);
+        const candidates: PreferredFileLeafCandidate<WorkspaceLeaf>[] = [];
+
+        workspace.iterateAllLeaves((leaf) => {
+            if (!(leaf.view instanceof MarkdownView)) {
+                return;
+            }
+
+            candidates.push({
+                value: leaf,
+                filePath: leaf.view.file?.path ?? null,
+                eligible: true,
+                active: leaf === activeLeaf,
+                recent: leaf === recentLeaf,
+            });
+        });
+
+        const existingLeaf = pickPreferredFileLeafCandidate(candidates, indexFilePath);
+        if (existingLeaf && existingLeaf.view instanceof MarkdownView && existingLeaf.view.file?.path === indexFilePath) {
+            workspace.setActiveLeaf(existingLeaf, { focus: true });
+            return;
+        }
+
+        await this.app.workspace.openLinkText(indexFilePath, "", "tab");
     }
 
     async addComment(newComment: Comment): Promise<boolean> {
