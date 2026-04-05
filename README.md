@@ -55,7 +55,7 @@ It is built for a minimal workflow: humans work in the sidebar, while agents can
 1. Install BRAT
    settings -> install community plugins -> BRAT
 2. Install the SideNote2 beta
-   Open BRAT, then follow the instruction showing in the image below.
+   Open BRAT, enable Auto update if you want, then add the plugin as shown below.
    <p align="center">
      <img src="./image.png" alt="Install SideNote2 with BRAT" width="420">
    </p>
