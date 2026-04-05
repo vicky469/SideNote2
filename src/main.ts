@@ -188,6 +188,7 @@ export default class SideNote2 extends Plugin {
         loadCommentsForFile: (file) => this.loadCommentsForFile(file),
         refreshCommentViews: () => this.workspaceViewController.refreshCommentViews(),
         refreshEditorDecorations: () => this.refreshEditorDecorations(),
+        refreshAggregateNoteNow: () => this.refreshAggregateNoteNow(),
         scheduleAggregateNoteRefresh: () => this.scheduleAggregateNoteRefresh(),
         syncIndexNoteViewClasses: () => this.syncIndexNoteViewClasses(),
         handleMarkdownFileModified: (file) => this.commentPersistenceController.handleMarkdownFileModified(file),

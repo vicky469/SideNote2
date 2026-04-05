@@ -15,6 +15,7 @@ export interface PluginLifecycleHost {
     loadCommentsForFile(file: TFile | null): Promise<unknown>;
     refreshCommentViews(): Promise<void>;
     refreshEditorDecorations(): void;
+    refreshAggregateNoteNow(): Promise<void>;
     scheduleAggregateNoteRefresh(): void;
     syncIndexNoteViewClasses(): void;
     handleMarkdownFileModified(file: TFile): Promise<void>;
@@ -66,7 +67,9 @@ export class PluginLifecycleController {
         if (this.host.isAttachmentCommentableFile(file)) {
             void this.host.saveSettings();
         }
-        this.host.scheduleAggregateNoteRefresh();
+        void this.host.refreshCommentViews();
+        this.host.refreshEditorDecorations();
+        void this.host.refreshAggregateNoteNow();
     }
 
     public async handleFileModify(file: TFile | null): Promise<void> {

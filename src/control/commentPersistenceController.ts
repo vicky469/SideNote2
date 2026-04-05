@@ -365,6 +365,7 @@ export class CommentPersistenceController {
             allCommentsNotePath: this.host.getAllCommentsNotePath(),
             headerImageUrl: this.host.getIndexHeaderImageUrl(),
             headerImageCaption: this.host.getIndexHeaderImageCaption(),
+            hasSourceFile: (filePath: string) => this.host.app.vault.getAbstractFileByPath(filePath) instanceof TFile,
             getMentionedPageLabels: (comment: Comment) => this.host.getCommentMentionedPageLabels(comment),
             resolveWikiLinkPath: (linkPath: string, sourceFilePath: string) => {
                 const linkedFile = this.host.app.metadataCache.getFirstLinkpathDest(linkPath, sourceFilePath);

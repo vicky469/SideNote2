@@ -210,6 +210,26 @@ test("buildAllCommentsNoteContent ignores comments attached to the generated agg
     assert.match(content, /<strong class="sidenote2-index-heading-label">Z\.md<\/strong>/);
 });
 
+test("buildAllCommentsNoteContent ignores comments whose source file no longer exists", () => {
+    const content = buildAllCommentsNoteContent("dev", [
+        createComment({
+            id: "missing-note",
+            filePath: "Missing.md",
+            selectedText: "gone",
+        }),
+        createComment({
+            id: "real-note",
+            filePath: "Real.md",
+            selectedText: "still here",
+        }),
+    ], {
+        hasSourceFile: (filePath) => filePath === "Real.md",
+    });
+
+    assert.doesNotMatch(content, /Missing\.md/);
+    assert.match(content, /<strong class="sidenote2-index-heading-label">Real\.md<\/strong>/);
+});
+
 test("buildAllCommentsNoteContent escapes markdown-heavy selections and truncates long previews", () => {
     const content = buildAllCommentsNoteContent("dev", [
         createComment({

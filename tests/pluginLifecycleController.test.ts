@@ -57,6 +57,7 @@ function createHarness(options: {
     let refreshCommentViewsCount = 0;
     let refreshEditorDecorationsCount = 0;
     let scheduleAggregateNoteRefreshCount = 0;
+    let refreshAggregateNoteNowCount = 0;
     let syncIndexNoteViewClassesCount = 0;
     let saveSettingsCount = 0;
     let modifyHandledPath: string | null = null;
@@ -91,6 +92,9 @@ function createHarness(options: {
             }
 
             refreshEditorDecorationsCount += 1;
+        },
+        refreshAggregateNoteNow: async () => {
+            refreshAggregateNoteNowCount += 1;
         },
         scheduleAggregateNoteRefresh: () => {
             scheduleAggregateNoteRefreshCount += 1;
@@ -129,6 +133,7 @@ function createHarness(options: {
         clearedTimers,
         getRefreshCommentViewsCount: () => refreshCommentViewsCount,
         getRefreshEditorDecorationsCount: () => refreshEditorDecorationsCount,
+        getRefreshAggregateNoteNowCount: () => refreshAggregateNoteNowCount,
         getScheduleAggregateNoteRefreshCount: () => scheduleAggregateNoteRefreshCount,
         getSyncIndexNoteViewClassesCount: () => syncIndexNoteViewClassesCount,
         getSaveSettingsCount: () => saveSettingsCount,
@@ -186,7 +191,10 @@ test("plugin lifecycle controller clears deleted comment files only when comment
     assert.deepEqual(harness.clearedParsedPaths, [deletedFile.path]);
     assert.deepEqual(harness.clearedDerivedPaths, [deletedFile.path]);
     assert.equal(harness.getSaveSettingsCount(), 1);
-    assert.equal(harness.getScheduleAggregateNoteRefreshCount(), 1);
+    assert.equal(harness.getRefreshCommentViewsCount(), 1);
+    assert.equal(harness.getRefreshEditorDecorationsCount(), 1);
+    assert.equal(harness.getRefreshAggregateNoteNowCount(), 1);
+    assert.equal(harness.getScheduleAggregateNoteRefreshCount(), 0);
 });
 
 test("plugin lifecycle controller only forwards markdown modify events", async () => {

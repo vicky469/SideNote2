@@ -22,6 +22,7 @@ export interface AllCommentsNoteBuildOptions {
     headerImageUrl?: string;
     headerImageCaption?: string | null;
     getMentionedPageLabels?: (comment: Comment) => string[];
+    hasSourceFile?: (filePath: string) => boolean;
     resolveWikiLinkPath?: (linkPath: string, sourceFilePath: string) => string | null;
     connectedChainDepth?: number;
 }
@@ -240,7 +241,10 @@ export function buildAllCommentsNoteContent(
         lines.push(`<div class="sidenote2-index-header-caption">${headerImageCaption}</div>`);
     }
     lines.push("");
-    const visibleComments = comments.filter((comment) => !isAllCommentsNotePath(comment.filePath, options.allCommentsNotePath));
+    const visibleComments = comments.filter((comment) => (
+        !isAllCommentsNotePath(comment.filePath, options.allCommentsNotePath)
+        && (options.hasSourceFile?.(comment.filePath) ?? true)
+    ));
 
     if (!visibleComments.length) {
         return `${lines.join("\n").trimEnd()}\n`;
