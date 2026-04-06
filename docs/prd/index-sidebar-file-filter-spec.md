@@ -4,7 +4,7 @@
 
 Draft implementation spec based on:
 
-- [index-sidebar-file-filter-plan.md](./index-sidebar-file-filter-plan.md)
+- [index-sidebar-file-filter-plan.md](index-sidebar-file-filter-plan.md)
 
 ## Problem Statement
 
