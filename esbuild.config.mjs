@@ -1,5 +1,6 @@
 import esbuild from "esbuild";
 import { execFile } from "node:child_process";
+import { existsSync, readFileSync } from "node:fs";
 import process from "process";
 import { promisify } from "node:util";
 import builtins from "builtin-modules";
@@ -46,6 +47,19 @@ async function reloadPlugin() {
 	} while (hotReloadQueued);
 
 	hotReloadInFlight = false;
+}
+
+function assertNoProdSourceMapArtifacts() {
+	const mainJsPath = "main.js";
+	const mainJs = readFileSync(mainJsPath, "utf8");
+	if (mainJs.includes("sourceMappingURL") || mainJs.includes("sourcesContent")) {
+		throw new Error(`Production build leaked source map markers into ${mainJsPath}`);
+	}
+
+	const rootSourceMapPath = "main.js.map";
+	if (existsSync(rootSourceMapPath)) {
+		throw new Error(`Production build emitted unexpected source map ${rootSourceMapPath}`);
+	}
 }
 
 const context = await esbuild.context({
@@ -99,6 +113,7 @@ const context = await esbuild.context({
 
 if (prod) {
 	await context.rebuild();
+	assertNoProdSourceMapArtifacts();
 	process.exit(0);
 } else {
 	await context.watch();
