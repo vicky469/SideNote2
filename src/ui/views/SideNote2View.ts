@@ -2,7 +2,6 @@ import { ItemView, MarkdownRenderer, TFile, WorkspaceLeaf, loadMermaid, setIcon,
 import type { Comment } from "../../commentManager";
 import {
     buildIndexFileFilterGraph,
-    getIndexFileFilterConnectedComponent,
     type IndexFileFilterGraph,
 } from "../../core/derived/indexFileFilterGraph";
 import {
@@ -21,8 +20,10 @@ import { SidebarDraftEditorController, getSidebarComments } from "./sidebarDraft
 import { renderDraftCommentCard } from "./sidebarDraftComment";
 import {
     buildIndexFileFilterOptionsFromCounts,
+    deriveIndexSidebarScopedFilePaths,
     filterCommentsByFilePaths,
     getIndexFileFilterLabel,
+    shouldLimitIndexSidebarList,
     type IndexFileFilterOption,
 } from "./indexFileFilter";
 import { INDEX_SIDEBAR_LIST_LIMIT, limitIndexSidebarListItems } from "./indexSidebarListLimit";
@@ -227,8 +228,11 @@ export default class SideNote2View extends ItemView {
                 selectedIndexFileFilterRootPath = null;
             }
 
-            const filteredIndexFilePaths = isAllCommentsView && indexFileFilterGraph
-                ? getIndexFileFilterConnectedComponent(indexFileFilterGraph, selectedIndexFileFilterRootPath)
+            const filteredIndexFilePaths = isAllCommentsView
+                ? deriveIndexSidebarScopedFilePaths(
+                    indexFileFilterGraph,
+                    selectedIndexFileFilterRootPath,
+                )
                 : [];
             const indexFileFilterOptions = isAllCommentsView && indexFileFilterGraph
                 ? buildIndexFileFilterOptionsFromCounts(indexFileFilterGraph.fileCommentCounts)
@@ -249,7 +253,9 @@ export default class SideNote2View extends ItemView {
                 showResolved,
                 filteredIndexFilePaths,
             );
-            const limitedComments = isAllCommentsView && this.indexSidebarMode === "list"
+            const limitedComments = isAllCommentsView
+                && this.indexSidebarMode === "list"
+                && shouldLimitIndexSidebarList(selectedIndexFileFilterRootPath)
                 ? limitIndexSidebarListItems(commentsForFile)
                 : {
                     visibleItems: commentsForFile.slice(),
@@ -559,16 +565,17 @@ export default class SideNote2View extends ItemView {
         new SideNoteFileFilterModal(this.app, {
             availableOptions: indexFileFilterOptions,
             selectedRootFilePath: this.selectedIndexFileFilterRootPath,
-            selectedFilePaths: this.indexFileFilterGraph
-                ? getIndexFileFilterConnectedComponent(this.indexFileFilterGraph, this.selectedIndexFileFilterRootPath)
-                : [],
+            selectedFilePaths: deriveIndexSidebarScopedFilePaths(
+                this.indexFileFilterGraph,
+                this.selectedIndexFileFilterRootPath,
+            ),
             onChooseRoot: async (rootFilePath) => {
                 await this.setIndexFileFilterRootPath(rootFilePath);
             },
         }).open();
     }
 
-    private async setIndexFileFilterRootPath(filePath: string | null): Promise<void> {
+    public async setIndexFileFilterRootPath(filePath: string | null): Promise<void> {
         const normalizedRootPath = normalizeIndexFileFilterRootPath(filePath);
         if (this.selectedIndexFileFilterRootPath === normalizedRootPath) {
             return;

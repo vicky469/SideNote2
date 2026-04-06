@@ -1,12 +1,15 @@
 import * as assert from "node:assert/strict";
 import test from "node:test";
 import type { Comment } from "../src/commentManager";
+import { buildIndexFileFilterGraph } from "../src/core/derived/indexFileFilterGraph";
 import {
     buildIndexFileFilterOptions,
+    deriveIndexSidebarScopedFilePaths,
     filterCommentsByFilePaths,
     getIndexFileFilterLabel,
     getIndexFileFilterSuggestions,
     normalizeIndexFileFilterPaths,
+    shouldLimitIndexSidebarList,
 } from "../src/ui/views/indexFileFilter";
 
 function createComment(overrides: Partial<Comment> = {}): Comment {
@@ -63,6 +66,44 @@ test("filterCommentsByFilePaths returns only matching comment files", () => {
         filterCommentsByFilePaths(comments, []).map((comment) => comment.id),
         ["a", "b"],
     );
+});
+
+test("deriveIndexSidebarScopedFilePaths returns connected files for manual filter scope", () => {
+    const graph = buildIndexFileFilterGraph([
+        createComment({ id: "a", filePath: "docs/a.md", comment: "[[B]]" }),
+        createComment({ id: "b", filePath: "docs/b.md", comment: "" }),
+        createComment({ id: "c", filePath: "docs/c.md", comment: "" }),
+    ], {
+        resolveWikiLinkPath: (linkPath) => ({
+            B: "docs/b.md",
+        }[linkPath] ?? null),
+    });
+
+    assert.deepEqual(
+        deriveIndexSidebarScopedFilePaths(graph, "docs/a.md"),
+        ["docs/a.md", "docs/b.md"],
+    );
+});
+
+test("deriveIndexSidebarScopedFilePaths uses the same connected scope for any root source", () => {
+    const graph = buildIndexFileFilterGraph([
+        createComment({ id: "a", filePath: "docs/a.md", comment: "[[B]]" }),
+        createComment({ id: "b", filePath: "docs/b.md", comment: "" }),
+    ], {
+        resolveWikiLinkPath: (linkPath) => ({
+            B: "docs/b.md",
+        }[linkPath] ?? null),
+    });
+
+    assert.deepEqual(
+        deriveIndexSidebarScopedFilePaths(graph, "docs/a.md"),
+        ["docs/a.md", "docs/b.md"],
+    );
+});
+
+test("shouldLimitIndexSidebarList applies the cap only when no root scope is active", () => {
+    assert.equal(shouldLimitIndexSidebarList(null), true);
+    assert.equal(shouldLimitIndexSidebarList("docs/a.md"), false);
 });
 
 test("getIndexFileFilterSuggestions keeps selected files visible and orders them first", () => {

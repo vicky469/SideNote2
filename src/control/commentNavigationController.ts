@@ -19,6 +19,7 @@ interface SidebarViewLike {
     updateActiveFile(file: TFile | null): Promise<void>;
     highlightComment(commentId: string): void;
     highlightAndFocusDraft(commentId: string): Promise<void>;
+    setIndexFileFilterRootPath?(filePath: string | null): Promise<void>;
 }
 
 function isSidebarViewLike(view: unknown): view is SidebarViewLike {
@@ -179,12 +180,17 @@ export class CommentNavigationController {
     public async syncSidebarSelection(
         commentId: string,
         file: TFile | null,
+        options: {
+            indexScopeRootFilePath?: string | null;
+        } = {},
     ): Promise<void> {
-        await this.updateSidebarViews(file);
-
         const leaves = this.host.app.workspace.getLeavesOfType("sidenote2-view");
         for (const leaf of leaves) {
             if (isSidebarViewLike(leaf.view)) {
+                await leaf.view.updateActiveFile(file);
+                if (options.indexScopeRootFilePath !== undefined && leaf.view.setIndexFileFilterRootPath) {
+                    await leaf.view.setIndexFileFilterRootPath(options.indexScopeRootFilePath);
+                }
                 leaf.view.highlightComment(commentId);
             }
         }

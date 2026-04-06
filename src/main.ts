@@ -84,7 +84,8 @@ export default class SideNote2 extends Plugin {
         getDraftForFile: (filePath) => this.commentSessionController.getDraftForFile(filePath),
         getRevealedCommentId: (filePath) => this.commentSessionController.getRevealedCommentId(filePath),
         activateViewAndHighlightComment: (commentId) => this.activateViewAndHighlightComment(commentId),
-        activateIndexComment: (commentId, indexFilePath) => this.activateIndexComment(commentId, indexFilePath),
+        activateIndexComment: (commentId, indexFilePath, sourceFilePath) =>
+            this.activateIndexComment(commentId, indexFilePath, sourceFilePath),
     });
     private readonly commentMutationController = new CommentMutationController({
         getAllCommentsNotePath: () => this.getAllCommentsNotePath(),
@@ -384,11 +385,13 @@ export default class SideNote2 extends Plugin {
         await this.commentNavigationController.activateViewAndHighlightComment(commentId);
     }
 
-    async activateIndexComment(commentId: string, indexFilePath: string) {
+    async activateIndexComment(commentId: string, indexFilePath: string, sourceFilePath?: string) {
         await this.syncIndexCommentHighlightPair(commentId, indexFilePath);
 
         const indexFile = this.workspaceViewController.getFileByPath(indexFilePath);
-        await this.commentNavigationController.syncSidebarSelection(commentId, indexFile);
+        await this.commentNavigationController.syncSidebarSelection(commentId, indexFile, {
+            indexScopeRootFilePath: sourceFilePath ?? undefined,
+        });
     }
 
     public async revealIndexCommentFromSidebar(commentId: string, indexFilePath: string) {

@@ -1,4 +1,8 @@
 import type { Comment } from "../../commentManager";
+import {
+    getIndexFileFilterConnectedComponent,
+    type IndexFileFilterGraph,
+} from "../../core/derived/indexFileFilterGraph";
 
 export interface IndexFileFilterOption {
     filePath: string;
@@ -47,6 +51,26 @@ export function filterCommentsByFilePaths<T extends { filePath: string }>(
 
     const selectedSet = new Set(selectedFilePaths.map((filePath) => getNormalizedFilterPath(filePath)));
     return comments.filter((comment) => selectedSet.has(getNormalizedFilterPath(comment.filePath)));
+}
+
+export function deriveIndexSidebarScopedFilePaths(
+    graph: IndexFileFilterGraph | null,
+    rootFilePath: string | null | undefined,
+): string[] {
+    if (!graph || !rootFilePath) {
+        return [];
+    }
+
+    const normalizedRootPath = getNormalizedFilterPath(rootFilePath);
+    if (!normalizedRootPath || !graph.fileCommentCounts.has(normalizedRootPath)) {
+        return [];
+    }
+
+    return getIndexFileFilterConnectedComponent(graph, normalizedRootPath);
+}
+
+export function shouldLimitIndexSidebarList(rootFilePath: string | null | undefined): boolean {
+    return !rootFilePath;
 }
 
 export function buildIndexFileFilterOptions(comments: Comment[]): IndexFileFilterOption[] {

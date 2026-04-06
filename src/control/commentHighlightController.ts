@@ -113,7 +113,7 @@ export interface CommentHighlightHost {
     getDraftForFile(filePath: string): DraftComment | null;
     getRevealedCommentId(filePath: string): string | null;
     activateViewAndHighlightComment(commentId: string): Promise<void>;
-    activateIndexComment(commentId: string, indexFilePath: string): Promise<void>;
+    activateIndexComment(commentId: string, indexFilePath: string, sourceFilePath?: string): Promise<void>;
 }
 
 export class CommentHighlightController {
@@ -249,6 +249,50 @@ export class CommentHighlightController {
         previewRoot.scrollTop = previewRoot.scrollTop + delta;
     }
 
+    private getIndexFolderPath(filePath: string): string {
+        const normalizedPath = filePath.replace(/\\/g, "/");
+        const pathSegments = normalizedPath.split("/").filter(Boolean);
+        pathSegments.pop();
+        return pathSegments.join("/");
+    }
+
+    private expandCollapsedIndexFolderChunk(
+        previewRoot: HTMLElement,
+        filePath: string,
+    ): boolean {
+        const folderPath = this.getIndexFolderPath(filePath);
+        if (!folderPath) {
+            return false;
+        }
+
+        let expanded = false;
+        previewRoot.querySelectorAll("h3[data-heading]").forEach((heading) => {
+            if (!(heading instanceof HTMLHeadingElement)) {
+                return;
+            }
+
+            if ((heading.dataset.heading ?? "").trim() !== folderPath) {
+                return;
+            }
+
+            const headingContainer = heading.closest(".el-h3");
+            if (!(headingContainer instanceof HTMLElement) || !headingContainer.classList.contains("is-collapsed")) {
+                return;
+            }
+
+            const collapseToggle = heading.querySelector(".heading-collapse-indicator, .collapse-indicator, .collapse-icon");
+            if (collapseToggle instanceof HTMLElement) {
+                collapseToggle.click();
+            } else {
+                heading.click();
+            }
+
+            expanded = true;
+        });
+
+        return expanded;
+    }
+
     private waitForPreviewFrame(): Promise<void> {
         return new Promise((resolve) => {
             requestAnimationFrame(() => resolve());
@@ -325,7 +369,7 @@ export class CommentHighlightController {
                     return;
                 }
 
-                void this.host.activateIndexComment(target.commentId, sourcePath);
+                void this.host.activateIndexComment(target.commentId, sourcePath, target.filePath);
                 const previewRoot = element.closest(".markdown-preview-view, .markdown-rendered");
                 if (previewRoot instanceof HTMLElement) {
                     queueMicrotask(() => {
@@ -440,6 +484,11 @@ export class CommentHighlightController {
             this.setPreviewScrollTop(previewRoot, nextScrollTop);
             await this.waitForPreviewFrame();
             await this.waitForPreviewFrame();
+
+            if (this.expandCollapsedIndexFolderChunk(previewRoot, navigationTarget.filePath)) {
+                await this.waitForPreviewFrame();
+                await this.waitForPreviewFrame();
+            }
 
             this.prepareIndexPreviewLinks(previewRoot);
             this.syncIndexPreviewLinkStates(previewRoot, indexFilePath);
@@ -684,7 +733,7 @@ export class CommentHighlightController {
 
                 event.preventDefault();
                 event.stopPropagation();
-                void host.activateIndexComment(commentTarget.commentId, filePath);
+                void host.activateIndexComment(commentTarget.commentId, filePath, commentTarget.filePath);
                 return true;
             },
         });
