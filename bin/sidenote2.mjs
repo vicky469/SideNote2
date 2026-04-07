@@ -2,6 +2,7 @@
 
 import * as esbuild from "esbuild";
 import { createHash, randomUUID } from "node:crypto";
+import { writeSync } from "node:fs";
 import { access, copyFile, mkdir, readdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import path from "node:path";
@@ -275,6 +276,38 @@ function sleep(milliseconds) {
     return new Promise((resolve) => {
         setTimeout(resolve, milliseconds);
     });
+}
+
+function createBufferedIo() {
+    const stdoutChunks = [];
+    const stderrChunks = [];
+
+    return {
+        io: {
+            stdout: {
+                write(chunk) {
+                    stdoutChunks.push(String(chunk));
+                    return true;
+                },
+            },
+            stderr: {
+                write(chunk) {
+                    stderrChunks.push(String(chunk));
+                    return true;
+                },
+            },
+        },
+        flush() {
+            const stdout = stdoutChunks.join("");
+            const stderr = stderrChunks.join("");
+            if (stdout) {
+                writeSync(process.stdout.fd, stdout);
+            }
+            if (stderr) {
+                writeSync(process.stderr.fd, stderr);
+            }
+        },
+    };
 }
 
 function createContentFingerprint(content) {
@@ -980,13 +1013,16 @@ export async function runCli(argv, io = { stdout: process.stdout, stderr: proces
 }
 
 export async function main(argv = process.argv.slice(2)) {
+    const bufferedIo = createBufferedIo();
     try {
-        const exitCode = await runCli(argv);
+        const exitCode = await runCli(argv, bufferedIo.io);
+        bufferedIo.flush();
         if (exitCode !== 0) {
             process.exit(exitCode);
         }
     } catch (error) {
-        process.stderr.write(`${error instanceof Error ? error.message : String(error)}\n`);
+        bufferedIo.flush();
+        writeSync(process.stderr.fd, `${error instanceof Error ? error.message : String(error)}\n`);
         process.exit(1);
     }
 }
@@ -996,5 +1032,5 @@ const isDirectExecution = process.argv[1]
     : false;
 
 if (isDirectExecution) {
-    void main();
+    await main();
 }

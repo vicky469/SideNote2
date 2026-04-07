@@ -3,8 +3,8 @@
   <img src="./logo-readme.svg" alt="SideNote2 logo" width="72">
 </p>
 <p align="center">
-  <a href="https://github.com/vicky469/SideNote2/releases/tag/2.0.1">
-    <img src="https://img.shields.io/badge/beta-2.0.1-f97316?style=flat-square" alt="Current beta">
+  <a href="https://github.com/vicky469/SideNote2/releases/tag/2.0.2">
+    <img src="https://img.shields.io/badge/beta-2.0.2-f97316?style=flat-square" alt="Current beta">
   </a>
   <a href="./docs/README-dev.md">
     <img src="https://img.shields.io/badge/docs-dev%20notes-0f766e?style=flat-square" alt="Dev docs">
@@ -135,6 +135,13 @@ The JSON block is stored in plugin data.
 Setup, local vault install, debugging, and architecture notes live in [README-dev.md](./docs/README-dev.md).
 
 ## Changelog
+
+### 2.0.2 - 2026-04-07
+
+- Threaded replies in the index sidebar now render as their own nested comment cards instead of being flattened into the parent card body.
+- Added a top-level index toggle to show or hide child replies, while still auto-showing them when a targeted reply is opened for reveal or edit.
+- Improved sidebar thread actions and metadata presentation so parent and child cards behave more consistently in index view.
+- Fixed bundled `sidenote2` CLI command output so agent and automation workflows can reliably capture success and error messages.
 
 ### 2.0.1 - 2026-04-06
 
