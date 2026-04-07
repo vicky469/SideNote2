@@ -67,7 +67,8 @@ function createHarness() {
         id: string;
         name: string;
         icon: string;
-        editorCallback: (editor: { somethingSelected(): boolean }, view: { file: TFile | null }) => Promise<void> | void;
+        callback?: () => Promise<void> | void;
+        editorCallback?: (editor: { somethingSelected(): boolean }, view: { file: TFile | null }) => Promise<void> | void;
     }> = [];
     let editorMenuHandler: ((menu: EditorMenuLike, editor: { somethingSelected(): boolean }, view: { file: TFile | null }) => void) | null = null;
     const ribbonActions: Array<{ icon: string; title: string; callback: () => void }> = [];
@@ -75,6 +76,8 @@ function createHarness() {
     const draftCalls: Array<{ selected: boolean; filePath: string | null }> = [];
     const highlightedCommentTargets: Array<{ filePath: string; commentId: string }> = [];
     let openIndexNoteCount = 0;
+    let installVaultAgentsFileCount = 0;
+    let uninstallVaultAgentsFileCount = 0;
 
     const controller = new PluginRegistrationController({
         manifestId: "side-note2",
@@ -113,6 +116,12 @@ function createHarness() {
         openIndexNote: async () => {
             openIndexNoteCount += 1;
         },
+        installVaultAgentsFile: async () => {
+            installVaultAgentsFileCount += 1;
+        },
+        uninstallVaultAgentsFile: async () => {
+            uninstallVaultAgentsFileCount += 1;
+        },
     });
 
     return {
@@ -127,6 +136,8 @@ function createHarness() {
         draftCalls,
         highlightedCommentTargets,
         getOpenIndexNoteCount: () => openIndexNoteCount,
+        getInstallVaultAgentsFileCount: () => installVaultAgentsFileCount,
+        getUninstallVaultAgentsFileCount: () => uninstallVaultAgentsFileCount,
     };
 }
 
@@ -140,10 +151,14 @@ test("plugin registration controller registers the view, protocol handler, comma
     assert.equal(harness.registerViewCalls[0].creator({ id: "leaf-1" }) instanceof Object, true);
     assert.deepEqual(harness.createdSidebarLeaves, [{ id: "leaf-1" }]);
     assert.deepEqual(harness.removedCommandIds, ["side-note2:activate-view"]);
-    assert.deepEqual(harness.commands.map((command) => command.id), ["add-comment-to-selection"]);
+    assert.deepEqual(harness.commands.map((command) => command.id), [
+        "add-comment-to-selection",
+        "install-vault-agents-file",
+        "uninstall-vault-agents-file",
+    ]);
     assert.deepEqual(harness.ribbonActions.map((action) => action.title), ["Open SideNote2 index"]);
 
-    await harness.commands[0].editorCallback(
+    await harness.commands[0].editorCallback?.(
         { somethingSelected: () => true },
         { file: editorFile },
     );
@@ -166,6 +181,12 @@ test("plugin registration controller registers the view, protocol handler, comma
     harness.ribbonActions[0].callback();
     await Promise.resolve();
     assert.equal(harness.getOpenIndexNoteCount(), 1);
+
+    await harness.commands[1].callback?.();
+    assert.equal(harness.getInstallVaultAgentsFileCount(), 1);
+
+    await harness.commands[2].callback?.();
+    assert.equal(harness.getUninstallVaultAgentsFileCount(), 1);
 });
 
 test("plugin registration controller only adds the editor menu item for active selections", async () => {

@@ -31,7 +31,8 @@ export interface PluginRegistrationHost {
         id: string;
         name: string;
         icon: string;
-        editorCallback: (
+        callback?: () => Promise<void> | void;
+        editorCallback?: (
             editor: EditorSelectionLike,
             view: EditorCommandViewLike,
         ) => Promise<void> | void;
@@ -48,6 +49,8 @@ export interface PluginRegistrationHost {
     startDraftFromEditorSelection(editor: EditorSelectionLike, file: TFile | null): Promise<unknown>;
     highlightCommentById(filePath: string, commentId: string): Promise<void>;
     openIndexNote(): Promise<void> | void;
+    installVaultAgentsFile(): Promise<void>;
+    uninstallVaultAgentsFile(): Promise<void>;
 }
 
 export interface CommentProtocolTarget {
@@ -82,6 +85,24 @@ export class PluginRegistrationController {
             icon: this.host.iconId,
             editorCallback: async (editor, view) => {
                 await this.host.startDraftFromEditorSelection(editor, view.file);
+            },
+        });
+
+        this.host.addCommand({
+            id: "install-vault-agents-file",
+            name: "Sync AGENTS.md in vault root",
+            icon: this.host.iconId,
+            callback: async () => {
+                await this.host.installVaultAgentsFile();
+            },
+        });
+
+        this.host.addCommand({
+            id: "uninstall-vault-agents-file",
+            name: "Remove SideNote2 agent support from vault",
+            icon: this.host.iconId,
+            callback: async () => {
+                await this.host.uninstallVaultAgentsFile();
             },
         });
 

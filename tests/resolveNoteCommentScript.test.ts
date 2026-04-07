@@ -43,47 +43,39 @@ function createComment(overrides: Partial<Comment> = {}): Comment {
     };
 }
 
-test("append-note-comment-entry script appends a new entry to the targeted thread", async () => {
-    const tempDir = await mkdtemp(path.join(tmpdir(), "sidenote2-comment-append-script-"));
+test("comment:resolve marks the targeted thread resolved", async () => {
+    const tempDir = await mkdtemp(path.join(tmpdir(), "sidenote2-comment-resolve-script-"));
     const notePath = path.join(tempDir, "note.md");
-    const commentPath = path.join(tempDir, "reply.md");
-    const scriptPath = path.resolve(process.cwd(), "scripts/append-note-comment-entry.mjs");
+    const scriptPath = path.resolve(process.cwd(), "bin/sidenote2.mjs");
     const original = serializeNoteComments("# Title\n\nBody text.\n", [createComment()]);
 
     await writeFile(notePath, original, "utf8");
-    await writeFile(commentPath, "Reply body\nSecond line\n", "utf8");
 
     const { stdout } = await execFile("node", [
         scriptPath,
+        "comment:resolve",
         "--file",
         notePath,
         "--id",
         "comment-1",
-        "--comment-file",
-        commentPath,
     ], {
         cwd: process.cwd(),
     });
 
-    assert.match(stdout, /Appended a new entry to comment comment-1/);
+    assert.match(stdout, /Resolved comment comment-1/);
 
     const updated = await readFile(notePath, "utf8");
     const parsed = parseNoteComments(updated, notePath);
-    assert.equal(parsed.comments.length, 1);
-    assert.equal(parsed.comments[0].comment, "Reply body\nSecond line");
-    assert.equal(parsed.threads[0].entries.length, 2);
-    assert.equal(parsed.threads[0].entries[0].body, "Original body");
-    assert.equal(parsed.threads[0].entries[1].body, "Reply body\nSecond line");
-    assert.equal(parsed.mainContent, "# Title\n\nBody text.");
+    assert.equal(parsed.comments[0].resolved, true);
+    assert.equal(parsed.threads[0].resolved, true);
 });
 
-test("append-note-comment-entry script can target a thread by obsidian side-note URI", async () => {
-    const tempDir = await mkdtemp(path.join(tmpdir(), "sidenote2-comment-uri-append-script-"));
+test("comment:resolve can target a stored comment by obsidian side-note URI", async () => {
+    const tempDir = await mkdtemp(path.join(tmpdir(), "sidenote2-comment-resolve-uri-script-"));
     const homeDir = path.join(tempDir, "home");
     const vaultRoot = path.join(tempDir, "Public Vault");
     const notePath = path.join(vaultRoot, "Folder", "Note.md");
-    const commentPath = path.join(tempDir, "reply.md");
-    const scriptPath = path.resolve(process.cwd(), "scripts/append-note-comment-entry.mjs");
+    const scriptPath = path.resolve(process.cwd(), "bin/sidenote2.mjs");
     const noteFilePath = "Folder/Note.md";
     const original = serializeNoteComments("# Title\n\nBody text.\n", [createComment({
         filePath: noteFilePath,
@@ -92,14 +84,12 @@ test("append-note-comment-entry script can target a thread by obsidian side-note
     await mkdir(path.dirname(notePath), { recursive: true });
     await writeObsidianVaultConfig(homeDir, vaultRoot);
     await writeFile(notePath, original, "utf8");
-    await writeFile(commentPath, "Reply from URI\nSecond line\n", "utf8");
 
     const { stdout } = await execFile("node", [
         scriptPath,
+        "comment:resolve",
         "--uri",
         buildCommentLocationUri("Public Vault", noteFilePath, "comment-1"),
-        "--comment-file",
-        commentPath,
     ], {
         cwd: process.cwd(),
         env: {
@@ -108,10 +98,9 @@ test("append-note-comment-entry script can target a thread by obsidian side-note
         },
     });
 
-    assert.match(stdout, /Appended a new entry to comment comment-1/);
+    assert.match(stdout, /Resolved comment comment-1/);
 
     const updated = await readFile(notePath, "utf8");
     const parsed = parseNoteComments(updated, notePath);
-    assert.equal(parsed.threads[0].entries.length, 2);
-    assert.equal(parsed.threads[0].entries[1].body, "Reply from URI\nSecond line");
+    assert.equal(parsed.comments[0].resolved, true);
 });

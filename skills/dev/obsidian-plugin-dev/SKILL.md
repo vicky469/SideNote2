@@ -28,9 +28,9 @@ description: Use when building, debugging, releasing, or submitting an Obsidian 
 
 - In this repo, treat the repo-local `skills/*/SKILL.md` files as the canonical agent instructions.
 - Use this skill for general plugin repo, API, UI, build, and release work.
-- When the task is about real SideNote2-backed vault notes, hidden `<!-- SideNote2 comments -->` blocks, or helper-script based note comment edits, switch to `skills/side-note2-note-comments/SKILL.md`.
+- When the task is about real SideNote2-backed vault notes, `obsidian://side-note2-comment?...` links, hidden `<!-- SideNote2 comments -->` blocks, or helper-script based note comment edits, switch to `skills/sidenote2/SKILL.md`.
 - Do not keep separate Claude-only and Codex-only copies of the same repo-local skill text unless the workflows genuinely diverge.
-- If you need to test the packaged global install flow from this repo, run `npm run skill:install` or `npm run skill:install -- --name obsidian-plugin-dev`.
+- If you need to test the packaged global install flow from this repo, run `npm run skill:install` or `npm run skill:install -- --name sidenote2`.
 
 ## Reference Sets
 

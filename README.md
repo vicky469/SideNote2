@@ -59,15 +59,25 @@ It is built for a minimal workflow: humans work in the sidebar, while agents can
    <p align="center">
      <img src="./image.png" alt="Install SideNote2 with BRAT" width="420">
    </p>
-3. Optional: use the bundled SideNote2 agent instructions.
+3. Agent support for SideNote2 workflows is automatic.
 
-Example install for Codex CLI:
-```bash
-python ~/.codex/skills/.system/skill-installer/scripts/install-skill-from-github.py --repo \
-  vicky469/SideNote2 --path skills/side-note2-note-comments skills/canvas-design
-```
+If an agent is working directly inside the Obsidian vault, SideNote2 manages a vault-root `AGENTS.md`.
+When the plugin is enabled, it creates the file when missing, or inserts and refreshes a SideNote2-managed block inside an existing `AGENTS.md` without overwriting unrelated user instructions.
 
-`side-note2-note-comments` helps agents read and update SideNote2-backed notes. `canvas-design` is a bundled Obsidian canvas-layout skill for cleaner spacing, grouping, and board readability. If you use Claude Code or another assistant, adapt the same instructions there.
+You can run it manually from the command palette if needed:
+
+- `SideNote2: Sync AGENTS.md in vault root`
+
+If you want to remove the SideNote2-managed agent support later, use:
+
+- `SideNote2: Remove SideNote2 agent support from vault`
+
+That vault `AGENTS.md` is the main routing layer for SideNote2 note workflows such as:
+
+- resolving `obsidian://side-note2-comment?...` links
+- replying to an existing side note thread
+- resolving a side note thread
+- updating a stored SideNote2 comment in a real markdown note
 
 ## Workflow
 
@@ -119,6 +129,8 @@ If multiple side comments in the same note use the same selected text, include a
 ## Command
 
 - `SideNote2: Add comment to selection`
+- `SideNote2: Sync AGENTS.md in vault root`
+- `SideNote2: Remove SideNote2 agent support from vault`
 
 ## Storage
 

@@ -821,3 +821,41 @@ export function appendNoteCommentEntryById(
 
     return serializeNoteCommentThreads(noteContent, updatedThreads);
 }
+
+export function setNoteCommentResolvedById(
+    noteContent: string,
+    filePath: string,
+    commentId: string,
+    nextResolved: boolean,
+): string | null {
+    const parsed = parseNoteComments(noteContent, filePath);
+    let found = false;
+
+    const updatedThreads = parsed.threads.map((thread) => {
+        const matchesThread = thread.id === commentId
+            || thread.entries.some((entry) => entry.id === commentId);
+        if (!matchesThread) {
+            return thread;
+        }
+
+        found = true;
+        return {
+            ...thread,
+            resolved: nextResolved,
+        };
+    });
+
+    if (!found) {
+        return null;
+    }
+
+    return serializeNoteCommentThreads(noteContent, updatedThreads);
+}
+
+export function resolveNoteCommentById(
+    noteContent: string,
+    filePath: string,
+    commentId: string,
+): string | null {
+    return setNoteCommentResolvedById(noteContent, filePath, commentId, true);
+}

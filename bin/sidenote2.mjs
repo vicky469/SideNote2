@@ -22,7 +22,9 @@ function printMainUsage(stream = process.stderr) {
             "  comment:migrate-legacy  Maintenance: rewrite one note from legacy flat comments to threaded storage",
             "  comment:append  Append one entry to an existing SideNote2 comment thread in a note",
             "  comment:update  Update one stored SideNote2 comment body in a note",
+            "  comment:resolve  Mark one SideNote2 comment thread as resolved in a note",
             "  install-skill   Copy bundled SideNote2 Codex skill(s) into the Codex skills directory",
+            "  uninstall-agent-support  Remove SideNote2 AGENTS routing from a vault and uninstall bundled skills",
             "",
             "Run `sidenote2 <command> --help` for command-specific usage.",
         ].join("\n") + "\n",
@@ -33,10 +35,11 @@ function printCommentUpdateUsage(stream = process.stderr) {
     stream.write(
         [
             "Usage:",
-            "  sidenote2 comment:update --file <note.md> --id <comment-id> (--comment <text> | --comment-file <path> | --stdin) [--settle-ms <milliseconds>]",
+            "  sidenote2 comment:update (--file <note.md> --id <comment-id> | --uri <obsidian://side-note2-comment?...>) (--comment <text> | --comment-file <path> | --stdin) [--settle-ms <milliseconds>]",
             "",
             "Examples:",
             "  sidenote2 comment:update --file ./note.md --id comment-1 --comment-file ./comment.md",
+            "  sidenote2 comment:update --uri \"obsidian://side-note2-comment?...\" --comment-file ./comment.md",
             "  sidenote2 comment:update --file ./note.md --id comment-1 --comment-file ./comment.md --settle-ms 2000",
             "  printf 'Updated body\\n' | sidenote2 comment:update --file ./note.md --id comment-1 --stdin",
         ].join("\n") + "\n",
@@ -47,12 +50,27 @@ function printCommentAppendUsage(stream = process.stderr) {
     stream.write(
         [
             "Usage:",
-            "  sidenote2 comment:append --file <note.md> --id <comment-id> (--comment <text> | --comment-file <path> | --stdin) [--settle-ms <milliseconds>]",
+            "  sidenote2 comment:append (--file <note.md> --id <comment-id> | --uri <obsidian://side-note2-comment?...>) (--comment <text> | --comment-file <path> | --stdin) [--settle-ms <milliseconds>]",
             "",
             "Examples:",
             "  sidenote2 comment:append --file ./note.md --id comment-1 --comment-file ./reply.md",
+            "  sidenote2 comment:append --uri \"obsidian://side-note2-comment?...\" --comment-file ./reply.md",
             "  sidenote2 comment:append --file ./note.md --id comment-1 --comment-file ./reply.md --settle-ms 2000",
             "  printf 'Reply body\\n' | sidenote2 comment:append --file ./note.md --id comment-1 --stdin",
+        ].join("\n") + "\n",
+    );
+}
+
+function printCommentResolveUsage(stream = process.stderr) {
+    stream.write(
+        [
+            "Usage:",
+            "  sidenote2 comment:resolve (--file <note.md> --id <comment-id> | --uri <obsidian://side-note2-comment?...>) [--settle-ms <milliseconds>]",
+            "",
+            "Examples:",
+            "  sidenote2 comment:resolve --file ./note.md --id comment-1",
+            "  sidenote2 comment:resolve --uri \"obsidian://side-note2-comment?...\"",
+            "  sidenote2 comment:resolve --file ./note.md --id comment-1 --settle-ms 2000",
         ].join("\n") + "\n",
     );
 }
@@ -96,10 +114,28 @@ function printSkillUsage(command, stream = process.stderr) {
     );
 }
 
+function printUninstallAgentSupportUsage(stream = process.stderr) {
+    stream.write(
+        [
+            "Usage:",
+            "  sidenote2 uninstall-agent-support (--vault-root <vault-dir> | --vault <vault-name>) [--skills-root <skills-root>]",
+            "",
+            "Defaults:",
+            "  --skills-root defaults to $CODEX_HOME/skills or ~/.codex/skills",
+            "",
+            "Examples:",
+            "  sidenote2 uninstall-agent-support --vault-root /path/to/vault",
+            "  sidenote2 uninstall-agent-support --vault public",
+            "  sidenote2 uninstall-agent-support --vault-root /path/to/vault --skills-root /tmp/skills",
+        ].join("\n") + "\n",
+    );
+}
+
 function parseCommentUpdateArgs(argv) {
     const options = {
         file: "",
         id: "",
+        uri: "",
         comment: null,
         commentFile: "",
         stdin: false,
@@ -115,6 +151,10 @@ function parseCommentUpdateArgs(argv) {
                 break;
             case "--id":
                 options.id = argv[index + 1] ?? "";
+                index += 1;
+                break;
+            case "--uri":
+                options.uri = argv[index + 1] ?? "";
                 index += 1;
                 break;
             case "--comment":
@@ -141,8 +181,11 @@ function parseCommentUpdateArgs(argv) {
     }
 
     const contentSources = [options.comment !== null, Boolean(options.commentFile), options.stdin].filter(Boolean).length;
-    if (!options.file || !options.id || contentSources !== 1) {
-        throw new Error("Expected --file, --id, and exactly one comment source.");
+    const hasFileOrIdTarget = Boolean(options.file || options.id);
+    const hasFileAndIdTarget = Boolean(options.file && options.id);
+    const hasUriTarget = Boolean(options.uri);
+    if (contentSources !== 1 || (hasFileOrIdTarget ? 1 : 0) + (hasUriTarget ? 1 : 0) !== 1 || (hasFileOrIdTarget && !hasFileAndIdTarget)) {
+        throw new Error("Expected exactly one target form: either --file with --id, or --uri, plus exactly one comment source.");
     }
 
     return options;
@@ -150,6 +193,51 @@ function parseCommentUpdateArgs(argv) {
 
 function parseCommentAppendArgs(argv) {
     return parseCommentUpdateArgs(argv);
+}
+
+function parseCommentResolveArgs(argv) {
+    const options = {
+        file: "",
+        id: "",
+        uri: "",
+        settleMs: 0,
+    };
+
+    for (let index = 0; index < argv.length; index += 1) {
+        const arg = argv[index];
+        switch (arg) {
+            case "--file":
+                options.file = argv[index + 1] ?? "";
+                index += 1;
+                break;
+            case "--id":
+                options.id = argv[index + 1] ?? "";
+                index += 1;
+                break;
+            case "--uri":
+                options.uri = argv[index + 1] ?? "";
+                index += 1;
+                break;
+            case "--settle-ms":
+                options.settleMs = parseNonNegativeIntegerOption(argv[index + 1] ?? "", "--settle-ms");
+                index += 1;
+                break;
+            case "--help":
+            case "-h":
+                return null;
+            default:
+                throw new Error(`Unknown argument: ${arg}`);
+        }
+    }
+
+    const hasFileOrIdTarget = Boolean(options.file || options.id);
+    const hasFileAndIdTarget = Boolean(options.file && options.id);
+    const hasUriTarget = Boolean(options.uri);
+    if ((hasFileOrIdTarget ? 1 : 0) + (hasUriTarget ? 1 : 0) !== 1 || (hasFileOrIdTarget && !hasFileAndIdTarget)) {
+        throw new Error("Expected exactly one target form: either --file with --id, or --uri.");
+    }
+
+    return options;
 }
 
 function parseCommentMigrateLegacyArgs(argv) {
@@ -222,6 +310,44 @@ function parseSkillArgs(argv) {
             default:
                 throw new Error(`Unknown argument: ${arg}`);
         }
+    }
+
+    return options;
+}
+
+function parseUninstallAgentSupportArgs(argv) {
+    const options = {
+        vaultRoot: "",
+        vaultName: "",
+        skillsRoot: getDefaultSkillsRoot(),
+    };
+
+    for (let index = 0; index < argv.length; index += 1) {
+        const arg = argv[index];
+        switch (arg) {
+            case "--vault-root":
+                options.vaultRoot = argv[index + 1] ?? "";
+                index += 1;
+                break;
+            case "--vault":
+                options.vaultName = argv[index + 1] ?? "";
+                index += 1;
+                break;
+            case "--skills-root":
+                options.skillsRoot = path.resolve(process.cwd(), argv[index + 1] ?? "");
+                index += 1;
+                break;
+            case "--help":
+            case "-h":
+                return null;
+            default:
+                throw new Error(`Unknown argument: ${arg}`);
+        }
+    }
+
+    const targetCount = [Boolean(options.vaultRoot), Boolean(options.vaultName)].filter(Boolean).length;
+    if (targetCount !== 1) {
+        throw new Error("Expected exactly one of --vault-root or --vault.");
     }
 
     return options;
@@ -367,6 +493,127 @@ async function loadCommentBody(options) {
     return readStdin();
 }
 
+const COMMENT_LOCATION_PROTOCOL = "side-note2-comment";
+const VAULT_AGENTS_MANAGED_BLOCK_START_PREFIX = "<!-- SideNote2 managed AGENTS start";
+const VAULT_AGENTS_MANAGED_BLOCK_END = "<!-- SideNote2 managed AGENTS end -->";
+
+function parseCommentProtocolUri(uri) {
+    try {
+        const parsed = new URL(uri);
+        if (parsed.protocol !== "obsidian:" || parsed.hostname !== COMMENT_LOCATION_PROTOCOL) {
+            return null;
+        }
+
+        const vaultName = parsed.searchParams.get("vault");
+        const filePath = parsed.searchParams.get("file");
+        const commentId = parsed.searchParams.get("commentId");
+        if (!(vaultName && filePath && commentId)) {
+            return null;
+        }
+
+        return {
+            vaultName,
+            filePath,
+            commentId,
+        };
+    } catch {
+        return null;
+    }
+}
+
+function getObsidianConfigPath() {
+    const explicitConfigPath = process.env.OBSIDIAN_CONFIG_PATH?.trim();
+    return explicitConfigPath
+        ? path.resolve(process.cwd(), explicitConfigPath)
+        : path.join(homedir(), ".config", "obsidian", "obsidian.json");
+}
+
+async function resolveVaultRootByName(vaultName) {
+    const configPath = getObsidianConfigPath();
+    let config;
+    try {
+        config = JSON.parse(await readFile(configPath, "utf8"));
+    } catch (error) {
+        const reason = error instanceof Error ? error.message : String(error);
+        throw new Error(`Could not read Obsidian vault config at ${configPath}: ${reason}`);
+    }
+
+    const configuredVaults = config?.vaults;
+    if (!configuredVaults || typeof configuredVaults !== "object") {
+        throw new Error(`Obsidian vault config at ${configPath} does not contain a valid vault list.`);
+    }
+
+    const matchingVaultRoots = [];
+    for (const value of Object.values(configuredVaults)) {
+        if (!value || typeof value !== "object") {
+            continue;
+        }
+
+        const vaultPath = typeof value.path === "string" ? value.path : "";
+        if (!vaultPath) {
+            continue;
+        }
+
+        const resolvedVaultPath = path.resolve(vaultPath);
+        if (path.basename(resolvedVaultPath) === vaultName) {
+            matchingVaultRoots.push(resolvedVaultPath);
+        }
+    }
+
+    if (matchingVaultRoots.length === 0) {
+        throw new Error(`Could not resolve Obsidian vault "${vaultName}" from ${configPath}.`);
+    }
+
+    if (matchingVaultRoots.length > 1) {
+        throw new Error(`Found multiple Obsidian vaults named "${vaultName}" in ${configPath}.`);
+    }
+
+    return matchingVaultRoots[0];
+}
+
+async function resolveVaultRootForAgentSupport(options) {
+    if (options.vaultRoot) {
+        return path.resolve(process.cwd(), options.vaultRoot);
+    }
+
+    return resolveVaultRootByName(options.vaultName);
+}
+
+function resolveVaultRelativeNotePath(vaultRoot, filePath) {
+    const resolvedNotePath = path.resolve(vaultRoot, filePath);
+    const relativePath = path.relative(vaultRoot, resolvedNotePath);
+    if (
+        relativePath.startsWith("..")
+        || path.isAbsolute(relativePath)
+        || relativePath === ""
+        || relativePath === "."
+    ) {
+        throw new Error(`Comment URI file path escapes the resolved vault root: ${filePath}`);
+    }
+
+    return resolvedNotePath;
+}
+
+async function resolveCommentWriteTarget(options) {
+    if (options.uri) {
+        const uriTarget = parseCommentProtocolUri(options.uri);
+        if (!uriTarget) {
+            throw new Error("Expected --uri to be an obsidian://side-note2-comment link with vault, file, and commentId.");
+        }
+
+        const vaultRoot = await resolveVaultRootByName(uriTarget.vaultName);
+        return {
+            notePath: resolveVaultRelativeNotePath(vaultRoot, uriTarget.filePath),
+            commentId: uriTarget.commentId,
+        };
+    }
+
+    return {
+        notePath: path.resolve(process.cwd(), options.file),
+        commentId: options.id,
+    };
+}
+
 async function getBundledSkills() {
     const repoRoot = getRepoRoot(import.meta.url);
     const skillsRoot = path.join(repoRoot, "skills");
@@ -395,6 +642,79 @@ async function getBundledSkills() {
     }
 
     return { repoRoot, skillDirectories };
+}
+
+function normalizeTextLineEndings(content) {
+    return content.replace(/\r\n/g, "\n");
+}
+
+function findVaultAgentsManagedBlockRange(content) {
+    const normalizedContent = normalizeTextLineEndings(content);
+    const start = normalizedContent.indexOf(VAULT_AGENTS_MANAGED_BLOCK_START_PREFIX);
+    if (start === -1) {
+        return null;
+    }
+
+    const endMarkerStart = normalizedContent.indexOf(VAULT_AGENTS_MANAGED_BLOCK_END, start);
+    if (endMarkerStart === -1) {
+        return null;
+    }
+
+    let end = endMarkerStart + VAULT_AGENTS_MANAGED_BLOCK_END.length;
+    if (normalizedContent.charAt(end) === "\n") {
+        end += 1;
+    }
+
+    return { start, end };
+}
+
+function isLegacyManagedVaultAgentsFileContent(content) {
+    const normalizedContent = normalizeTextLineEndings(content).trim();
+    return normalizedContent.startsWith("# SideNote2 Vault Agent Routing")
+        && normalizedContent.includes("When a user is working with real SideNote2 comments in this vault:")
+        && normalizedContent.includes("obsidian://side-note2-comment?...");
+}
+
+function removeManagedBlockFromDocument(existingContent, blockRange) {
+    const normalizedContent = normalizeTextLineEndings(existingContent);
+    const before = normalizedContent.slice(0, blockRange.start).replace(/\s+$/u, "");
+    const after = normalizedContent.slice(blockRange.end).replace(/^\s+/u, "");
+
+    if (!before && !after) {
+        return "";
+    }
+
+    if (!before) {
+        return `${after}\n`;
+    }
+
+    if (!after) {
+        return `${before}\n`;
+    }
+
+    return `${before}\n\n${after}\n`;
+}
+
+function stripSideNote2ManagedAgentsContent(existingContent) {
+    const managedBlockRange = findVaultAgentsManagedBlockRange(existingContent);
+    if (managedBlockRange) {
+        return {
+            kind: "removed",
+            nextContent: removeManagedBlockFromDocument(existingContent, managedBlockRange),
+        };
+    }
+
+    if (isLegacyManagedVaultAgentsFileContent(existingContent)) {
+        return {
+            kind: "removed",
+            nextContent: "",
+        };
+    }
+
+    return {
+        kind: "noop",
+        nextContent: normalizeTextLineEndings(existingContent),
+    };
 }
 
 async function loadStorageModule(repoRoot) {
@@ -704,11 +1024,20 @@ async function runCommentUpdate(argv, streamOut, streamErr) {
     }
 
     const repoRoot = getRepoRoot(import.meta.url);
-    const notePath = path.resolve(process.cwd(), options.file);
+    let writeTarget;
+    try {
+        writeTarget = await resolveCommentWriteTarget(options);
+    } catch (error) {
+        streamErr.write(`${error instanceof Error ? error.message : String(error)}\n`);
+        return 1;
+    }
+
+    const notePath = writeTarget.notePath;
+    const commentId = writeTarget.commentId;
     const nextCommentBody = await loadCommentBody(options);
     const noteContent = await readFile(notePath, "utf8");
     const storageModule = await loadStorageModule(repoRoot);
-    const updated = storageModule.replaceNoteCommentBodyById(noteContent, notePath, options.id, nextCommentBody);
+    const updated = storageModule.replaceNoteCommentBodyById(noteContent, notePath, commentId, nextCommentBody);
 
     if (typeof updated !== "string") {
         const plan = buildLegacyMigrationPlan(notePath, noteContent, storageModule);
@@ -721,7 +1050,7 @@ async function runCommentUpdate(argv, streamOut, streamErr) {
             return 1;
         }
 
-        streamErr.write(`Comment id not found: ${options.id}\n`);
+        streamErr.write(`Comment id not found: ${commentId}\n`);
         return 1;
     }
 
@@ -736,7 +1065,7 @@ async function runCommentUpdate(argv, streamOut, streamErr) {
         return 1;
     }
 
-    streamOut.write(`Updated comment ${options.id} in ${notePath}\n`);
+    streamOut.write(`Updated comment ${commentId} in ${notePath}\n`);
     return 0;
 }
 
@@ -756,11 +1085,20 @@ async function runCommentAppend(argv, streamOut, streamErr) {
     }
 
     const repoRoot = getRepoRoot(import.meta.url);
-    const notePath = path.resolve(process.cwd(), options.file);
+    let writeTarget;
+    try {
+        writeTarget = await resolveCommentWriteTarget(options);
+    } catch (error) {
+        streamErr.write(`${error instanceof Error ? error.message : String(error)}\n`);
+        return 1;
+    }
+
+    const notePath = writeTarget.notePath;
+    const commentId = writeTarget.commentId;
     const nextCommentBody = await loadCommentBody(options);
     const noteContent = await readFile(notePath, "utf8");
     const storageModule = await loadStorageModule(repoRoot);
-    const updated = storageModule.appendNoteCommentEntryById(noteContent, notePath, options.id, {
+    const updated = storageModule.appendNoteCommentEntryById(noteContent, notePath, commentId, {
         id: randomUUID(),
         body: nextCommentBody,
         timestamp: Date.now(),
@@ -789,7 +1127,7 @@ async function runCommentAppend(argv, streamOut, streamErr) {
             return 1;
         }
 
-        streamErr.write(`Comment id not found: ${options.id}\n`);
+        streamErr.write(`Comment id not found: ${commentId}\n`);
         return 1;
     }
 
@@ -804,7 +1142,79 @@ async function runCommentAppend(argv, streamOut, streamErr) {
         return 1;
     }
 
-    streamOut.write(`Appended a new entry to comment ${options.id} in ${notePath}\n`);
+    streamOut.write(`Appended a new entry to comment ${commentId} in ${notePath}\n`);
+    return 0;
+}
+
+async function runCommentResolve(argv, streamOut, streamErr) {
+    let options;
+    try {
+        options = parseCommentResolveArgs(argv);
+    } catch (error) {
+        streamErr.write(`${error instanceof Error ? error.message : String(error)}\n`);
+        printCommentResolveUsage(streamErr);
+        return 1;
+    }
+
+    if (options === null) {
+        printCommentResolveUsage(streamOut);
+        return 0;
+    }
+
+    const repoRoot = getRepoRoot(import.meta.url);
+    let writeTarget;
+    try {
+        writeTarget = await resolveCommentWriteTarget(options);
+    } catch (error) {
+        streamErr.write(`${error instanceof Error ? error.message : String(error)}\n`);
+        return 1;
+    }
+
+    const notePath = writeTarget.notePath;
+    const commentId = writeTarget.commentId;
+    const noteContent = await readFile(notePath, "utf8");
+    const storageModule = await loadStorageModule(repoRoot);
+    const updated = storageModule.resolveNoteCommentById(noteContent, notePath, commentId);
+
+    if (typeof updated !== "string") {
+        const plan = buildLegacyMigrationPlan(notePath, noteContent, storageModule);
+        if (plan.kind === "legacy") {
+            streamErr.write(
+                `Note still uses legacy flat SideNote2 comments: ${notePath}\n`
+                + "Open the vault once in SideNote2 2.0.1+ so startup can auto-migrate it, "
+                + "or use `sidenote2 comment:migrate-legacy` only for out-of-band maintenance.\n",
+            );
+            return 1;
+        }
+
+        if (plan.kind === "unsupported") {
+            streamErr.write(
+                `Found a SideNote2 comments block in ${notePath}, but it is not a supported threaded payload.\n`,
+            );
+            return 1;
+        }
+
+        if (plan.kind === "no-managed-block") {
+            streamErr.write(`No SideNote2 comments block found in ${notePath}\n`);
+            return 1;
+        }
+
+        streamErr.write(`Comment id not found: ${commentId}\n`);
+        return 1;
+    }
+
+    const writeResult = await writeObservedNoteSafely(notePath, createContentFingerprint(noteContent), updated, {
+        settleMs: options.settleMs,
+    });
+    if (writeResult.kind === "changed") {
+        streamErr.write(
+            `Skipped resolving ${notePath} because ${writeResult.reason}. `
+            + "Rerun after Obsidian Sync or other local edits settle.\n",
+        );
+        return 1;
+    }
+
+    streamOut.write(`Resolved comment ${commentId} in ${notePath}\n`);
     return 0;
 }
 
@@ -984,6 +1394,65 @@ async function runInstallSkill(argv, streamOut, streamErr) {
     return 0;
 }
 
+async function runUninstallAgentSupport(argv, streamOut, streamErr) {
+    let options;
+    try {
+        options = parseUninstallAgentSupportArgs(argv);
+    } catch (error) {
+        streamErr.write(`${error instanceof Error ? error.message : String(error)}\n`);
+        printUninstallAgentSupportUsage(streamErr);
+        return 1;
+    }
+
+    if (options === null) {
+        printUninstallAgentSupportUsage(streamOut);
+        return 0;
+    }
+
+    const vaultRoot = await resolveVaultRootForAgentSupport(options);
+    const vaultAgentsPath = path.join(vaultRoot, "AGENTS.md");
+    let agentsResult = "No AGENTS.md found.";
+
+    if (await pathExists(vaultAgentsPath)) {
+        const existingAgentsContent = await readFile(vaultAgentsPath, "utf8");
+        const stripResult = stripSideNote2ManagedAgentsContent(existingAgentsContent);
+        if (stripResult.kind === "removed") {
+            if (stripResult.nextContent.trim().length === 0) {
+                await rm(vaultAgentsPath, { force: true });
+                agentsResult = `Removed SideNote2 AGENTS.md content and deleted ${vaultAgentsPath}.`;
+            } else {
+                await writeFileAtomically(vaultAgentsPath, stripResult.nextContent);
+                agentsResult = `Removed the SideNote2-managed AGENTS block from ${vaultAgentsPath}.`;
+            }
+        } else {
+            agentsResult = `No SideNote2-managed AGENTS block found in ${vaultAgentsPath}.`;
+        }
+    }
+
+    const { skillDirectories } = await getBundledSkills();
+    const removedSkillNames = [];
+    for (const skillName of [...skillDirectories.keys()].sort((left, right) => left.localeCompare(right))) {
+        const destinationDir = path.join(options.skillsRoot, skillName);
+        if (!(await pathExists(destinationDir))) {
+            continue;
+        }
+
+        await rm(destinationDir, { recursive: true, force: true });
+        removedSkillNames.push(skillName);
+    }
+
+    streamOut.write(`${agentsResult}\n`);
+    if (removedSkillNames.length > 0) {
+        for (const skillName of removedSkillNames) {
+            streamOut.write(`Removed skill ${skillName} from ${path.join(options.skillsRoot, skillName)}\n`);
+        }
+    } else {
+        streamOut.write(`No bundled SideNote2 skills found under ${options.skillsRoot}\n`);
+    }
+    streamOut.write("Restart Codex to drop any cached skills.\n");
+    return 0;
+}
+
 export {
     createContentFingerprint,
     writeObservedNoteSafely,
@@ -998,8 +1467,12 @@ export async function runCli(argv, io = { stdout: process.stdout, stderr: proces
             return runCommentAppend(rest, io.stdout, io.stderr);
         case "comment:update":
             return runCommentUpdate(rest, io.stdout, io.stderr);
+        case "comment:resolve":
+            return runCommentResolve(rest, io.stdout, io.stderr);
         case "install-skill":
             return runInstallSkill(rest, io.stdout, io.stderr);
+        case "uninstall-agent-support":
+            return runUninstallAgentSupport(rest, io.stdout, io.stderr);
         case "--help":
         case "-h":
         case undefined:

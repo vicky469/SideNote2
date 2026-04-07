@@ -9,6 +9,7 @@ import {
     getManagedSectionStartLine,
     getVisibleNoteContent,
     parseNoteComments,
+    resolveNoteCommentById,
     replaceNoteCommentBodyById,
     serializeNoteComments,
 } from "../src/core/storage/noteCommentStorage";
@@ -216,6 +217,49 @@ test("appendNoteCommentEntryById returns null when the target id is missing", ()
         body: "Follow up",
         timestamp: 1710000001000,
     }), null);
+});
+
+test("resolveNoteCommentById marks the targeted thread resolved", () => {
+    const original = serializeNoteComments("# Title\n\nAlpha beta gamma.\n", [
+        createComment({
+            id: "comment-1",
+            resolved: false,
+        }),
+    ]);
+
+    const updated = resolveNoteCommentById(original, "note.md", "comment-1");
+    assert.ok(updated);
+
+    const parsed = parseNoteComments(updated, "note.md");
+    assert.equal(parsed.comments[0].resolved, true);
+    assert.equal(parsed.threads[0].resolved, true);
+    assert.match(updated, /"resolved": true/);
+});
+
+test("resolveNoteCommentById can target a child entry id and resolves the whole thread", () => {
+    const original = appendNoteCommentEntryById(serializeNoteComments("# Title\n\nAlpha beta gamma.\n", [
+        createComment({
+            id: "comment-1",
+            resolved: false,
+        }),
+    ]), "note.md", "comment-1", {
+        id: "entry-2",
+        body: "Follow up",
+        timestamp: 1710000001000,
+    });
+    assert.ok(original);
+
+    const updated = resolveNoteCommentById(original, "note.md", "entry-2");
+    assert.ok(updated);
+
+    const parsed = parseNoteComments(updated, "note.md");
+    assert.equal(parsed.comments[0].resolved, true);
+    assert.equal(parsed.threads[0].resolved, true);
+});
+
+test("resolveNoteCommentById returns null when the target id is missing", () => {
+    const original = serializeNoteComments("Body\n", [createComment()]);
+    assert.equal(resolveNoteCommentById(original, "note.md", "missing-id"), null);
 });
 
 test("buildLegacyNoteCommentMigrationPlan converts legacy flat comments to threaded storage", () => {

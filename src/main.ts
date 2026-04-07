@@ -1,4 +1,4 @@
-import { addIcon, WorkspaceLeaf, TFile, Notice, Plugin, normalizePath, MarkdownView, type Editor } from "obsidian";
+import { addIcon, WorkspaceLeaf, TFile, Notice, Plugin, normalizePath, MarkdownView, FileSystemAdapter, type Editor } from "obsidian";
 import type { EditorView } from "@codemirror/view";
 import { Comment, CommentManager, CommentThread } from "./commentManager";
 import { CommentEntryController } from "./control/commentEntryController";
@@ -14,6 +14,7 @@ import { PluginLifecycleController } from "./control/pluginLifecycleController";
 import { PluginRegistrationController } from "./control/pluginRegistrationController";
 import { WorkspaceContextController } from "./control/workspaceContextController";
 import { WorkspaceViewController } from "./control/workspaceViewController";
+import { VaultAgentsFileController } from "./control/vaultAgentsFileController";
 import { DraftComment } from "./domain/drafts";
 import { parsePromptDeleteSetting } from "./core/config/appConfig";
 import { DerivedCommentMetadataManager } from "./core/derived/derivedCommentMetadata";
@@ -225,6 +226,25 @@ export default class SideNote2 extends Plugin {
             console.warn(message, error);
         },
     });
+    private readonly vaultAgentsFileController = new VaultAgentsFileController({
+        getVaultAgentsFileContext: () => ({
+            vaultName: this.app.vault.getName(),
+            vaultRootPath: this.app.vault.adapter instanceof FileSystemAdapter
+                ? this.app.vault.adapter.getBasePath()
+                : null,
+            pluginVersion: this.manifest.version,
+        }),
+        vaultRootFileExists: (relativePath) => this.app.vault.adapter.exists(relativePath),
+        readVaultRootFile: (relativePath) => this.app.vault.adapter.read(relativePath),
+        writeVaultRootFile: (relativePath, content) => this.app.vault.adapter.write(relativePath, content),
+        deleteVaultRootFile: (relativePath) => this.app.vault.adapter.remove(relativePath),
+        showNotice: (message) => {
+            new Notice(message);
+        },
+        warn: (message, error) => {
+            console.warn(message, error);
+        },
+    });
     private readonly pluginRegistrationController = new PluginRegistrationController({
         manifestId: this.manifest.id,
         iconId: SIDE_NOTE2_ICON_ID,
@@ -251,6 +271,8 @@ export default class SideNote2 extends Plugin {
             this.commentEntryController.startDraftFromEditorSelection(editor as unknown as Editor, file),
         highlightCommentById: (filePath, commentId) => this.highlightCommentById(filePath, commentId),
         openIndexNote: () => this.openIndexNote(),
+        installVaultAgentsFile: () => this.installVaultAgentsFile(),
+        uninstallVaultAgentsFile: () => this.uninstallVaultAgentsFile(),
     });
     private readonly workspaceContextController = new WorkspaceContextController({
         app: this.app,
@@ -295,10 +317,12 @@ export default class SideNote2 extends Plugin {
         if (this.app.workspace.layoutReady) {
             await this.pluginLifecycleController.handleLayoutReady();
             await this.legacyNoteCommentsMigrationController.runStartupMigrationIfNeeded();
+            await this.vaultAgentsFileController.syncVaultAgentsFileOnStartup();
         } else {
             this.app.workspace.onLayoutReady(async () => {
                 await this.pluginLifecycleController.handleLayoutReady();
                 await this.legacyNoteCommentsMigrationController.runStartupMigrationIfNeeded();
+                await this.vaultAgentsFileController.syncVaultAgentsFileOnStartup();
             });
         }
 
@@ -578,6 +602,14 @@ export default class SideNote2 extends Plugin {
     private async openCommentById(filePath: string, commentId: string) {
         await this.ensureChildCommentsVisibleForComment(commentId, filePath);
         await this.commentNavigationController.openCommentById(filePath, commentId);
+    }
+
+    private async installVaultAgentsFile(): Promise<void> {
+        await this.vaultAgentsFileController.installVaultAgentsFile();
+    }
+
+    private async uninstallVaultAgentsFile(): Promise<void> {
+        await this.vaultAgentsFileController.uninstallVaultAgentsFile();
     }
 
     public getDraftForFile(filePath: string): DraftComment | null {
