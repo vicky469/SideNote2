@@ -13,7 +13,6 @@
 		"comment:migrate-legacy": "node bin/sidenote2.mjs comment:migrate-legacy",
 		"comment:update": "node bin/sidenote2.mjs comment:update",
 		"fixture:graph-1000": "node scripts/generate-large-graph-fixture.mjs",
-		"review:bundle": "bash scripts/prepare-review-bundle.sh",
 		"skill:install": "node bin/sidenote2.mjs install-skill",
 		"test": "rm -rf .test-dist && tsc -p tsconfig.test.json && find .test-dist/tests -type f -name '*.test.js' -exec node --test {} + && find tests -type f -name '*.test.mjs' -exec node --test {} +",
 		"release:check": "npm run test && npm run build",
