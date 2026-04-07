@@ -1,6 +1,17 @@
 import * as assert from "node:assert/strict";
 import test from "node:test";
-import { appendNoteCommentEntryById, getManagedSectionEdit, getManagedSectionLineRange, getManagedSectionRange, getManagedSectionStartLine, getVisibleNoteContent, parseNoteComments, replaceNoteCommentBodyById, serializeNoteComments } from "../src/core/storage/noteCommentStorage";
+import {
+    appendNoteCommentEntryById,
+    buildLegacyNoteCommentMigrationPlan,
+    getManagedSectionEdit,
+    getManagedSectionLineRange,
+    getManagedSectionRange,
+    getManagedSectionStartLine,
+    getVisibleNoteContent,
+    parseNoteComments,
+    replaceNoteCommentBodyById,
+    serializeNoteComments,
+} from "../src/core/storage/noteCommentStorage";
 import type { Comment } from "../src/commentManager";
 
 function createComment(overrides: Partial<Comment> = {}): Comment {
@@ -205,6 +216,66 @@ test("appendNoteCommentEntryById returns null when the target id is missing", ()
         body: "Follow up",
         timestamp: 1710000001000,
     }), null);
+});
+
+test("buildLegacyNoteCommentMigrationPlan converts legacy flat comments to threaded storage", () => {
+    const legacyNote = [
+        "# Title",
+        "",
+        "Visible body.",
+        "",
+        "<!-- SideNote2 comments",
+        "[",
+        "  {",
+        '    "id": "legacy-comment-1",',
+        '    "startLine": 1,',
+        '    "startChar": 0,',
+        '    "endLine": 1,',
+        '    "endChar": 6,',
+        '    "selectedText": "Visible",',
+        '    "selectedTextHash": "hash-visible",',
+        '    "comment": "Legacy flat note body",',
+        '    "timestamp": 1710000000000',
+        "  }",
+        "]",
+        "-->",
+        "",
+    ].join("\n");
+
+    const plan = buildLegacyNoteCommentMigrationPlan(legacyNote, "note.md");
+    assert.equal(plan.kind, "legacy");
+    if (plan.kind !== "legacy") {
+        throw new Error(`Expected legacy migration plan, received ${plan.kind}`);
+    }
+
+    assert.equal(plan.threadCount, 1);
+    assert.equal(plan.mainContent, "# Title\n\nVisible body.");
+    assert.doesNotMatch(plan.nextContent, /"comment": "Legacy flat note body"/);
+    assert.match(plan.nextContent, /"entries": \[/);
+
+    const parsed = parseNoteComments(plan.nextContent, "note.md");
+    assert.equal(parsed.comments.length, 1);
+    assert.equal(parsed.comments[0].comment, "Legacy flat note body");
+    assert.equal(parsed.mainContent, "# Title\n\nVisible body.");
+});
+
+test("buildLegacyNoteCommentMigrationPlan distinguishes threaded, unsupported, and missing managed blocks", () => {
+    const threaded = serializeNoteComments("Body\n", [createComment()]);
+    assert.equal(buildLegacyNoteCommentMigrationPlan(threaded, "note.md").kind, "threaded");
+
+    const unsupported = [
+        "Body",
+        "",
+        "<!-- SideNote2 comments",
+        "[",
+        '  { "id": "bad", "comment": 1 }',
+        "]",
+        "-->",
+        "",
+    ].join("\n");
+    assert.equal(buildLegacyNoteCommentMigrationPlan(unsupported, "note.md").kind, "unsupported");
+
+    assert.equal(buildLegacyNoteCommentMigrationPlan("Body\n", "note.md").kind, "no-managed-block");
 });
 
 test("getManagedSectionEdit patches only the managed comments block", () => {

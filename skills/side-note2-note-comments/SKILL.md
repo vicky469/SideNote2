@@ -76,8 +76,7 @@ If the user asks to reply to a side comment, answer a question in a side comment
 5. Identify the target thread by `id` when it is available.
    - If `id` is not provided, match by `selectedText` and surrounding note context.
    - If multiple stored comments in the same note share the same `selectedText`, ask for more context or use the `id`.
-6. If the stored payload uses legacy flat comments with top-level `comment` fields instead of `entries`, migrate the note before appending.
-7. Prefer the append helper script from the repo root:
+6. Prefer the append helper script from the repo root:
 
 ```bash
 cd "/abs/path/to/SideNote2"
@@ -87,12 +86,12 @@ node scripts/append-note-comment-entry.mjs --file "/abs/path/to/note.md" --id "<
 Short replies can use `--comment "Reply body"` instead of `--comment-file`.
 If Sync is active, add `--settle-ms 2000` here too so the script skips notes that changed after it read them instead of overwriting them.
 
-8. If the note is outside the writable workspace, request escalation before running the script.
-9. If the helper script cannot be used, append one new object to the end of the target thread's `entries[]` array and preserve all existing entries.
-10. Use this pattern for:
+7. If the note is outside the writable workspace, request escalation before running the script.
+8. If the helper script cannot be used, append one new object to the end of the target thread's `entries[]` array and preserve all existing entries.
+9. Use this pattern for:
    - answering a question the user wrote inside an existing side comment
    - splitting one comment into multiple shorter thread entries for readability, similar to a short post thread
-11. Verify that only the target thread changed and that exactly one new entry was appended.
+10. Verify that only the target thread changed and that exactly one new entry was appended.
 
 If the user asks to edit a stored SideNote2 comment:
 
@@ -106,27 +105,7 @@ Use this workflow only when the user wants to replace or rewrite an existing sto
    - Natural-language requests such as `Reply to the side comment for "selected text"` or `Add another note under this side comment` are append-to-thread requests, not replacement requests.
    - If `id` is not provided, match by `selectedText` and surrounding note context.
    - If multiple stored comments in the same note share the same `selectedText`, ask for more context or use the `id`.
-5. If the stored payload uses legacy flat comments with top-level `comment` fields instead of `entries`, migrate the note before any edit.
-   - For one note:
-
-```bash
-cd "/abs/path/to/SideNote2"
-node scripts/migrate-legacy-note-comments.mjs --file "/abs/path/to/note.md" --dry-run
-node scripts/migrate-legacy-note-comments.mjs --file "/abs/path/to/note.md"
-```
-
-   - For a whole vault after resolving the true vault root:
-
-```bash
-cd "/abs/path/to/SideNote2"
-node scripts/migrate-legacy-note-comments.mjs --root "/abs/path/to/vault" --dry-run
-node scripts/migrate-legacy-note-comments.mjs --root "/abs/path/to/vault"
-```
-
-   - If Obsidian Sync or another editor may still be touching the vault, add `--settle-ms 2000`.
-   - If the script reports skipped notes because they changed during the run, do not hand-merge the managed block. Wait for Sync to settle and rerun the same command. Treat that run as partial success, not completion.
-
-6. Prefer the helper script from the repo root:
+5. Prefer the helper script from the repo root:
 
 ```bash
 cd "/abs/path/to/SideNote2"
@@ -136,13 +115,13 @@ node scripts/update-note-comment.mjs --file "/abs/path/to/note.md" --id "<commen
 Short replacements can use `--comment "New body"` instead of `--comment-file`.
 If Sync is active, add `--settle-ms 2000` here too so the script skips notes that changed after it read them instead of overwriting them.
 
-7. If the note is outside the writable workspace, request escalation before running the script.
-8. Verify the note still contains exactly one managed block and that only the target comment thread or entry body changed.
+6. If the note is outside the writable workspace, request escalation before running the script.
+7. Verify the note still contains exactly one managed block and that only the target comment thread or entry body changed.
 
 ## Important Details
 
 - SideNote2 stores comments as strict JSON in the trailing hidden block.
-- Legacy notes may still use one flat object per comment with a top-level `comment` field. Migrate those notes with the helper script before editing them.
+- Treat threaded `entries[]` storage as canonical. Starting in SideNote2 `2.0.1`, the plugin auto-migrates older flat note-comment payloads on startup, so agents should not build manual legacy migration steps into normal workflows.
 - In threaded storage, `entries[]` order is meaningful. Replies and `add another note under this` requests should usually append one new entry at the end.
 - Use `scripts/append-note-comment-entry.mjs` for append-to-thread requests and `scripts/update-note-comment.mjs` only for replacement requests.
 - The helper scripts write atomically and skip notes that changed after the initial read. Treat a skipped note as a retry case, not as a signal to hand-edit the managed JSON.
@@ -156,7 +135,6 @@ If the helper script cannot be used:
 
 1. Edit the source-mode block directly.
 2. Preserve `id`, anchor coordinates, `selectedText`, `selectedTextHash`, timestamps, and `resolved`.
-3. For replacement requests, change only the target body field:
-   - legacy flat payloads: `comment`
-   - threaded payloads: the target `entries[*].body`
-4. For append-to-thread requests, migrate legacy flat payloads first, then append one new object to the target thread's `entries[]` array without modifying the existing entries.
+3. For replacement requests, change only the target `entries[*].body`.
+4. For append-to-thread requests, append one new object to the target thread's `entries[]` array without modifying the existing entries.
+5. If a note still shows an old flat `comment` payload unexpectedly, stop and ask the user to open the vault once in SideNote2 `2.0.1+` so the startup migration can finish instead of hand-migrating JSON in the agent workflow.

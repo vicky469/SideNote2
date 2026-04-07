@@ -46,6 +46,9 @@ export function resolveLoadedSettings(
             indexHeaderImageCaption: hasOwn(loaded ?? {}, "indexHeaderImageCaption")
                 ? normalizeAllCommentsNoteImageCaption(loaded?.indexHeaderImageCaption)
                 : defaults.indexHeaderImageCaption,
+            lastMigratedNoteCommentStorageVersion: typeof loaded?.lastMigratedNoteCommentStorageVersion === "string"
+                ? loaded.lastMigratedNoteCommentStorageVersion
+                : defaults.lastMigratedNoteCommentStorageVersion,
         },
         shouldRewriteLegacyConfirmDelete: hasOwn(loaded ?? {}, "confirmDelete"),
     };

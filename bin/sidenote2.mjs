@@ -18,7 +18,7 @@ function printMainUsage(stream = process.stderr) {
             "  sidenote2 <command> [options]",
             "",
             "Commands:",
-            "  comment:migrate-legacy  Rewrite one note from legacy flat comments to threaded storage",
+            "  comment:migrate-legacy  Maintenance: rewrite one note from legacy flat comments to threaded storage",
             "  comment:append  Append one entry to an existing SideNote2 comment thread in a note",
             "  comment:update  Update one stored SideNote2 comment body in a note",
             "  install-skill   Copy bundled SideNote2 Codex skill(s) into the Codex skills directory",
@@ -61,6 +61,8 @@ function printCommentMigrateLegacyUsage(stream = process.stderr) {
         [
             "Usage:",
             "  sidenote2 comment:migrate-legacy (--file <note.md> | --root <vault-dir>) [--dry-run] [--settle-ms <milliseconds>]",
+            "",
+            "Maintenance fallback for notes that missed the automatic 2.0.1 startup migration.",
             "",
             "Examples:",
             "  sidenote2 comment:migrate-legacy --file ./note.md --dry-run",
@@ -636,46 +638,20 @@ function verifyMigratedNote(storageModule, noteContent, notePath, expectedThread
 }
 
 function buildLegacyMigrationPlan(notePath, noteContent, storageModule) {
-    const section = findJsonManagedSection(noteContent);
-    if (!section) {
+    const plan = storageModule.buildLegacyNoteCommentMigrationPlan(noteContent, notePath);
+    if (plan.kind !== "legacy") {
         return {
-            kind: "no-managed-block",
+            kind: plan.kind,
             notePath,
         };
     }
-
-    const sectionKind = classifyManagedSectionItems(section.items);
-    if (sectionKind === "threaded") {
-        return {
-            kind: "threaded",
-            notePath,
-        };
-    }
-
-    if (sectionKind === "unsupported") {
-        return {
-            kind: "unsupported",
-            notePath,
-        };
-    }
-
-    const threads = section.items.map((item) => toLegacyThread(item, notePath));
-    if (threads.some((thread) => thread === null)) {
-        return {
-            kind: "unsupported",
-            notePath,
-        };
-    }
-
-    const nextContent = storageModule.serializeNoteCommentThreads(section.mainContent, threads);
-    verifyMigratedNote(storageModule, nextContent, notePath, threads.length, section.mainContent);
 
     return {
         kind: "legacy",
         notePath,
-        nextContent,
+        nextContent: plan.nextContent,
         sourceFingerprint: createContentFingerprint(noteContent),
-        threadCount: threads.length,
+        threadCount: plan.threadCount,
     };
 }
 
@@ -702,6 +678,16 @@ async function runCommentUpdate(argv, streamOut, streamErr) {
     const updated = storageModule.replaceNoteCommentBodyById(noteContent, notePath, options.id, nextCommentBody);
 
     if (typeof updated !== "string") {
+        const plan = buildLegacyMigrationPlan(notePath, noteContent, storageModule);
+        if (plan.kind === "legacy") {
+            streamErr.write(
+                `Note still uses legacy flat SideNote2 comments: ${notePath}\n`
+                + "Open the vault once in SideNote2 2.0.1+ so startup can auto-migrate it, "
+                + "or use `sidenote2 comment:migrate-legacy` only for out-of-band maintenance.\n",
+            );
+            return 1;
+        }
+
         streamErr.write(`Comment id not found: ${options.id}\n`);
         return 1;
     }
@@ -752,7 +738,8 @@ async function runCommentAppend(argv, streamOut, streamErr) {
         if (plan.kind === "legacy") {
             streamErr.write(
                 `Note still uses legacy flat SideNote2 comments: ${notePath}\n`
-                + "Run `sidenote2 comment:migrate-legacy --file <note.md>` first, then rerun this append.\n",
+                + "Open the vault once in SideNote2 2.0.1+ so startup can auto-migrate it, "
+                + "or use `sidenote2 comment:migrate-legacy` only for out-of-band maintenance.\n",
             );
             return 1;
         }

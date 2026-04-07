@@ -82,9 +82,10 @@ SIDENOTE2_HOT_RELOAD=0 npm run dev
 - `npm test` runs the Node test suite.
 - `npm run skill:install` copies the packaged SideNote2 Codex skills into the default Codex skills directory. By default it installs every bundled skill under `skills/`; pass `-- --name <skill-name>` to install just one. This matches the end-user install flow.
 - `npm run comment:append -- --file "/abs/path/note.md" --id "<comment-id>" --comment-file "/abs/path/reply.md"` appends one new entry to an existing SideNote2 thread using the same managed block format as the plugin.
-- `npm run comment:migrate-legacy -- --file "/abs/path/note.md" --dry-run` verifies whether a note still uses the legacy flat `comment` payload and rewrites it to threaded storage when rerun without `--dry-run`.
-- `npm run comment:migrate-legacy -- --root "/abs/path/to/vault" --dry-run` scans a whole vault for legacy flat note comments and rewrites every matching note when rerun without `--dry-run`.
+- `npm run comment:migrate-legacy -- --file "/abs/path/note.md" --dry-run` is a temporary maintenance fallback for a note that somehow missed the automatic `2.0.1` startup migration.
+- `npm run comment:migrate-legacy -- --root "/abs/path/to/vault" --dry-run` is the same fallback at vault scope for out-of-band repair work, not the normal upgrade path.
 - `npm run comment:update -- --file "/abs/path/note.md" --id "<comment-id>" --comment-file "/abs/path/comment.md"` updates one stored comment body using the same managed block format as the plugin.
+- The plugin auto-migrates legacy flat note comments once per vault on startup in `2.0.1`. Normal upgrades should not require any manual migration command.
 - `comment:append`, `comment:migrate-legacy`, and `comment:update` now write atomically and refuse to overwrite a note if it changed after the script first read it. If Obsidian Sync or another editor is active, pass `-- --settle-ms 2000` to require a short quiet window before each write, then rerun any skipped notes after Sync settles. Treat skipped-note runs as partial success and retry them instead of hand-editing the managed JSON.
 - `npm version patch|minor|major` updates `package.json`, `manifest.json`, `versions.json`, and the README beta badge together for a release bump.
 - The test suite covers the note-backed comment lifecycle, comment retargeting and pruning, JSON storage updates, aggregate note generation, and the parsed-note cache plus aggregate index behavior.
