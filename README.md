@@ -148,7 +148,6 @@ Setup, local vault install, debugging, and architecture notes live in [README-de
 - Current versions handle that older note upgrade automatically on startup, so users on `2.0.1+` do not need to run a manual migration command.
 - Added append-to-thread comment helpers for agents and repo automation via `npm run comment:append` and `scripts/append-note-comment-entry.mjs`.
 - Improved note comment rendering and index workflows, including safer CLI writes, better index sidebar behavior, and page-note previews in the generated index note.
-- Added `npm run review:bundle` for read-only isolated review snapshots.
 
 ## License
 

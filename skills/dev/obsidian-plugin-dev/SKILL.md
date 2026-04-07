@@ -1,13 +1,13 @@
 ---
 name: obsidian-plugin-dev
-description: Use when building, debugging, reviewing, releasing, or submitting an Obsidian community plugin. Covers typical plugin repos (`manifest.json`, `package.json`, `versions.json`, `src/main.ts`, `styles.css`), official Obsidian developer docs, API typings, sample-plugin patterns, and release/submission requirements.
+description: Use when building, debugging, releasing, or submitting an Obsidian community plugin. Covers typical plugin repos (`manifest.json`, `package.json`, `versions.json`, `src/main.ts`, `styles.css`), official Obsidian developer docs, API typings, sample-plugin patterns, and release/submission requirements.
 ---
 
 # Obsidian Plugin Dev
 
 ## Quick Start
 
-- Use this skill for any Obsidian community plugin task: new features, bug fixes, refactors, code review, build issues, release prep, or submission requirements.
+- Use this skill for any Obsidian community plugin task: new features, bug fixes, refactors, build issues, release prep, or submission requirements.
 - Start with the local plugin repo first: inspect `manifest.json`, `package.json`, `versions.json`, `src/main.ts`, `styles.css`, and existing build or test scripts.
 - Prefer the local reference bundle in `references/` over scraping the docs website.
 - If references are missing or stale, run `scripts/sync_references.sh`.
@@ -27,21 +27,10 @@ description: Use when building, debugging, reviewing, releasing, or submitting a
 ## Repo Skill Routing
 
 - In this repo, treat the repo-local `skills/*/SKILL.md` files as the canonical agent instructions.
-- Use this skill for general plugin repo, API, UI, build, release, and review work.
+- Use this skill for general plugin repo, API, UI, build, and release work.
 - When the task is about real SideNote2-backed vault notes, hidden `<!-- SideNote2 comments -->` blocks, or helper-script based note comment edits, switch to `skills/side-note2-note-comments/SKILL.md`.
 - Do not keep separate Claude-only and Codex-only copies of the same repo-local skill text unless the workflows genuinely diverge.
 - If you need to test the packaged global install flow from this repo, run `npm run skill:install` or `npm run skill:install -- --name obsidian-plugin-dev`.
-
-## Review Workflow
-
-- For isolated repo review, have the main agent or orchestrator prepare a read-only review bundle instead of exposing the live worktree to the reviewer.
-- In this repo, use `npm run review:bundle -- --output /tmp/side-note2-review`.
-- Hand the resulting directory to the reviewer read-only.
-- The reviewer should inspect:
-  - `snapshot/` for the current worktree state without `.git`
-  - `status.txt` for tracked and untracked changes
-  - `review.patch` for the diff against the chosen base ref
-- Prefer this over trying to launch a nested sandbox inside the reviewer worker.
 
 ## Reference Sets
 
