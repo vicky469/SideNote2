@@ -1,6 +1,6 @@
 import * as assert from "node:assert/strict";
 import test from "node:test";
-import type { Comment } from "../src/commentManager";
+import { commentToThread, type Comment, type CommentThread } from "../src/commentManager";
 import {
     buildPersistedCommentPresentation,
     formatSidebarCommentSourceFileLabel,
@@ -24,8 +24,12 @@ function createComment(overrides: Partial<Comment> = {}): Comment {
     };
 }
 
+function createThread(overrides: Partial<Comment> = {}): CommentThread {
+    return commentToThread(createComment(overrides));
+}
+
 test("buildPersistedCommentPresentation includes page and active classes for page notes", () => {
-    const presentation = buildPersistedCommentPresentation(createComment({
+    const presentation = buildPersistedCommentPresentation(createThread({
         id: "comment-2",
         anchorKind: "page",
         resolved: true,
@@ -33,6 +37,7 @@ test("buildPersistedCommentPresentation includes page and active classes for pag
 
     assert.deepEqual(presentation.classes, [
         "sidenote2-comment-item",
+        "sidenote2-thread-item",
         "page-note",
         "resolved",
         "active",
@@ -40,19 +45,20 @@ test("buildPersistedCommentPresentation includes page and active classes for pag
 });
 
 test("buildPersistedCommentPresentation includes orphaned class for orphaned selection comments", () => {
-    const presentation = buildPersistedCommentPresentation(createComment({
+    const presentation = buildPersistedCommentPresentation(createThread({
         orphaned: true,
     }), null);
 
     assert.deepEqual(presentation.classes, [
         "sidenote2-comment-item",
+        "sidenote2-thread-item",
         "orphaned",
     ]);
 });
 
 test("buildPersistedCommentPresentation chooses the right resolve action copy and icon", () => {
-    const unresolved = buildPersistedCommentPresentation(createComment({ resolved: false }), null);
-    const resolved = buildPersistedCommentPresentation(createComment({ resolved: true }), null);
+    const unresolved = buildPersistedCommentPresentation(createThread({ resolved: false }), null);
+    const resolved = buildPersistedCommentPresentation(createThread({ resolved: true }), null);
 
     assert.deepEqual(unresolved.redirectHint, {
         ariaLabel: "Open source note",

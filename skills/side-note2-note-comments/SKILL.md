@@ -13,6 +13,7 @@ Use this skill when the user wants work done against real Obsidian notes that us
 - Read SideNote2 comment data from the trailing `<!-- SideNote2 comments -->` block in the same note.
 - Write note content directly when the user asks to edit the note body.
 - Write SideNote2 comment bodies through the helper script when possible.
+- Append new entries to an existing SideNote2 thread when the user says things like `reply`, `answer in the side comment`, `add another note under this`, or `add to thread`.
 
 ## Replacement Lookup Paths
 
@@ -66,13 +67,43 @@ If the user asks to add a page-level tag in a SideNote2 note:
 4. If the note does not have a leading frontmatter `tags` field, do not create one just for this request.
 5. In that fallback case, add the tag as a SideNote2 page note instead.
 
+If the user asks to reply to a side comment, answer a question in a side comment, add another note under a side comment, add to thread, or split one longer side comment into several short notes in the same place:
+
+1. Treat this as an append-to-thread request.
+2. Do not overwrite the existing comment body unless the user explicitly asks to edit or rewrite that entry.
+3. Do not create a separate markdown file just to continue the same side comment thread.
+4. Confirm the target note path.
+5. Identify the target thread by `id` when it is available.
+   - If `id` is not provided, match by `selectedText` and surrounding note context.
+   - If multiple stored comments in the same note share the same `selectedText`, ask for more context or use the `id`.
+6. If the stored payload uses legacy flat comments with top-level `comment` fields instead of `entries`, migrate the note before appending.
+7. Prefer the append helper script from the repo root:
+
+```bash
+cd "/abs/path/to/SideNote2"
+node scripts/append-note-comment-entry.mjs --file "/abs/path/to/note.md" --id "<comment-id>" --comment-file "/abs/path/to/reply.md"
+```
+
+Short replies can use `--comment "Reply body"` instead of `--comment-file`.
+If Sync is active, add `--settle-ms 2000` here too so the script skips notes that changed after it read them instead of overwriting them.
+
+8. If the note is outside the writable workspace, request escalation before running the script.
+9. If the helper script cannot be used, append one new object to the end of the target thread's `entries[]` array and preserve all existing entries.
+10. Use this pattern for:
+   - answering a question the user wrote inside an existing side comment
+   - splitting one comment into multiple shorter thread entries for readability, similar to a short post thread
+11. Verify that only the target thread changed and that exactly one new entry was appended.
+
 If the user asks to edit a stored SideNote2 comment:
+
+Use this workflow only when the user wants to replace or rewrite an existing stored comment body. If the user says `reply`, `add another note under`, `continue this`, or similar, use the append-to-thread workflow above instead.
 
 1. Confirm the target note path.
 2. If needed, use `SideNote2 index.md` to locate the target note and comment first.
 3. Inspect the trailing `<!-- SideNote2 comments -->` block in the active markdown note.
 4. Identify the target comment by `id` when it is available.
    - Natural-language requests such as `Update the side comment for "selected text" in "/path/to/note.md" to: ...` should be interpreted as a `selectedText`-based replacement request.
+   - Natural-language requests such as `Reply to the side comment for "selected text"` or `Add another note under this side comment` are append-to-thread requests, not replacement requests.
    - If `id` is not provided, match by `selectedText` and surrounding note context.
    - If multiple stored comments in the same note share the same `selectedText`, ask for more context or use the `id`.
 5. If the stored payload uses legacy flat comments with top-level `comment` fields instead of `entries`, migrate the note before any edit.
@@ -112,6 +143,8 @@ If Sync is active, add `--settle-ms 2000` here too so the script skips notes tha
 
 - SideNote2 stores comments as strict JSON in the trailing hidden block.
 - Legacy notes may still use one flat object per comment with a top-level `comment` field. Migrate those notes with the helper script before editing them.
+- In threaded storage, `entries[]` order is meaningful. Replies and `add another note under this` requests should usually append one new entry at the end.
+- Use `scripts/append-note-comment-entry.mjs` for append-to-thread requests and `scripts/update-note-comment.mjs` only for replacement requests.
 - The helper scripts write atomically and skip notes that changed after the initial read. Treat a skipped note as a retry case, not as a signal to hand-edit the managed JSON.
 - Multiline comment bodies must stay JSON-escaped in source; do not paste raw block text into the JSON string by hand unless necessary.
 - The note itself is the source of truth. Sidebar state and aggregate views are derived from the note.
@@ -123,6 +156,7 @@ If the helper script cannot be used:
 
 1. Edit the source-mode block directly.
 2. Preserve `id`, anchor coordinates, `selectedText`, `selectedTextHash`, timestamps, and `resolved`.
-3. Change only the target body field:
+3. For replacement requests, change only the target body field:
    - legacy flat payloads: `comment`
    - threaded payloads: the target `entries[*].body`
+4. For append-to-thread requests, migrate legacy flat payloads first, then append one new object to the target thread's `entries[]` array without modifying the existing entries.

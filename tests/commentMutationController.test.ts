@@ -170,6 +170,7 @@ test("comment mutation controller starts an edit draft from the latest loaded co
     assert.equal(host.getDraftHostFilePath(), "SideNote2 index.md");
     assert.deepEqual(host.getDraftComment(), {
         ...comment,
+        entryCount: 1,
         mode: "edit",
     });
 });

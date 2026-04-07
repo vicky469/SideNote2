@@ -1,50 +1,71 @@
-import type { Comment } from "../commentManager";
+import type { Comment, CommentThread } from "../commentManager";
+import { cloneCommentThreads, commentToThread, threadToComment, cloneCommentThread } from "../commentManager";
 
-function cloneComments(comments: Comment[]): Comment[] {
-    return comments.map((comment) => ({ ...comment }));
+function isThreadLike(value: Comment | CommentThread): value is CommentThread {
+    return Array.isArray((value as CommentThread).entries);
+}
+
+function toThreads(items: Array<Comment | CommentThread>): CommentThread[] {
+    return items.map((item) => isThreadLike(item) ? cloneCommentThread(item) : commentToThread(item));
 }
 
 export class AggregateCommentIndex {
-    private commentsByFile = new Map<string, Comment[]>();
+    private threadsByFile = new Map<string, CommentThread[]>();
 
-    updateFile(filePath: string, comments: Comment[]): void {
-        if (!comments.length) {
-            this.commentsByFile.delete(filePath);
+    updateFile(filePath: string, items: Array<Comment | CommentThread>): void {
+        if (!items.length) {
+            this.threadsByFile.delete(filePath);
             return;
         }
 
-        this.commentsByFile.set(filePath, cloneComments(comments));
+        this.threadsByFile.set(filePath, toThreads(items));
     }
 
     renameFile(oldPath: string, newPath: string): void {
-        const comments = this.commentsByFile.get(oldPath);
-        this.commentsByFile.delete(oldPath);
-        if (!comments?.length) {
+        const threads = this.threadsByFile.get(oldPath);
+        this.threadsByFile.delete(oldPath);
+        if (!threads?.length) {
             return;
         }
 
-        this.commentsByFile.set(
+        this.threadsByFile.set(
             newPath,
-            comments.map((comment) => ({ ...comment, filePath: newPath }))
+            threads.map((thread) => ({
+                ...cloneCommentThread(thread),
+                filePath: newPath,
+            })),
         );
     }
 
     deleteFile(filePath: string): void {
-        this.commentsByFile.delete(filePath);
+        this.threadsByFile.delete(filePath);
     }
 
-    getAllComments(): Comment[] {
-        return Array.from(this.commentsByFile.values()).flatMap((comments) => cloneComments(comments));
+    getAllThreads(): CommentThread[] {
+        return Array.from(this.threadsByFile.values()).flatMap((threads) => cloneCommentThreads(threads));
     }
 
-    getCommentById(commentId: string): Comment | null {
-        for (const comments of this.commentsByFile.values()) {
-            const comment = comments.find((entry) => entry.id === commentId);
-            if (comment) {
-                return { ...comment };
+    getThreadsForFile(filePath: string): CommentThread[] {
+        return cloneCommentThreads(this.threadsByFile.get(filePath) ?? []);
+    }
+
+    getThreadById(threadId: string): CommentThread | null {
+        for (const threads of this.threadsByFile.values()) {
+            const thread = threads.find((entry) => entry.id === threadId);
+            if (thread) {
+                return cloneCommentThread(thread);
             }
         }
 
         return null;
+    }
+
+    getAllComments(): Comment[] {
+        return this.getAllThreads().map((thread) => threadToComment(thread));
+    }
+
+    getCommentById(commentId: string): Comment | null {
+        const thread = this.getThreadById(commentId);
+        return thread ? threadToComment(thread) : null;
     }
 }

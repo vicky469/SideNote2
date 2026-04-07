@@ -26,15 +26,18 @@ test("CommentManager edits/deletes/resolves by id under timestamp collision", ()
     const manager = new CommentManager([first, second]);
 
     manager.editComment("id-2", "second-updated");
-    assert.equal(first.comment, "first");
-    assert.equal(second.comment, "second-updated");
+    let comments = manager.getCommentsForFile("note.md");
+    assert.equal(comments.find((comment) => comment.id === "id-1")?.comment, "first");
+    assert.equal(comments.find((comment) => comment.id === "id-2")?.comment, "second-updated");
 
     manager.resolveComment("id-1");
-    assert.equal(first.resolved, true);
-    assert.equal(second.resolved, false);
+    comments = manager.getCommentsForFile("note.md");
+    assert.equal(comments.find((comment) => comment.id === "id-1")?.resolved, true);
+    assert.equal(comments.find((comment) => comment.id === "id-2")?.resolved, false);
 
     manager.unresolveComment("id-1");
-    assert.equal(first.resolved, false);
+    comments = manager.getCommentsForFile("note.md");
+    assert.equal(comments.find((comment) => comment.id === "id-1")?.resolved, false);
 
     manager.deleteComment("id-1");
     const remaining = manager.getCommentsForFile("note.md");

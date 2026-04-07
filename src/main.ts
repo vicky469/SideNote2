@@ -1,6 +1,6 @@
 import { addIcon, WorkspaceLeaf, TFile, Notice, Plugin, normalizePath, MarkdownView, type Editor } from "obsidian";
 import type { EditorView } from "@codemirror/view";
-import { Comment, CommentManager } from "./commentManager";
+import { Comment, CommentManager, CommentThread } from "./commentManager";
 import { CommentEntryController } from "./control/commentEntryController";
 import { CommentHighlightController } from "./control/commentHighlightController";
 import { CommentMutationController } from "./control/commentMutationController";
@@ -62,6 +62,7 @@ export default class SideNote2 extends Plugin {
         getAllCommentsNotePath: () => this.getAllCommentsNotePath(),
         isCommentableFile: (file): file is TFile => this.isCommentableFile(file),
         loadCommentsForFile: (file) => this.loadCommentsForFile(file),
+        getKnownCommentById: (commentId) => this.getKnownCommentById(commentId),
         markDraftFileActive: (file) => this.markDraftFileActive(file),
         setDraftComment: (draftComment, hostFilePath) => this.commentSessionController.setDraftComment(draftComment, hostFilePath),
         activateViewAndHighlightComment: (commentId) => this.activateViewAndHighlightComment(commentId),
@@ -551,6 +552,14 @@ export default class SideNote2 extends Plugin {
         return this.aggregateCommentIndex.getAllComments();
     }
 
+    public getAllIndexedThreads(): CommentThread[] {
+        return this.aggregateCommentIndex.getAllThreads();
+    }
+
+    public getThreadsForFile(filePath: string): CommentThread[] {
+        return this.commentManager.getThreadsForFile(filePath);
+    }
+
     public isSavingDraft(commentId: string): boolean {
         return this.commentSessionController.isSavingDraft(commentId);
     }
@@ -576,6 +585,13 @@ export default class SideNote2 extends Plugin {
 
     public async startPageCommentDraft(file: TFile | null = this.getPinnedCommentableFile()) {
         await this.commentEntryController.startPageCommentDraft(file);
+    }
+
+    public async startAppendEntryDraft(
+        threadId: string,
+        hostFilePath: string | null = this.getSidebarTargetFile()?.path ?? null,
+    ) {
+        await this.commentEntryController.startAppendEntryDraft(threadId, hostFilePath);
     }
 
     private markDraftFileActive(file: TFile) {

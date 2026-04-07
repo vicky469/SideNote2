@@ -1,6 +1,7 @@
 import { MarkdownView, TFile, type WorkspaceLeaf } from "obsidian";
 import type { Plugin } from "obsidian";
-import type { Comment, CommentManager } from "../commentManager";
+import type { Comment, CommentManager, CommentThread } from "../commentManager";
+import { threadToComment } from "../commentManager";
 import { getPageCommentLabel } from "../core/anchors/commentAnchors";
 import {
     type AllCommentsNoteBuildOptions,
@@ -16,8 +17,10 @@ import {
     syncLoadedCommentsForCurrentNote,
 } from "../core/rules/commentSyncPolicy";
 import {
+    getManagedSectionEditForThreads,
     getManagedSectionEdit,
     serializeNoteComments,
+    serializeNoteCommentThreads,
     type ParsedNoteComments,
 } from "../core/storage/noteCommentStorage";
 import { remapSelectionOffsetAfterManagedSectionEdit } from "../core/text/editOffsets";
@@ -30,6 +33,7 @@ type PersistOptions = {
 
 type SyncedFileComments = {
     mainContent: string;
+    threads: CommentThread[];
     comments: Comment[];
 };
 
@@ -75,7 +79,7 @@ export class CommentPersistenceController {
         try {
             const fileContent = await this.host.getCurrentNoteContent(file);
             const parsed = await this.syncFileCommentsFromContent(file, fileContent);
-            const rewrittenContent = serializeNoteComments(parsed.mainContent, parsed.comments);
+            const rewrittenContent = serializeNoteCommentThreads(parsed.mainContent, parsed.threads);
 
             if (shouldDeferManagedCommentPersist({
                 isEditorFocused: this.host.isMarkdownEditorFocused(file),
@@ -106,7 +110,7 @@ export class CommentPersistenceController {
 
         if (isAttachmentCommentableFile(file)) {
             const comments = this.host.getCommentManager().getCommentsForFile(file.path);
-            this.host.getAggregateCommentIndex().updateFile(file.path, comments);
+            this.host.getAggregateCommentIndex().updateFile(file.path, this.host.getCommentManager().getThreadsForFile(file.path));
             return comments;
         }
 
@@ -126,7 +130,7 @@ export class CommentPersistenceController {
         if (isAttachmentCommentableFile(file)) {
             this.host.getAggregateCommentIndex().updateFile(
                 file.path,
-                this.host.getCommentManager().getCommentsForFile(file.path),
+                this.host.getCommentManager().getThreadsForFile(file.path),
             );
             await this.host.saveSettings();
             await this.afterCommentsChanged(options);
@@ -210,24 +214,24 @@ export class CommentPersistenceController {
                 for (const file of markdownFiles) {
                     const noteContent = await this.host.getCurrentNoteContent(file);
                     const parsed = await this.parseAndNormalizeFileComments(file.path, noteContent);
-                    this.host.getAggregateCommentIndex().updateFile(file.path, parsed.comments);
+                    this.host.getAggregateCommentIndex().updateFile(file.path, parsed.threads);
                 }
 
-                const attachmentCommentsByFile = new Map<string, Comment[]>();
-                for (const comment of this.host.getCommentManager().getAllComments()) {
-                    if (!isAttachmentCommentablePath(comment.filePath)) {
+                const attachmentThreadsByFile = new Map<string, CommentThread[]>();
+                for (const thread of this.host.getCommentManager().getAllThreads()) {
+                    if (!isAttachmentCommentablePath(thread.filePath)) {
                         continue;
                     }
 
-                    const existingComments = attachmentCommentsByFile.get(comment.filePath) ?? [];
-                    existingComments.push(comment);
-                    attachmentCommentsByFile.set(comment.filePath, existingComments);
+                    const existingThreads = attachmentThreadsByFile.get(thread.filePath) ?? [];
+                    existingThreads.push(thread);
+                    attachmentThreadsByFile.set(thread.filePath, existingThreads);
                 }
 
-                for (const [filePath, comments] of Array.from(attachmentCommentsByFile.entries()).sort(([left], [right]) =>
+                for (const [filePath, threads] of Array.from(attachmentThreadsByFile.entries()).sort(([left], [right]) =>
                     left.localeCompare(right),
                 )) {
-                    this.host.getAggregateCommentIndex().updateFile(filePath, comments);
+                    this.host.getAggregateCommentIndex().updateFile(filePath, threads);
                 }
 
                 this.aggregateIndexInitialized = true;
@@ -246,36 +250,54 @@ export class CommentPersistenceController {
             const parsed = this.host.getParsedNoteComments(filePath, noteContent);
             return {
                 mainContent: parsed.mainContent,
+                threads: [],
                 comments: [],
             };
         }
 
         const parsed = this.host.getParsedNoteComments(filePath, noteContent);
-        const normalizedComments: Comment[] = [];
+        const normalizedThreads: CommentThread[] = [];
 
-        for (const parsedComment of parsed.comments) {
-            const comment = { ...parsedComment };
-            if (!comment.id) {
-                comment.id = this.host.createCommentId();
+        for (const parsedThread of parsed.threads) {
+            const thread: CommentThread = {
+                ...parsedThread,
+                entries: parsedThread.entries.map((entry) => ({ ...entry })),
+            };
+            if (!thread.id) {
+                thread.id = this.host.createCommentId();
             }
-            comment.anchorKind = comment.anchorKind === "page" ? "page" : "selection";
-            if (comment.anchorKind === "page") {
-                comment.orphaned = false;
-                if (!comment.selectedText) {
-                    comment.selectedText = getPageCommentLabel(filePath);
+            thread.anchorKind = thread.anchorKind === "page" ? "page" : "selection";
+            if (thread.anchorKind === "page") {
+                thread.orphaned = false;
+                if (!thread.selectedText) {
+                    thread.selectedText = getPageCommentLabel(filePath);
                 }
             } else {
-                comment.orphaned = comment.orphaned === true;
+                thread.orphaned = thread.orphaned === true;
             }
-            if (!comment.selectedTextHash && comment.selectedText) {
-                comment.selectedTextHash = await this.host.hashText(comment.selectedText);
+            if (!thread.selectedTextHash && thread.selectedText) {
+                thread.selectedTextHash = await this.host.hashText(thread.selectedText);
             }
-            normalizedComments.push(comment);
+            if (!thread.entries.length) {
+                thread.entries = [{
+                    id: this.host.createCommentId(),
+                    body: "",
+                    timestamp: thread.updatedAt || thread.createdAt || Date.now(),
+                }];
+            }
+            if (!thread.createdAt) {
+                thread.createdAt = thread.entries[0].timestamp;
+            }
+            if (!thread.updatedAt) {
+                thread.updatedAt = thread.entries[thread.entries.length - 1].timestamp;
+            }
+            normalizedThreads.push(thread);
         }
 
         return {
             mainContent: parsed.mainContent,
-            comments: normalizedComments,
+            threads: normalizedThreads,
+            comments: normalizedThreads.map((thread) => threadToComment(thread)),
         };
     }
 
@@ -284,27 +306,28 @@ export class CommentPersistenceController {
         const syncedComments = await syncLoadedCommentsForCurrentNote(
             file.path,
             parsed.mainContent,
-            parsed.comments,
+            parsed.threads,
             this.host.getCommentManager(),
             this.host.getAggregateCommentIndex(),
         );
-        this.host.syncDerivedCommentLinksForFile(file, parsed.mainContent, syncedComments);
+        this.host.syncDerivedCommentLinksForFile(file, parsed.mainContent, syncedComments.comments);
         return {
             mainContent: parsed.mainContent,
-            comments: syncedComments,
+            threads: syncedComments.threads,
+            comments: syncedComments.comments,
         };
     }
 
     private async writeCommentsForFile(file: TFile, options: PersistOptions = {}): Promise<string> {
         this.clearPendingCommentPersistTimer(file.path);
-        const comments = this.host.getCommentManager().getCommentsForFile(file.path);
+        const threads = this.host.getCommentManager().getThreadsForFile(file.path);
         const openView = this.host.getMarkdownViewForFile(file);
 
         if (openView) {
             const currentContent = openView.editor.getValue();
-            const nextContent = serializeNoteComments(currentContent, comments);
+            const nextContent = serializeNoteCommentThreads(currentContent, threads);
             if (currentContent !== nextContent) {
-                const edit = getManagedSectionEdit(currentContent, comments);
+                const edit = getManagedSectionEditForThreads(currentContent, threads);
                 const shouldClampSelectionToManagedSectionStart = openView.getMode() === "source"
                     && openView.getState().source !== true;
                 const selectionFromOffset = openView.editor.posToOffset(openView.editor.getCursor("from"));
@@ -329,7 +352,7 @@ export class CommentPersistenceController {
         }
 
         const nextContent = await this.host.app.vault.process(file, (currentContent) =>
-            serializeNoteComments(currentContent, comments),
+            serializeNoteCommentThreads(currentContent, threads),
         );
         await this.syncFileCommentsFromContent(file, nextContent);
         await this.afterCommentsChanged(options);

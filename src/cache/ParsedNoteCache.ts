@@ -1,8 +1,17 @@
-import type { Comment } from "../commentManager";
+import type { Comment, CommentThread } from "../commentManager";
+import { cloneCommentThreads } from "../commentManager";
 import type { ParsedNoteComments } from "../core/storage/noteCommentStorage";
 
 function cloneComments(comments: Comment[]): Comment[] {
     return comments.map((comment) => ({ ...comment }));
+}
+
+function cloneParsed(parsed: ParsedNoteComments): ParsedNoteComments {
+    return {
+        mainContent: parsed.mainContent,
+        comments: cloneComments(parsed.comments),
+        threads: cloneCommentThreads(parsed.threads),
+    };
 }
 
 export class ParsedNoteCache {
@@ -19,19 +28,13 @@ export class ParsedNoteCache {
         if (cached && cached.noteContent === noteContent) {
             this.cache.delete(filePath);
             this.cache.set(filePath, cached);
-            return {
-                mainContent: cached.parsed.mainContent,
-                comments: cloneComments(cached.parsed.comments),
-            };
+            return cloneParsed(cached.parsed);
         }
 
         const parsed = parse(noteContent, filePath);
         this.cache.set(filePath, {
             noteContent,
-            parsed: {
-                mainContent: parsed.mainContent,
-                comments: cloneComments(parsed.comments),
-            },
+            parsed: cloneParsed(parsed),
         });
 
         while (this.cache.size > this.maxEntries) {
@@ -42,10 +45,7 @@ export class ParsedNoteCache {
             this.cache.delete(oldestKey);
         }
 
-        return {
-            mainContent: parsed.mainContent,
-            comments: cloneComments(parsed.comments),
-        };
+        return cloneParsed(parsed);
     }
 
     clear(filePath: string): void {

@@ -1,4 +1,5 @@
 import type { Editor, TFile } from "obsidian";
+import type { Comment } from "../commentManager";
 import { getPageCommentLabel } from "../core/anchors/commentAnchors";
 import { isMarkdownCommentableFile } from "../core/rules/commentableFiles";
 import type { DraftComment, DraftSelection } from "../domain/drafts";
@@ -7,6 +8,7 @@ export interface CommentEntryHost {
     getAllCommentsNotePath(): string;
     isCommentableFile(file: TFile | null): file is TFile;
     loadCommentsForFile(file: TFile): Promise<unknown>;
+    getKnownCommentById(commentId: string): Comment | null;
     markDraftFileActive(file: TFile): void;
     setDraftComment(draftComment: DraftComment | null, hostFilePath?: string | null): Promise<void>;
     activateViewAndHighlightComment(commentId: string): Promise<void>;
@@ -54,6 +56,37 @@ export class CommentEntryController {
         });
     }
 
+    public async startAppendEntryDraft(
+        threadId: string,
+        hostFilePath: string | null = null,
+    ): Promise<boolean> {
+        const comment = this.host.getKnownCommentById(threadId);
+        const commentFile = comment ? ({
+            path: comment.filePath,
+            basename: comment.filePath.split("/").pop()?.replace(/\.[^.]+$/, "") ?? comment.filePath,
+            extension: comment.filePath.split(".").pop() ?? "",
+        } as TFile) : null;
+
+        if (!(comment && commentFile && this.host.isCommentableFile(commentFile))) {
+            this.host.showNotice("Unable to find that side note thread.");
+            return false;
+        }
+
+        await this.host.loadCommentsForFile(commentFile);
+        const draft: DraftComment = {
+            ...comment,
+            id: this.host.createCommentId(),
+            comment: "",
+            timestamp: Date.now(),
+            mode: "append",
+            threadId,
+        };
+        this.host.markDraftFileActive(commentFile);
+        await this.host.setDraftComment(draft, hostFilePath ?? comment.filePath);
+        await this.host.activateViewAndHighlightComment(threadId);
+        return true;
+    }
+
     private async startNewCommentDraft(selection: DraftSelection): Promise<boolean> {
         if (!this.host.isCommentableFile(selection.file)) {
             this.host.showNotice(`Cannot add comments to ${this.host.getAllCommentsNotePath()}.`);
@@ -76,8 +109,9 @@ export class CommentEntryController {
     }
 
     private async buildDraftComment(selection: DraftSelection): Promise<DraftComment> {
+        const id = this.host.createCommentId();
         return {
-            id: this.host.createCommentId(),
+            id,
             filePath: selection.file.path,
             startLine: selection.startLine,
             startChar: selection.startChar,
@@ -90,6 +124,7 @@ export class CommentEntryController {
             anchorKind: selection.anchorKind === "page" ? "page" : "selection",
             orphaned: false,
             mode: "new",
+            threadId: id,
         };
     }
 }

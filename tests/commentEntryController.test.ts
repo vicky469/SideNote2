@@ -47,6 +47,7 @@ function createHost() {
         loadCommentsForFile: async (file) => {
             loadedFiles.push(file.path);
         },
+        getKnownCommentById: () => null,
         markDraftFileActive: (file) => {
             markedFiles.push(file.path);
         },

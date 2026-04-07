@@ -3,6 +3,7 @@ import test from "node:test";
 import type { TFile } from "obsidian";
 import { CommentManager, type Comment } from "../src/commentManager";
 import { IndexNoteSettingsController } from "../src/control/indexNoteSettingsController";
+import { buildAttachmentComments } from "../src/core/storage/attachmentCommentStorage";
 import {
     resolveIndexNotePathChange,
     resolveLoadedSettings,
@@ -254,10 +255,10 @@ test("index note settings controller loads attachment comments and rewrites lega
             indexHeaderImageUrl: " https://example.com/header.webp ",
             indexHeaderImageCaption: " Header ",
             confirmDelete: true,
-            attachmentComments: [
+            attachmentComments: buildAttachmentComments([
                 createComment({ filePath: "docs/file.pdf", id: "pdf-comment" }),
                 createComment({ filePath: "docs/missing.pdf", id: "missing-comment" }),
-            ],
+            ]),
         },
         initialComments: [createComment({ filePath: "docs/existing.pdf", id: "stale-comment" })],
     });

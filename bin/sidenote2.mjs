@@ -19,6 +19,7 @@ function printMainUsage(stream = process.stderr) {
             "",
             "Commands:",
             "  comment:migrate-legacy  Rewrite one note from legacy flat comments to threaded storage",
+            "  comment:append  Append one entry to an existing SideNote2 comment thread in a note",
             "  comment:update  Update one stored SideNote2 comment body in a note",
             "  install-skill   Copy bundled SideNote2 Codex skill(s) into the Codex skills directory",
             "",
@@ -37,6 +38,20 @@ function printCommentUpdateUsage(stream = process.stderr) {
             "  sidenote2 comment:update --file ./note.md --id comment-1 --comment-file ./comment.md",
             "  sidenote2 comment:update --file ./note.md --id comment-1 --comment-file ./comment.md --settle-ms 2000",
             "  printf 'Updated body\\n' | sidenote2 comment:update --file ./note.md --id comment-1 --stdin",
+        ].join("\n") + "\n",
+    );
+}
+
+function printCommentAppendUsage(stream = process.stderr) {
+    stream.write(
+        [
+            "Usage:",
+            "  sidenote2 comment:append --file <note.md> --id <comment-id> (--comment <text> | --comment-file <path> | --stdin) [--settle-ms <milliseconds>]",
+            "",
+            "Examples:",
+            "  sidenote2 comment:append --file ./note.md --id comment-1 --comment-file ./reply.md",
+            "  sidenote2 comment:append --file ./note.md --id comment-1 --comment-file ./reply.md --settle-ms 2000",
+            "  printf 'Reply body\\n' | sidenote2 comment:append --file ./note.md --id comment-1 --stdin",
         ].join("\n") + "\n",
     );
 }
@@ -128,6 +143,10 @@ function parseCommentUpdateArgs(argv) {
     }
 
     return options;
+}
+
+function parseCommentAppendArgs(argv) {
+    return parseCommentUpdateArgs(argv);
 }
 
 function parseCommentMigrateLegacyArgs(argv) {
@@ -702,6 +721,73 @@ async function runCommentUpdate(argv, streamOut, streamErr) {
     return 0;
 }
 
+async function runCommentAppend(argv, streamOut, streamErr) {
+    let options;
+    try {
+        options = parseCommentAppendArgs(argv);
+    } catch (error) {
+        streamErr.write(`${error instanceof Error ? error.message : String(error)}\n`);
+        printCommentAppendUsage(streamErr);
+        return 1;
+    }
+
+    if (options === null) {
+        printCommentAppendUsage(streamOut);
+        return 0;
+    }
+
+    const repoRoot = getRepoRoot(import.meta.url);
+    const notePath = path.resolve(process.cwd(), options.file);
+    const nextCommentBody = await loadCommentBody(options);
+    const noteContent = await readFile(notePath, "utf8");
+    const storageModule = await loadStorageModule(repoRoot);
+    const updated = storageModule.appendNoteCommentEntryById(noteContent, notePath, options.id, {
+        id: randomUUID(),
+        body: nextCommentBody,
+        timestamp: Date.now(),
+    });
+
+    if (typeof updated !== "string") {
+        const plan = buildLegacyMigrationPlan(notePath, noteContent, storageModule);
+        if (plan.kind === "legacy") {
+            streamErr.write(
+                `Note still uses legacy flat SideNote2 comments: ${notePath}\n`
+                + "Run `sidenote2 comment:migrate-legacy --file <note.md>` first, then rerun this append.\n",
+            );
+            return 1;
+        }
+
+        if (plan.kind === "unsupported") {
+            streamErr.write(
+                `Found a SideNote2 comments block in ${notePath}, but it is not a supported threaded payload.\n`,
+            );
+            return 1;
+        }
+
+        if (plan.kind === "no-managed-block") {
+            streamErr.write(`No SideNote2 comments block found in ${notePath}\n`);
+            return 1;
+        }
+
+        streamErr.write(`Comment id not found: ${options.id}\n`);
+        return 1;
+    }
+
+    const writeResult = await writeObservedNoteSafely(notePath, createContentFingerprint(noteContent), updated, {
+        settleMs: options.settleMs,
+    });
+    if (writeResult.kind === "changed") {
+        streamErr.write(
+            `Skipped appending to ${notePath} because ${writeResult.reason}. `
+            + "Rerun after Obsidian Sync or other local edits settle.\n",
+        );
+        return 1;
+    }
+
+    streamOut.write(`Appended a new entry to comment ${options.id} in ${notePath}\n`);
+    return 0;
+}
+
 async function runCommentMigrateLegacy(argv, streamOut, streamErr) {
     let options;
     try {
@@ -888,6 +974,8 @@ export async function runCli(argv, io = { stdout: process.stdout, stderr: proces
     switch (command) {
         case "comment:migrate-legacy":
             return runCommentMigrateLegacy(rest, io.stdout, io.stderr);
+        case "comment:append":
+            return runCommentAppend(rest, io.stdout, io.stderr);
         case "comment:update":
             return runCommentUpdate(rest, io.stdout, io.stderr);
         case "install-skill":

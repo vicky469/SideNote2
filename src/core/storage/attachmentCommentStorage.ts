@@ -1,8 +1,15 @@
-import type { Comment } from "../../commentManager";
+import type { Comment, CommentThread, CommentThreadEntry } from "../../commentManager";
+import { commentToThread, threadToComment, cloneCommentThread } from "../../commentManager";
 import { isPageComment } from "../anchors/commentAnchors";
 import { isAttachmentCommentablePath } from "../rules/commentableFiles";
 
-interface StoredAttachmentComment {
+interface StoredAttachmentCommentThreadEntry {
+    id: string;
+    body: string;
+    timestamp: number;
+}
+
+interface StoredAttachmentCommentThread {
     id: string;
     filePath: string;
     startLine: number;
@@ -11,8 +18,9 @@ interface StoredAttachmentComment {
     endChar: number;
     selectedText: string;
     selectedTextHash: string;
-    comment: string;
-    timestamp: number;
+    entries: StoredAttachmentCommentThreadEntry[];
+    createdAt: number;
+    updatedAt: number;
     anchorKind?: "page";
     resolved?: boolean;
 }
@@ -21,45 +29,84 @@ function normalizeCommentBody(body: string): string {
     return body.replace(/\r\n/g, "\n").replace(/\n+$/, "");
 }
 
-function toStoredAttachmentComment(comment: Comment): StoredAttachmentComment {
+function toStoredEntry(entry: CommentThreadEntry): StoredAttachmentCommentThreadEntry {
     return {
-        id: comment.id,
-        filePath: comment.filePath,
-        startLine: comment.startLine,
-        startChar: comment.startChar,
-        endLine: comment.endLine,
-        endChar: comment.endChar,
-        selectedText: comment.selectedText,
-        selectedTextHash: comment.selectedTextHash,
-        comment: comment.comment,
-        timestamp: comment.timestamp,
-        anchorKind: "page",
-        resolved: comment.resolved === true ? true : undefined,
+        id: entry.id,
+        body: normalizeCommentBody(entry.body),
+        timestamp: entry.timestamp,
     };
 }
 
-function fromStoredAttachmentComment(candidate: unknown): Comment | null {
+function toStoredAttachmentThread(thread: CommentThread): StoredAttachmentCommentThread {
+    return {
+        id: thread.id,
+        filePath: thread.filePath,
+        startLine: thread.startLine,
+        startChar: thread.startChar,
+        endLine: thread.endLine,
+        endChar: thread.endChar,
+        selectedText: thread.selectedText,
+        selectedTextHash: thread.selectedTextHash,
+        entries: thread.entries.map((entry) => toStoredEntry(entry)),
+        createdAt: thread.createdAt,
+        updatedAt: thread.updatedAt,
+        anchorKind: "page",
+        resolved: thread.resolved === true ? true : undefined,
+    };
+}
+
+function fromStoredEntry(candidate: unknown): CommentThreadEntry | null {
     if (!candidate || typeof candidate !== "object") {
         return null;
     }
 
-    const item = candidate as Partial<StoredAttachmentComment>;
+    const item = candidate as Partial<StoredAttachmentCommentThreadEntry>;
     if (
-        typeof item.id !== "string" ||
-        typeof item.filePath !== "string" ||
-        typeof item.startLine !== "number" ||
-        typeof item.startChar !== "number" ||
-        typeof item.endLine !== "number" ||
-        typeof item.endChar !== "number" ||
-        typeof item.selectedText !== "string" ||
-        typeof item.selectedTextHash !== "string" ||
-        typeof item.comment !== "string" ||
-        typeof item.timestamp !== "number"
+        typeof item.id !== "string"
+        || typeof item.body !== "string"
+        || typeof item.timestamp !== "number"
+    ) {
+        return null;
+    }
+
+    return {
+        id: item.id,
+        body: normalizeCommentBody(item.body),
+        timestamp: item.timestamp,
+    };
+}
+
+function fromStoredAttachmentThread(candidate: unknown): CommentThread | null {
+    if (!candidate || typeof candidate !== "object") {
+        return null;
+    }
+
+    const item = candidate as Partial<StoredAttachmentCommentThread>;
+    if (
+        typeof item.id !== "string"
+        || typeof item.filePath !== "string"
+        || typeof item.startLine !== "number"
+        || typeof item.startChar !== "number"
+        || typeof item.endLine !== "number"
+        || typeof item.endChar !== "number"
+        || typeof item.selectedText !== "string"
+        || typeof item.selectedTextHash !== "string"
+        || !Array.isArray(item.entries)
+        || item.entries.length === 0
+        || typeof item.createdAt !== "number"
+        || typeof item.updatedAt !== "number"
     ) {
         return null;
     }
 
     if (!isAttachmentCommentablePath(item.filePath)) {
+        return null;
+    }
+
+    const entries = item.entries
+        .map((entry) => fromStoredEntry(entry))
+        .filter((entry): entry is CommentThreadEntry => entry !== null);
+    if (!entries.length) {
         return null;
     }
 
@@ -72,48 +119,50 @@ function fromStoredAttachmentComment(candidate: unknown): Comment | null {
         endChar: item.endChar,
         selectedText: item.selectedText,
         selectedTextHash: item.selectedTextHash,
-        comment: normalizeCommentBody(item.comment),
-        timestamp: item.timestamp,
+        entries,
+        createdAt: item.createdAt,
+        updatedAt: item.updatedAt,
         anchorKind: "page",
         orphaned: false,
         resolved: item.resolved === true,
     };
 }
 
-export function parseAttachmentComments(value: unknown): Comment[] {
+export function parseAttachmentCommentThreads(value: unknown): CommentThread[] {
     if (!Array.isArray(value)) {
         return [];
     }
 
     return value
-        .map((item) => fromStoredAttachmentComment(item))
-        .filter((comment): comment is Comment => comment !== null)
+        .map((item) => fromStoredAttachmentThread(item))
+        .filter((thread): thread is CommentThread => thread !== null)
         .sort((left, right) => {
             if (left.filePath !== right.filePath) {
                 return left.filePath.localeCompare(right.filePath);
             }
 
-            if (left.startLine !== right.startLine) {
-                return left.startLine - right.startLine;
-            }
-
-            if (left.startChar !== right.startChar) {
-                return left.startChar - right.startChar;
-            }
-
-            return left.timestamp - right.timestamp;
-        });
+            return left.createdAt - right.createdAt;
+        })
+        .map((thread) => cloneCommentThread(thread));
 }
 
-export function buildAttachmentComments(comments: Comment[]): StoredAttachmentComment[] {
-    return comments
-        .filter((comment) => isAttachmentCommentablePath(comment.filePath) && isPageComment(comment))
+export function buildAttachmentCommentThreads(threads: CommentThread[]): StoredAttachmentCommentThread[] {
+    return threads
+        .filter((thread) => isAttachmentCommentablePath(thread.filePath) && isPageComment(thread))
         .sort((left, right) => {
             if (left.filePath !== right.filePath) {
                 return left.filePath.localeCompare(right.filePath);
             }
 
-            return left.timestamp - right.timestamp;
+            return left.createdAt - right.createdAt;
         })
-        .map((comment) => toStoredAttachmentComment(comment));
+        .map((thread) => toStoredAttachmentThread(thread));
+}
+
+export function parseAttachmentComments(value: unknown): Comment[] {
+    return parseAttachmentCommentThreads(value).map((thread) => threadToComment(thread));
+}
+
+export function buildAttachmentComments(comments: Comment[]): StoredAttachmentCommentThread[] {
+    return buildAttachmentCommentThreads(comments.map((comment) => commentToThread(comment)));
 }

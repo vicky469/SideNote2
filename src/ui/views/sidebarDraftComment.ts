@@ -1,4 +1,5 @@
 import { isOrphanedComment, isPageComment } from "../../core/anchors/commentAnchors";
+import { MAX_SIDENOTE_WORDS, countCommentWords, exceedsCommentWordLimit } from "../../core/text/commentWordLimit";
 import type { DraftComment } from "../../domain/drafts";
 import { renderStyledDraftCommentHtml } from "../editor/commentEditorStyling";
 import { formatSidebarCommentMeta } from "./sidebarCommentSections";
@@ -9,6 +10,7 @@ export interface DraftCommentPresentation {
     classes: string[];
     metaText: string;
     saveLabel: string;
+    placeholder: string;
 }
 
 export interface SidebarDraftCommentHost {
@@ -23,7 +25,11 @@ export function buildDraftCommentPresentation(
     comment: DraftComment,
     activeCommentId: string | null,
 ): DraftCommentPresentation {
-    const classes = ["sidenote2-comment-item", "sidenote2-comment-draft", comment.mode === "edit" ? "is-edit" : "is-new"];
+    const classes = [
+        "sidenote2-comment-item",
+        "sidenote2-comment-draft",
+        comment.mode === "edit" ? "is-edit" : comment.mode === "append" ? "is-append" : "is-new",
+    ];
     if (isPageComment(comment)) {
         classes.push("page-note");
     }
@@ -40,7 +46,10 @@ export function buildDraftCommentPresentation(
     return {
         classes,
         metaText: formatSidebarCommentMeta(comment),
-        saveLabel: comment.mode === "new" ? "Add" : "Save",
+        saveLabel: comment.mode === "edit" ? "Save" : "Add",
+        placeholder: comment.mode === "append"
+            ? "Add another entry to this thread."
+            : "Write a side note. Use B or H for styling, or type @name.",
     };
 }
 
@@ -85,7 +94,7 @@ export function renderDraftCommentCard(
         cls: "sidenote2-inline-textarea",
     });
     textarea.value = comment.comment;
-    textarea.setAttribute("placeholder", "Write a side note. Use B or H for styling, or type @name.");
+    textarea.setAttribute("placeholder", presentation.placeholder);
     textarea.setAttribute("aria-label", "Side note draft");
     textarea.rows = estimateDraftTextareaRows(comment.comment, comment.mode === "edit");
 
@@ -93,7 +102,7 @@ export function renderDraftCommentCard(
         if (!textarea.value) {
             preview.empty();
             preview.addClass("is-empty");
-            preview.setText("Write a side note. Use B or H for styling, or type @name.");
+            preview.setText(presentation.placeholder);
         } else {
             preview.removeClass("is-empty");
             preview.innerHTML = renderStyledDraftCommentHtml(textarea.value);
@@ -105,6 +114,7 @@ export function renderDraftCommentCard(
     syncPreview();
 
     const actionRow = editorWrap.createDiv("sidenote2-inline-editor-actions");
+    const wordCountEl = actionRow.createDiv("sidenote2-inline-word-count");
     const cancelButton = actionRow.createEl("button", {
         text: "Cancel",
         cls: "sidenote2-inline-cancel-button",
@@ -116,11 +126,18 @@ export function renderDraftCommentCard(
     saveButton.setAttribute("title", "Save");
 
     const saving = host.isSavingDraft(comment.id);
+    const syncWordCount = () => {
+        const wordCount = countCommentWords(textarea.value);
+        wordCountEl.setText(`${wordCount}/${MAX_SIDENOTE_WORDS} words`);
+        saveButton.disabled = saving || exceedsCommentWordLimit(textarea.value);
+    };
+
     textarea.disabled = saving;
     boldButton.disabled = saving;
     highlightButton.disabled = saving;
     cancelButton.disabled = saving;
     saveButton.disabled = saving;
+    syncWordCount();
 
     const stopPropagation = (event: Event) => {
         event.stopPropagation();
@@ -132,6 +149,7 @@ export function renderDraftCommentCard(
         host.updateDraftCommentText(comment.id, target.value);
         target.rows = estimateDraftTextareaRows(target.value, comment.mode === "edit");
         syncPreview();
+        syncWordCount();
 
         if (!(event instanceof InputEvent) || event.inputType !== "insertText" || !event.data) {
             return;

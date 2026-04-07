@@ -1,6 +1,6 @@
 import * as assert from "node:assert/strict";
 import test from "node:test";
-import { getManagedSectionEdit, getManagedSectionLineRange, getManagedSectionRange, getManagedSectionStartLine, getVisibleNoteContent, parseNoteComments, replaceNoteCommentBodyById, serializeNoteComments } from "../src/core/storage/noteCommentStorage";
+import { appendNoteCommentEntryById, getManagedSectionEdit, getManagedSectionLineRange, getManagedSectionRange, getManagedSectionStartLine, getVisibleNoteContent, parseNoteComments, replaceNoteCommentBodyById, serializeNoteComments } from "../src/core/storage/noteCommentStorage";
 import type { Comment } from "../src/commentManager";
 
 function createComment(overrides: Partial<Comment> = {}): Comment {
@@ -43,7 +43,8 @@ test("serializeNoteComments stores comments inside a managed appendix", () => {
     assert.match(serialized, /"startChar": 2/);
     assert.match(serialized, /"endLine": 1/);
     assert.match(serialized, /"endChar": 7/);
-    assert.match(serialized, /"comment": "This is a side note\."/);
+    assert.match(serialized, /"entries": \[/);
+    assert.match(serialized, /"body": "This is a side note\."/);
 
     const parsed = parseNoteComments(serialized, "note.md");
     assert.equal(parsed.mainContent, "# Title\n\nAlpha body.");
@@ -72,7 +73,7 @@ test("serializeNoteComments stores multiline comment bodies as exact JSON string
         }),
     ]);
 
-    assert.match(serialized, /"comment": "First line\\nSecond line\\nThird line"/);
+    assert.match(serialized, /"body": "First line\\nSecond line\\nThird line"/);
 
     const parsed = parseNoteComments(serialized, "note.md");
     assert.equal(parsed.comments[0].comment, "First line\nSecond line\nThird line");
@@ -105,7 +106,7 @@ test("serializeNoteComments replaces an existing managed appendix instead of dup
 
     assert.equal((secondPass.match(/<!-- SideNote2 comments/g) || []).length, 1);
     assert.match(secondPass, /"resolved": true/);
-    assert.match(secondPass, /"comment": "Updated body"/);
+    assert.match(secondPass, /"body": "Updated body"/);
 
     const parsed = parseNoteComments(secondPass, "note.md");
     assert.equal(parsed.comments.length, 1);
@@ -172,6 +173,40 @@ test("replaceNoteCommentBodyById returns null when the target id is missing", ()
     assert.equal(replaceNoteCommentBodyById(original, "note.md", "missing-id", "Updated"), null);
 });
 
+test("appendNoteCommentEntryById appends a new entry to the targeted thread", () => {
+    const original = serializeNoteComments("# Title\n\nAlpha beta gamma.\n", [
+        createComment({
+            id: "comment-1",
+            comment: "Original alpha",
+        }),
+    ]);
+
+    const updated = appendNoteCommentEntryById(original, "note.md", "comment-1", {
+        id: "entry-2",
+        body: "Follow up reply\n",
+        timestamp: 1710000001000,
+    });
+    assert.ok(updated);
+
+    const parsed = parseNoteComments(updated, "note.md");
+    assert.equal(parsed.comments.length, 1);
+    assert.equal(parsed.comments[0].comment, "Follow up reply");
+    assert.equal(parsed.threads[0].entries.length, 2);
+    assert.equal(parsed.threads[0].entries[0].body, "Original alpha");
+    assert.equal(parsed.threads[0].entries[1].id, "entry-2");
+    assert.equal(parsed.threads[0].entries[1].body, "Follow up reply");
+    assert.match(updated, /Alpha beta gamma\./);
+});
+
+test("appendNoteCommentEntryById returns null when the target id is missing", () => {
+    const original = serializeNoteComments("Body\n", [createComment()]);
+    assert.equal(appendNoteCommentEntryById(original, "note.md", "missing-id", {
+        id: "entry-2",
+        body: "Follow up",
+        timestamp: 1710000001000,
+    }), null);
+});
+
 test("getManagedSectionEdit patches only the managed comments block", () => {
     const original = [
         "# Title",
@@ -198,7 +233,7 @@ test("getManagedSectionEdit patches only the managed comments block", () => {
 
     assert.equal(patched, serializeNoteComments(original, [replacement]));
     assert.match(patched, /"selectedText": "beta"/);
-    assert.match(patched, /"comment": "Updated"/);
+    assert.match(patched, /"body": "Updated"/);
     assert.match(patched, /Alpha beta gamma\./);
 });
 
@@ -238,7 +273,7 @@ test("getManagedSectionLineRange covers the trailing managed block", () => {
     const withComments = serializeNoteComments("# Title\n\nAlpha beta gamma.\n", [createComment()]);
     assert.deepEqual(getManagedSectionLineRange(withComments), {
         startLine: 4,
-        endLine: 19,
+        endLine: 26,
     });
 });
 
@@ -258,8 +293,15 @@ test("parseNoteComments still recognizes a managed block after visible text is t
         '    "endChar": 0,',
         '    "selectedText": "Note",',
         '    "selectedTextHash": "hash-1",',
-        '    "comment": "Page note",',
-        '    "timestamp": 1710000000000,',
+        '    "entries": [',
+        "      {",
+        '        "id": "comment-1",',
+        '        "body": "Page note",',
+        '        "timestamp": 1710000000000',
+        "      }",
+        "    ],",
+        '    "createdAt": 1710000000000,',
+        '    "updatedAt": 1710000000000,',
         '    "anchorKind": "page"',
         "  }",
         "]",
@@ -302,8 +344,15 @@ test("parseNoteComments still recognizes a managed block after visible text is t
         '    "endChar": 0,',
         '    "selectedText": "Note",',
         '    "selectedTextHash": "hash-1",',
-        '    "comment": "Page note",',
-        '    "timestamp": 1710000000000,',
+        '    "entries": [',
+        "      {",
+        '        "id": "comment-1",',
+        '        "body": "Page note",',
+        '        "timestamp": 1710000000000',
+        "      }",
+        "    ],",
+        '    "createdAt": 1710000000000,',
+        '    "updatedAt": 1710000000000,',
         '    "anchorKind": "page"',
         "  }",
         "]",

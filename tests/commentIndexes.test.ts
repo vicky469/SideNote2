@@ -1,6 +1,6 @@
 import * as assert from "node:assert/strict";
 import test from "node:test";
-import type { Comment } from "../src/commentManager";
+import { commentToThread, type Comment } from "../src/commentManager";
 import { ParsedNoteCache } from "../src/cache/ParsedNoteCache";
 import { AggregateCommentIndex } from "../src/index/AggregateCommentIndex";
 import type { ParsedNoteComments } from "../src/core/storage/noteCommentStorage";
@@ -27,9 +27,11 @@ test("ParsedNoteCache reuses parsed output for unchanged content and evicts olde
     let parseCalls = 0;
     const parse = (noteContent: string, filePath: string): ParsedNoteComments => {
         parseCalls += 1;
+        const comment = createComment({ filePath, comment: `parsed-${parseCalls}` });
         return {
             mainContent: noteContent.toUpperCase(),
-            comments: [createComment({ filePath, comment: `parsed-${parseCalls}` })],
+            comments: [comment],
+            threads: [commentToThread(comment)],
         };
     };
 

@@ -126,6 +126,7 @@ export async function renderPersistedCommentCard(
     }
 
     metaEl.createSpan({
+        cls: "sidenote2-comment-meta-value",
         text: presentation.metaText,
     });
 
@@ -240,7 +241,7 @@ export async function renderPersistedCommentCard(
         cls: "clickable-icon sidenote2-comment-action-button sidenote2-comment-action-add-entry sidenote2-thread-add-entry-button",
     });
     addEntryButton.setAttribute("type", "button");
-    addEntryButton.setAttribute("aria-label", "Add entry");
+    addEntryButton.setAttribute("aria-label", "Add to thread");
     host.setIcon(addEntryButton, "plus");
     addEntryButton.onclick = (event) => {
         event.stopPropagation();

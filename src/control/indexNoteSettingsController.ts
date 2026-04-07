@@ -8,7 +8,10 @@ import {
     normalizeAllCommentsNotePath,
 } from "../core/derived/allCommentsNote";
 import { isAttachmentCommentableFile, isAttachmentCommentablePath } from "../core/rules/commentableFiles";
-import { buildAttachmentComments, parseAttachmentComments } from "../core/storage/attachmentCommentStorage";
+import {
+    buildAttachmentCommentThreads,
+    parseAttachmentCommentThreads,
+} from "../core/storage/attachmentCommentStorage";
 import type { SideNote2Settings } from "../ui/settings/SideNote2SettingTab";
 import {
     getIndexNoteParentPath,
@@ -45,24 +48,24 @@ export class IndexNoteSettingsController {
         const resolved = resolveLoadedSettings(loaded, this.host.getSettings());
         this.host.setSettings(resolved.settings);
 
-        const persistedAttachmentComments = parseAttachmentComments(loaded?.attachmentComments);
+        const persistedAttachmentThreads = parseAttachmentCommentThreads(loaded?.attachmentComments);
         const existingAttachmentCommentPaths = new Set(
             this.host.getCommentManager()
-                .getAllComments()
-                .filter((comment) => isAttachmentCommentablePath(comment.filePath))
-                .map((comment) => comment.filePath),
+                .getAllThreads()
+                .filter((thread) => isAttachmentCommentablePath(thread.filePath))
+                .map((thread) => thread.filePath),
         );
         for (const filePath of existingAttachmentCommentPaths) {
-            this.host.getCommentManager().replaceCommentsForFile(filePath, []);
+            this.host.getCommentManager().replaceThreadsForFile(filePath, []);
         }
-        for (const comment of persistedAttachmentComments) {
-            const file = this.host.getFileByPath(comment.filePath);
+        for (const thread of persistedAttachmentThreads) {
+            const file = this.host.getFileByPath(thread.filePath);
             if (!isAttachmentCommentableFile(file)) {
                 continue;
             }
 
-            const nextComments = this.host.getCommentManager().getCommentsForFile(comment.filePath).concat(comment);
-            this.host.getCommentManager().replaceCommentsForFile(comment.filePath, nextComments);
+            const nextThreads = this.host.getCommentManager().getThreadsForFile(thread.filePath).concat(thread);
+            this.host.getCommentManager().replaceThreadsForFile(thread.filePath, nextThreads);
         }
 
         if (resolved.shouldRewriteLegacyConfirmDelete) {
@@ -73,7 +76,7 @@ export class IndexNoteSettingsController {
     public async saveSettings(): Promise<void> {
         await this.host.saveData({
             ...this.host.getSettings(),
-            attachmentComments: buildAttachmentComments(this.host.getCommentManager().getAllComments()),
+            attachmentComments: buildAttachmentCommentThreads(this.host.getCommentManager().getAllThreads()),
         });
     }
 

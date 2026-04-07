@@ -3,6 +3,29 @@ import { getPageCommentLabel, isPageComment } from "./core/anchors/commentAnchor
 
 export type CommentAnchorKind = "selection" | "page";
 
+export interface CommentThreadEntry {
+    id: string;
+    body: string;
+    timestamp: number;
+}
+
+export interface CommentThread {
+    id: string;
+    filePath: string;
+    startLine: number;
+    startChar: number;
+    endLine: number;
+    endChar: number;
+    selectedText: string;
+    selectedTextHash: string;
+    anchorKind?: CommentAnchorKind;
+    orphaned?: boolean;
+    resolved?: boolean;
+    entries: CommentThreadEntry[];
+    createdAt: number;
+    updatedAt: number;
+}
+
 export interface Comment {
     id: string;
     filePath: string;
@@ -17,116 +40,244 @@ export interface Comment {
     anchorKind?: CommentAnchorKind;
     orphaned?: boolean;
     resolved?: boolean;
+    entryCount?: number;
+}
+
+function cloneThreadEntry(entry: CommentThreadEntry): CommentThreadEntry {
+    return {
+        id: entry.id,
+        body: entry.body,
+        timestamp: entry.timestamp,
+    };
+}
+
+export function cloneCommentThread(thread: CommentThread): CommentThread {
+    return {
+        ...thread,
+        entries: thread.entries.map((entry) => cloneThreadEntry(entry)),
+    };
+}
+
+export function cloneCommentThreads(threads: CommentThread[]): CommentThread[] {
+    return threads.map((thread) => cloneCommentThread(thread));
+}
+
+export function getLatestThreadEntry(thread: CommentThread): CommentThreadEntry {
+    return thread.entries[thread.entries.length - 1] ?? {
+        id: thread.id,
+        body: "",
+        timestamp: thread.updatedAt || thread.createdAt,
+    };
+}
+
+function normalizeThread(thread: CommentThread): CommentThread {
+    const entries = thread.entries.length > 0
+        ? thread.entries.map((entry) => cloneThreadEntry(entry))
+        : [{
+            id: thread.id,
+            body: "",
+            timestamp: thread.updatedAt || thread.createdAt,
+        }];
+    const firstEntry = entries[0];
+    const latestEntry = entries[entries.length - 1];
+
+    return {
+        ...thread,
+        anchorKind: thread.anchorKind === "page" ? "page" : "selection",
+        orphaned: thread.anchorKind === "page" ? false : thread.orphaned === true,
+        resolved: thread.resolved === true,
+        entries,
+        createdAt: thread.createdAt || firstEntry.timestamp,
+        updatedAt: thread.updatedAt || latestEntry.timestamp,
+    };
+}
+
+export function commentToThread(comment: Comment): CommentThread {
+    return normalizeThread({
+        id: comment.id,
+        filePath: comment.filePath,
+        startLine: comment.startLine,
+        startChar: comment.startChar,
+        endLine: comment.endLine,
+        endChar: comment.endChar,
+        selectedText: comment.selectedText,
+        selectedTextHash: comment.selectedTextHash,
+        anchorKind: comment.anchorKind === "page" ? "page" : "selection",
+        orphaned: comment.orphaned === true,
+        resolved: comment.resolved === true,
+        entries: [{
+            id: comment.id,
+            body: comment.comment,
+            timestamp: comment.timestamp,
+        }],
+        createdAt: comment.timestamp,
+        updatedAt: comment.timestamp,
+    });
+}
+
+export function threadToComment(thread: CommentThread): Comment {
+    const normalized = normalizeThread(thread);
+    const latestEntry = getLatestThreadEntry(normalized);
+
+    return {
+        id: normalized.id,
+        filePath: normalized.filePath,
+        startLine: normalized.startLine,
+        startChar: normalized.startChar,
+        endLine: normalized.endLine,
+        endChar: normalized.endChar,
+        selectedText: normalized.selectedText,
+        selectedTextHash: normalized.selectedTextHash,
+        comment: latestEntry.body,
+        timestamp: latestEntry.timestamp,
+        anchorKind: normalized.anchorKind,
+        orphaned: normalized.orphaned === true,
+        resolved: normalized.resolved === true,
+        entryCount: normalized.entries.length,
+    };
+}
+
+function isThreadLike(value: Comment | CommentThread): value is CommentThread {
+    return Array.isArray((value as CommentThread).entries);
 }
 
 export class CommentManager {
-    private comments: Comment[];
+    private threads: CommentThread[];
 
-    constructor(comments: Comment[]) {
-        this.comments = comments;
+    constructor(items: Array<Comment | CommentThread>) {
+        this.threads = items.map((item) => normalizeThread(isThreadLike(item) ? item : commentToThread(item)));
+    }
+
+    getThreadsForFile(filePath: string): CommentThread[] {
+        return this.threads
+            .filter((thread) => thread.filePath === filePath)
+            .map((thread) => cloneCommentThread(thread));
+    }
+
+    getThreadById(id: string): CommentThread | undefined {
+        const thread = this.threads.find((candidate) => candidate.id === id);
+        return thread ? cloneCommentThread(thread) : undefined;
+    }
+
+    getAllThreads(): CommentThread[] {
+        return this.threads.map((thread) => cloneCommentThread(thread));
     }
 
     getCommentsForFile(filePath: string): Comment[] {
-        return this.comments.filter(comment => comment.filePath === filePath);
+        return this.threads
+            .filter((thread) => thread.filePath === filePath)
+            .map((thread) => threadToComment(thread));
     }
 
     getCommentById(id: string): Comment | undefined {
-        return this.comments.find(comment => comment.id === id);
+        const thread = this.threads.find((candidate) => candidate.id === id);
+        return thread ? threadToComment(thread) : undefined;
     }
 
     getAllComments(): Comment[] {
-        return this.comments.map((comment) => ({ ...comment }));
+        return this.threads.map((thread) => threadToComment(thread));
     }
 
     replaceCommentsForFile(filePath: string, nextComments: Comment[]) {
-        this.comments = this.comments
-            .filter(comment => comment.filePath !== filePath)
-            .concat(nextComments);
+        this.replaceThreadsForFile(
+            filePath,
+            nextComments.map((comment) => commentToThread(comment)),
+        );
+    }
+
+    replaceThreadsForFile(filePath: string, nextThreads: CommentThread[]) {
+        this.threads = this.threads
+            .filter((thread) => thread.filePath !== filePath)
+            .concat(nextThreads.map((thread) => normalizeThread(thread)));
     }
 
     addComment(newComment: Comment) {
-        this.comments.push(newComment);
+        this.addThread(commentToThread(newComment));
+    }
+
+    addThread(newThread: CommentThread) {
+        this.threads.push(normalizeThread(newThread));
+    }
+
+    appendEntry(threadId: string, entry: CommentThreadEntry) {
+        const thread = this.threads.find((candidate) => candidate.id === threadId);
+        if (!thread) {
+            return;
+        }
+
+        thread.entries.push(cloneThreadEntry(entry));
+        thread.updatedAt = Math.max(thread.updatedAt, entry.timestamp);
     }
 
     editComment(id: string, newCommentText: string) {
-        const commentToEdit = this.comments.find(comment => comment.id === id);
-        if (commentToEdit) {
-            commentToEdit.comment = newCommentText;
+        const thread = this.threads.find((candidate) => candidate.id === id);
+        if (!thread) {
+            return;
         }
+
+        const latestEntry = thread.entries[thread.entries.length - 1];
+        if (!latestEntry) {
+            return;
+        }
+
+        latestEntry.body = newCommentText;
     }
 
     deleteComment(id: string) {
-        const indexToDelete = this.comments.findIndex(comment => comment.id === id);
+        const indexToDelete = this.threads.findIndex((thread) => thread.id === id);
         if (indexToDelete > -1) {
-            this.comments.splice(indexToDelete, 1);
+            this.threads.splice(indexToDelete, 1);
         }
     }
 
-    /**
-     * Mark a comment as resolved (hidden but preserved for audit trail)
-     * @param id The id of the comment to resolve
-     */
     resolveComment(id: string) {
-        const comment = this.comments.find(c => c.id === id);
-        if (comment) {
-            comment.resolved = true;
+        const thread = this.threads.find((candidate) => candidate.id === id);
+        if (thread) {
+            thread.resolved = true;
         }
     }
 
-    /**
-     * Mark a comment as unresolved (reopened)
-     * @param id The id of the comment to unresolve
-     */
     unresolveComment(id: string) {
-        const comment = this.comments.find(c => c.id === id);
-        if (comment) {
-            comment.resolved = false;
+        const thread = this.threads.find((candidate) => candidate.id === id);
+        if (thread) {
+            thread.resolved = false;
         }
     }
 
     renameFile(oldPath: string, newPath: string) {
-        this.comments.forEach(comment => {
-            if (comment.filePath === oldPath) {
-                comment.filePath = newPath;
-                if (isPageComment(comment)) {
-                    comment.selectedText = getPageCommentLabel(newPath);
-                    comment.orphaned = false;
+        this.threads.forEach((thread) => {
+            if (thread.filePath === oldPath) {
+                thread.filePath = newPath;
+                if (isPageComment(thread)) {
+                    thread.selectedText = getPageCommentLabel(newPath);
+                    thread.orphaned = false;
                 }
             }
         });
     }
 
-    /**
-     * Update comment coordinates based on file content changes
-     * Resolves anchors against the full document so multiline selections and repeated
-     * phrases can be re-matched by proximity to their stored coordinates.
-     * @param fileContent The current file content
-     * @param filePath The path of the file that was changed
-     */
     async updateCommentCoordinatesForFile(fileContent: string, filePath: string): Promise<void> {
-        for (const comment of this.comments) {
-            if (comment.filePath !== filePath) {
+        for (const thread of this.threads) {
+            if (thread.filePath !== filePath) {
                 continue;
             }
 
-            if (isPageComment(comment)) {
-                comment.orphaned = false;
+            if (isPageComment(thread)) {
+                thread.orphaned = false;
                 continue;
             }
 
-            const newPosition = resolveAnchorRange(fileContent, comment);
+            const newPosition = resolveAnchorRange(fileContent, thread);
 
-            // Preserve comments even when the anchor temporarily disappears. This avoids
-            // destructive data loss during copy/paste and in-progress edits.
             if (newPosition) {
-                comment.startLine = newPosition.startLine;
-                comment.startChar = newPosition.startChar;
-                comment.endLine = newPosition.endLine;
-                comment.endChar = newPosition.endChar;
-                comment.selectedText = newPosition.text;
-                comment.orphaned = false;
+                thread.startLine = newPosition.startLine;
+                thread.startChar = newPosition.startChar;
+                thread.endLine = newPosition.endLine;
+                thread.endChar = newPosition.endChar;
+                thread.selectedText = newPosition.text;
+                thread.orphaned = false;
             } else {
-                comment.orphaned = true;
+                thread.orphaned = true;
             }
         }
     }

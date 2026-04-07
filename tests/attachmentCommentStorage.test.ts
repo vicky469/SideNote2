@@ -45,8 +45,13 @@ test("attachment comment storage only persists PDF page notes", () => {
         endChar: 0,
         selectedText: "paper",
         selectedTextHash: "hash-1",
-        comment: "A PDF page note.",
-        timestamp: 1710000000000,
+        entries: [{
+            id: "pdf-page",
+            body: "A PDF page note.",
+            timestamp: 1710000000000,
+        }],
+        createdAt: 1710000000000,
+        updatedAt: 1710000000000,
         anchorKind: "page",
         resolved: undefined,
     }]);
@@ -62,8 +67,13 @@ test("attachment comment storage round-trips stored PDF page notes", () => {
         endChar: 0,
         selectedText: "paper",
         selectedTextHash: "hash-1",
-        comment: "Line one\r\nLine two\n\n",
-        timestamp: 1710000000000,
+        entries: [{
+            id: "pdf-page",
+            body: "Line one\r\nLine two\n\n",
+            timestamp: 1710000000000,
+        }],
+        createdAt: 1710000000000,
+        updatedAt: 1710000000000,
         anchorKind: "page",
         resolved: true,
     }, {
@@ -75,8 +85,13 @@ test("attachment comment storage round-trips stored PDF page notes", () => {
         endChar: 0,
         selectedText: "report",
         selectedTextHash: "hash-2",
-        comment: "Should be skipped",
-        timestamp: 1710000000001,
+        entries: [{
+            id: "invalid-docx",
+            body: "Should be skipped",
+            timestamp: 1710000000001,
+        }],
+        createdAt: 1710000000001,
+        updatedAt: 1710000000001,
         anchorKind: "page",
     }]);
 
@@ -94,5 +109,6 @@ test("attachment comment storage round-trips stored PDF page notes", () => {
         anchorKind: "page",
         orphaned: false,
         resolved: true,
+        entryCount: 1,
     }]);
 });

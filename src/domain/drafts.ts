@@ -3,7 +3,8 @@ import type { CommentAnchorKind } from "../commentManager";
 import type { Comment } from "../commentManager";
 
 export interface DraftComment extends Comment {
-    mode: "new" | "edit";
+    mode: "new" | "edit" | "append";
+    threadId?: string;
 }
 
 export interface DraftSelection {

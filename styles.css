@@ -525,27 +525,8 @@
 }
 
 .sidenote2-comment-section-add-button {
-    all: unset;
-    box-sizing: border-box;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    flex: 0 0 auto;
-    width: 20px;
-    height: 20px;
-    margin: 0;
-    padding: 0;
-    border: none;
-    background: none;
-    color: var(--nav-item-color, var(--text-faint, var(--text-muted)));
-    box-shadow: none;
-    outline: none;
-    appearance: none;
-    -webkit-appearance: none;
-    cursor: pointer;
-    transition: color 0.15s ease;
-    background-color: transparent !important;
-    box-shadow: none !important;
+    color: var(--icon-color, var(--text-faint, var(--text-muted)));
+    opacity: 0.8;
 }
 
 .sidenote2-comment-section-add-button svg {
@@ -555,8 +536,8 @@
 
 .sidenote2-comment-section-add-button:hover,
 .sidenote2-comment-section-add-button:focus-visible {
-    color: var(--nav-item-color-hover, var(--text-normal));
-    outline: none;
+    color: var(--icon-color-hover, var(--text-normal));
+    opacity: 1;
 }
 
 .sidenote2-comments-list .sidenote2-comment-item:last-child {
@@ -645,11 +626,16 @@
 .sidenote2-comment-meta {
     display: inline-flex;
     align-items: center;
+    flex: 1 1 auto;
     gap: 4px;
     min-width: 0;
+    max-width: 100%;
+    white-space: nowrap;
 }
 
 .sidenote2-comment-source-label {
+    flex: 1 1 auto;
+    min-width: 0;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
@@ -658,6 +644,11 @@
 .sidenote2-comment-meta-separator {
     color: var(--text-faint, var(--text-muted));
     flex: 0 0 auto;
+}
+
+.sidenote2-comment-meta-value {
+    flex: 0 0 auto;
+    white-space: nowrap;
 }
 
 .sidenote2-comment-content {
@@ -713,6 +704,44 @@
     margin: 0.75rem 0;
     border: 0;
     border-top: 1px solid var(--background-modifier-border);
+}
+
+.sidenote2-thread-footer {
+    display: flex;
+    width: 100%;
+    justify-content: flex-end;
+    margin-top: 8px;
+}
+
+.sidenote2-thread-add-entry-button {
+    margin-left: auto;
+}
+
+.sidenote2-comment-action-button {
+    color: var(--icon-color, var(--text-faint, var(--text-muted)));
+    opacity: 0.8;
+}
+
+.sidenote2-comment-action-button svg {
+    width: 13px;
+    height: 13px;
+}
+
+.sidenote2-comment-action-button:hover {
+    color: var(--icon-color-hover, var(--text-normal));
+    opacity: 1;
+}
+
+.sidenote2-comment-action-button:focus-visible {
+    color: var(--icon-color-hover, var(--text-normal));
+    opacity: 1;
+}
+
+.sidenote2-comment-actions {
+    display: flex;
+    align-items: center;
+    gap: 2px;
+    flex: 0 0 auto;
 }
 
 .sidenote2-inline-editor {
@@ -851,72 +880,28 @@
     min-height: 28px;
 }
 
-.sidenote2-comment-actions {
-    display: flex;
-    align-items: center;
-    gap: 2px;
-    flex: 0 0 auto;
-}
-
-.sidenote2-comment-actions button {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    width: 22px;
-    height: 22px;
-    width: 22px;
-    height: 22px;
-    padding: 0;
-    border: none;
-    border-radius: 4px;
-    background: none;
-    color: var(--text-muted);
-    box-shadow: none;
-    outline: none;
-    appearance: none;
-    -webkit-appearance: none;
-    box-sizing: border-box;
-    cursor: pointer;
-    transition: color 0.15s ease, opacity 0.15s ease;
-}
-
-.sidenote2-comment-actions button svg {
-    width: 13px;
-    height: 13px;
-}
-
-.sidenote2-comment-actions button:hover {
-    color: var(--text-normal);
-}
-
-.sidenote2-comment-actions button:focus-visible {
-    background: none;
-    box-shadow: none;
-    color: var(--text-normal);
-}
-
 .sidenote2-comment-action-resolve {
-    color: var(--text-muted);
+    color: var(--icon-color, var(--text-faint, var(--text-muted)));
 }
 
 .sidenote2-comment-action-resolve:hover {
-    color: var(--interactive-accent-hover, var(--interactive-accent));
+    color: var(--icon-color-hover, var(--text-normal));
 }
 
 .sidenote2-comment-action-edit {
-    color: var(--text-muted);
+    color: var(--icon-color, var(--text-faint, var(--text-muted)));
 }
 
 .sidenote2-comment-action-edit:hover {
-    color: var(--text-normal);
+    color: var(--icon-color-hover, var(--text-normal));
 }
 
 .sidenote2-comment-action-delete {
-    color: var(--text-muted);
+    color: var(--icon-color, var(--text-faint, var(--text-muted)));
 }
 
 .sidenote2-comment-action-delete:hover {
-    color: var(--text-error, var(--text-accent));
+    color: var(--icon-color-hover, var(--text-normal));
 }
 
 .sidenote2-empty-state {

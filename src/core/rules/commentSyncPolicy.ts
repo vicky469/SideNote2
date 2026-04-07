@@ -1,4 +1,5 @@
-import type { Comment } from "../../commentManager";
+import type { Comment, CommentThread } from "../../commentManager";
+import { threadToComment } from "../../commentManager";
 
 interface ManagedCommentPersistDecisionOptions {
     isEditorFocused: boolean;
@@ -7,13 +8,18 @@ interface ManagedCommentPersistDecisionOptions {
 }
 
 interface LoadedCommentManager {
-    replaceCommentsForFile(filePath: string, nextComments: Comment[]): void;
+    replaceThreadsForFile(filePath: string, nextThreads: CommentThread[]): void;
     updateCommentCoordinatesForFile(fileContent: string, filePath: string): Promise<void>;
-    getCommentsForFile(filePath: string): Comment[];
+    getThreadsForFile(filePath: string): CommentThread[];
 }
 
 interface LoadedCommentIndex {
-    updateFile(filePath: string, comments: Comment[]): void;
+    updateFile(filePath: string, items: Array<Comment | CommentThread>): void;
+}
+
+export interface SyncedThreadState {
+    threads: CommentThread[];
+    comments: Comment[];
 }
 
 export function shouldDeferManagedCommentPersist(options: ManagedCommentPersistDecisionOptions): boolean {
@@ -23,27 +29,34 @@ export function shouldDeferManagedCommentPersist(options: ManagedCommentPersistD
 export async function syncLoadedCommentsForCurrentNote(
     filePath: string,
     mainContent: string,
-    parsedComments: Comment[],
+    parsedThreads: CommentThread[],
     commentManager: LoadedCommentManager,
     aggregateCommentIndex: LoadedCommentIndex,
-): Promise<Comment[]> {
-    commentManager.replaceCommentsForFile(
+): Promise<SyncedThreadState> {
+    commentManager.replaceThreadsForFile(
         filePath,
-        parsedComments.map((comment) => ({ ...comment })),
+        parsedThreads.map((thread) => ({
+            ...thread,
+            entries: thread.entries.map((entry) => ({ ...entry })),
+        })),
     );
 
     await commentManager.updateCommentCoordinatesForFile(mainContent, filePath);
 
-    const syncedComments = commentManager
-        .getCommentsForFile(filePath)
-        .map((comment) => ({ ...comment }));
+    const syncedThreads = commentManager
+        .getThreadsForFile(filePath)
+        .map((thread) => ({
+            ...thread,
+            entries: thread.entries.map((entry) => ({ ...entry })),
+        }));
+    const syncedComments = syncedThreads.map((thread) => threadToComment(thread));
 
-    aggregateCommentIndex.updateFile(
-        filePath,
-        syncedComments.map((comment) => ({ ...comment })),
-    );
+    aggregateCommentIndex.updateFile(filePath, syncedThreads);
 
-    return syncedComments;
+    return {
+        threads: syncedThreads,
+        comments: syncedComments,
+    };
 }
 
 export function chooseCommentStateForOpenEditor(

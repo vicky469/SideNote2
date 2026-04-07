@@ -1,9 +1,16 @@
-import type { Comment } from "../../commentManager";
+import type { Comment, CommentThread, CommentThreadEntry } from "../../commentManager";
+import { cloneCommentThreads, threadToComment } from "../../commentManager";
 
 const HIDDEN_SECTION_OPEN = "<!-- SideNote2 comments";
 const HIDDEN_SECTION_CLOSE = "-->";
 
-interface StoredNoteComment {
+interface StoredNoteCommentThreadEntry {
+    id: string;
+    body: string;
+    timestamp: number;
+}
+
+interface StoredNoteCommentThread {
     id: string;
     startLine: number;
     startChar: number;
@@ -11,16 +18,18 @@ interface StoredNoteComment {
     endChar: number;
     selectedText: string;
     selectedTextHash: string;
-    comment: string;
-    timestamp: number;
     anchorKind?: "selection" | "page";
     orphaned?: boolean;
     resolved?: boolean;
+    entries: StoredNoteCommentThreadEntry[];
+    createdAt: number;
+    updatedAt: number;
 }
 
 export interface ParsedNoteComments {
     mainContent: string;
     comments: Comment[];
+    threads: CommentThread[];
 }
 
 export interface ManagedSectionEdit {
@@ -39,10 +48,6 @@ export interface ManagedSectionLineRange {
     endLine: number;
 }
 
-function normalizeCommentBody(body: string): string {
-    return body.replace(/\r\n/g, "\n").replace(/\n+$/, "");
-}
-
 interface SplitManagedSectionResult {
     normalizedContent: string;
     mainContent: string;
@@ -50,6 +55,34 @@ interface SplitManagedSectionResult {
     sectionFromOffset: number;
     sectionToOffset: number;
     hasVisibleContentAfterSection: boolean;
+}
+
+function normalizeCommentBody(body: string): string {
+    return body.replace(/\r\n/g, "\n").replace(/\n+$/, "");
+}
+
+function cloneThreadEntry(entry: CommentThreadEntry): CommentThreadEntry {
+    return {
+        id: entry.id,
+        body: normalizeCommentBody(entry.body),
+        timestamp: entry.timestamp,
+    };
+}
+
+function normalizeThread(thread: CommentThread): CommentThread {
+    const entries = thread.entries.map((entry) => cloneThreadEntry(entry));
+    const firstEntry = entries[0];
+    const latestEntry = entries[entries.length - 1];
+
+    return {
+        ...thread,
+        anchorKind: thread.anchorKind === "page" ? "page" : "selection",
+        orphaned: thread.anchorKind === "page" ? false : thread.orphaned === true,
+        resolved: thread.resolved === true,
+        entries,
+        createdAt: thread.createdAt || firstEntry?.timestamp || 0,
+        updatedAt: thread.updatedAt || latestEntry?.timestamp || thread.createdAt || 0,
+    };
 }
 
 function splitManagedSection(noteContent: string): SplitManagedSectionResult {
@@ -69,9 +102,62 @@ function splitManagedSection(noteContent: string): SplitManagedSectionResult {
     };
 }
 
-function buildManagedSection(comments: Comment[]): string {
-    const storedComments = sortCommentsByPosition(comments).map((comment) => toStoredNoteComment(comment));
-    const json = JSON.stringify(storedComments, null, 2)
+function sortThreadsByPosition(threads: CommentThread[]): CommentThread[] {
+    return cloneCommentThreads(threads).sort((left, right) => {
+        if (left.startLine !== right.startLine) {
+            return left.startLine - right.startLine;
+        }
+        if (left.startChar !== right.startChar) {
+            return left.startChar - right.startChar;
+        }
+        return left.createdAt - right.createdAt;
+    });
+}
+
+export function sortCommentsByPosition(comments: Comment[]): Comment[] {
+    return comments
+        .map((comment) => ({ ...comment }))
+        .sort((left, right) => {
+            if (left.startLine !== right.startLine) {
+                return left.startLine - right.startLine;
+            }
+            if (left.startChar !== right.startChar) {
+                return left.startChar - right.startChar;
+            }
+            return left.timestamp - right.timestamp;
+        });
+}
+
+function toStoredThreadEntry(entry: CommentThreadEntry): StoredNoteCommentThreadEntry {
+    return {
+        id: entry.id,
+        body: normalizeCommentBody(entry.body),
+        timestamp: entry.timestamp,
+    };
+}
+
+function toStoredThread(thread: CommentThread): StoredNoteCommentThread {
+    const normalized = normalizeThread(thread);
+    return {
+        id: normalized.id,
+        startLine: normalized.startLine,
+        startChar: normalized.startChar,
+        endLine: normalized.endLine,
+        endChar: normalized.endChar,
+        selectedText: normalized.selectedText,
+        selectedTextHash: normalized.selectedTextHash,
+        anchorKind: normalized.anchorKind === "page" ? "page" : undefined,
+        orphaned: normalized.orphaned === true ? true : undefined,
+        resolved: normalized.resolved === true ? true : undefined,
+        entries: normalized.entries.map((entry) => toStoredThreadEntry(entry)),
+        createdAt: normalized.createdAt,
+        updatedAt: normalized.updatedAt,
+    };
+}
+
+function buildManagedSection(threads: CommentThread[]): string {
+    const storedThreads = sortThreadsByPosition(threads).map((thread) => toStoredThread(thread));
+    const json = JSON.stringify(storedThreads, null, 2)
         .replace(/</g, "\\u003c")
         .replace(/>/g, "\\u003e");
 
@@ -82,56 +168,57 @@ function buildManagedSection(comments: Comment[]): string {
     ].join("\n");
 }
 
-export function sortCommentsByPosition(comments: Comment[]): Comment[] {
-    return comments.slice().sort((a, b) => {
-        if (a.startLine !== b.startLine) {
-            return a.startLine - b.startLine;
-        }
-        if (a.startChar !== b.startChar) {
-            return a.startChar - b.startChar;
-        }
-        return a.timestamp - b.timestamp;
-    });
-}
-
-function toStoredNoteComment(comment: Comment): StoredNoteComment {
-    return {
-        id: comment.id,
-        startLine: comment.startLine,
-        startChar: comment.startChar,
-        endLine: comment.endLine,
-        endChar: comment.endChar,
-        selectedText: comment.selectedText,
-        selectedTextHash: comment.selectedTextHash,
-        comment: comment.comment,
-        timestamp: comment.timestamp,
-        anchorKind: comment.anchorKind === "page" ? "page" : undefined,
-        orphaned: comment.orphaned === true ? true : undefined,
-        resolved: comment.resolved === true ? true : undefined,
-    };
-}
-
-function fromStoredNoteComment(candidate: unknown, filePath: string): Comment | null {
+function fromStoredThreadEntry(candidate: unknown): CommentThreadEntry | null {
     if (!candidate || typeof candidate !== "object") {
         return null;
     }
 
-    const item = candidate as Partial<StoredNoteComment>;
+    const item = candidate as Partial<StoredNoteCommentThreadEntry>;
     if (
-        typeof item.id !== "string" ||
-        typeof item.startLine !== "number" ||
-        typeof item.startChar !== "number" ||
-        typeof item.endLine !== "number" ||
-        typeof item.endChar !== "number" ||
-        typeof item.selectedText !== "string" ||
-        typeof item.selectedTextHash !== "string" ||
-        typeof item.comment !== "string" ||
-        typeof item.timestamp !== "number"
+        typeof item.id !== "string"
+        || typeof item.body !== "string"
+        || typeof item.timestamp !== "number"
     ) {
         return null;
     }
 
     return {
+        id: item.id,
+        body: normalizeCommentBody(item.body),
+        timestamp: item.timestamp,
+    };
+}
+
+function fromStoredThread(candidate: unknown, filePath: string): CommentThread | null {
+    if (!candidate || typeof candidate !== "object") {
+        return null;
+    }
+
+    const item = candidate as Partial<StoredNoteCommentThread>;
+    if (
+        typeof item.id !== "string"
+        || typeof item.startLine !== "number"
+        || typeof item.startChar !== "number"
+        || typeof item.endLine !== "number"
+        || typeof item.endChar !== "number"
+        || typeof item.selectedText !== "string"
+        || typeof item.selectedTextHash !== "string"
+        || !Array.isArray(item.entries)
+        || item.entries.length === 0
+        || typeof item.createdAt !== "number"
+        || typeof item.updatedAt !== "number"
+    ) {
+        return null;
+    }
+
+    const entries = item.entries
+        .map((entry) => fromStoredThreadEntry(entry))
+        .filter((entry): entry is CommentThreadEntry => entry !== null);
+    if (entries.length === 0) {
+        return null;
+    }
+
+    return normalizeThread({
         id: item.id,
         filePath,
         startLine: item.startLine,
@@ -140,15 +227,31 @@ function fromStoredNoteComment(candidate: unknown, filePath: string): Comment | 
         endChar: item.endChar,
         selectedText: item.selectedText,
         selectedTextHash: item.selectedTextHash,
-        comment: normalizeCommentBody(item.comment),
-        timestamp: item.timestamp,
-        anchorKind: item.anchorKind === "page" ? "page" : undefined,
+        anchorKind: item.anchorKind === "page" ? "page" : "selection",
         orphaned: item.orphaned === true,
         resolved: item.resolved === true,
-    };
+        entries,
+        createdAt: item.createdAt,
+        updatedAt: item.updatedAt,
+    });
 }
 
-function parseJsonSection(sectionContent: string, filePath: string): Comment[] | null {
+function parseHiddenSectionJson(sectionContent: string): string | null {
+    if (!sectionContent.startsWith(HIDDEN_SECTION_OPEN)) {
+        return null;
+    }
+
+    const closeMarker = `\n${HIDDEN_SECTION_CLOSE}`;
+    if (!sectionContent.endsWith(closeMarker)) {
+        return null;
+    }
+
+    const bodyWithPrefix = sectionContent.slice(HIDDEN_SECTION_OPEN.length, -closeMarker.length);
+    const jsonText = bodyWithPrefix.replace(/^[ \t]*\n?/, "").trim();
+    return jsonText.length ? jsonText : null;
+}
+
+function parseJsonSection(sectionContent: string, filePath: string): CommentThread[] | null {
     const normalized = sectionContent.trim();
     const jsonText = parseHiddenSectionJson(normalized);
     if (jsonText === null) {
@@ -162,27 +265,21 @@ function parseJsonSection(sectionContent: string, filePath: string): Comment[] |
         return null;
     }
 
-    const items = Array.isArray(parsed)
-        ? parsed
-        : parsed && typeof parsed === "object" && Array.isArray((parsed as { comments?: unknown[] }).comments)
-            ? (parsed as { comments: unknown[] }).comments
-            : null;
-
-    if (!items) {
+    if (!Array.isArray(parsed)) {
         return null;
     }
 
-    const comments = items
-        .map((item) => fromStoredNoteComment(item, filePath))
-        .filter((comment): comment is Comment => comment !== null);
+    const threads = parsed
+        .map((item) => fromStoredThread(item, filePath))
+        .filter((thread): thread is CommentThread => thread !== null);
 
-    return sortCommentsByPosition(comments);
+    return sortThreadsByPosition(threads);
 }
 
 function findManagedSection(normalized: string): SplitManagedSectionResult | null {
     const matches = Array.from(normalized.matchAll(/<!-- SideNote2 comments(?=$|[\s\[{])/g));
-    for (let i = matches.length - 1; i >= 0; i--) {
-        const match = matches[i];
+    for (let index = matches.length - 1; index >= 0; index -= 1) {
+        const match = matches[index];
         if (typeof match.index !== "number") {
             continue;
         }
@@ -217,35 +314,16 @@ function findManagedSection(normalized: string): SplitManagedSectionResult | nul
     return null;
 }
 
-function parseHiddenSectionJson(sectionContent: string): string | null {
-    if (!sectionContent.startsWith(HIDDEN_SECTION_OPEN)) {
-        return null;
-    }
-
-    const closeMarker = `\n${HIDDEN_SECTION_CLOSE}`;
-    if (!sectionContent.endsWith(closeMarker)) {
-        return null;
-    }
-
-    const bodyWithPrefix = sectionContent.slice(HIDDEN_SECTION_OPEN.length, -closeMarker.length);
-    const jsonText = bodyWithPrefix.replace(/^[ \t]*\n?/, "").trim();
-    return jsonText.length ? jsonText : null;
-}
-
 export function parseNoteComments(noteContent: string, filePath: string): ParsedNoteComments {
     const { mainContent, sectionContent } = splitManagedSection(noteContent);
-    if (!sectionContent) {
-        return {
-            mainContent,
-            comments: [],
-        };
-    }
-
-    const comments = parseJsonSection(sectionContent, filePath) ?? [];
+    const threads = sectionContent
+        ? parseJsonSection(sectionContent, filePath) ?? []
+        : [];
 
     return {
         mainContent,
-        comments,
+        threads,
+        comments: threads.map((thread) => threadToComment(thread)),
     };
 }
 
@@ -296,20 +374,44 @@ export function getManagedSectionLineRange(noteContent: string): ManagedSectionL
     };
 }
 
-export function serializeNoteComments(noteContent: string, comments: Comment[]): string {
+export function serializeNoteCommentThreads(noteContent: string, threads: CommentThread[]): string {
     const { mainContent } = splitManagedSection(noteContent);
     const normalizedMain = mainContent.trimEnd();
 
-    if (!comments.length) {
+    if (!threads.length) {
         return normalizedMain.length ? `${normalizedMain}\n` : "";
     }
 
-    const section = buildManagedSection(comments);
-
+    const section = buildManagedSection(threads);
     return normalizedMain.length ? `${normalizedMain}\n\n${section}\n` : `\n${section}\n`;
 }
 
-export function getManagedSectionEdit(noteContent: string, comments: Comment[]): ManagedSectionEdit {
+export function serializeNoteComments(noteContent: string, comments: Comment[]): string {
+    const threads: CommentThread[] = comments.map((comment) => ({
+        id: comment.id,
+        filePath: comment.filePath,
+        startLine: comment.startLine,
+        startChar: comment.startChar,
+        endLine: comment.endLine,
+        endChar: comment.endChar,
+        selectedText: comment.selectedText,
+        selectedTextHash: comment.selectedTextHash,
+        anchorKind: comment.anchorKind === "page" ? "page" : "selection",
+        orphaned: comment.orphaned === true,
+        resolved: comment.resolved === true,
+        entries: [{
+            id: comment.id,
+            body: comment.comment,
+            timestamp: comment.timestamp,
+        }],
+        createdAt: comment.timestamp,
+        updatedAt: comment.timestamp,
+    }));
+
+    return serializeNoteCommentThreads(noteContent, threads);
+}
+
+export function getManagedSectionEditForThreads(noteContent: string, threads: CommentThread[]): ManagedSectionEdit {
     const {
         normalizedContent,
         sectionContent,
@@ -319,7 +421,7 @@ export function getManagedSectionEdit(noteContent: string, comments: Comment[]):
     } = splitManagedSection(noteContent);
 
     if (sectionContent && hasVisibleContentAfterSection) {
-        const nextContent = serializeNoteComments(noteContent, comments);
+        const nextContent = serializeNoteCommentThreads(noteContent, threads);
         return {
             fromOffset: sectionFromOffset,
             toOffset: normalizedContent.length,
@@ -327,7 +429,7 @@ export function getManagedSectionEdit(noteContent: string, comments: Comment[]):
         };
     }
 
-    if (!comments.length) {
+    if (!threads.length) {
         return {
             fromOffset: sectionFromOffset,
             toOffset: sectionToOffset,
@@ -335,12 +437,37 @@ export function getManagedSectionEdit(noteContent: string, comments: Comment[]):
         };
     }
 
-    const section = buildManagedSection(comments);
+    const section = buildManagedSection(threads);
     return {
         fromOffset: sectionFromOffset,
         toOffset: sectionToOffset,
         replacement: sectionFromOffset > 0 ? `\n\n${section}\n` : `\n${section}\n`,
     };
+}
+
+export function getManagedSectionEdit(noteContent: string, comments: Comment[]): ManagedSectionEdit {
+    const threads: CommentThread[] = comments.map((comment) => ({
+        id: comment.id,
+        filePath: comment.filePath,
+        startLine: comment.startLine,
+        startChar: comment.startChar,
+        endLine: comment.endLine,
+        endChar: comment.endChar,
+        selectedText: comment.selectedText,
+        selectedTextHash: comment.selectedTextHash,
+        anchorKind: comment.anchorKind === "page" ? "page" : "selection",
+        orphaned: comment.orphaned === true,
+        resolved: comment.resolved === true,
+        entries: [{
+            id: comment.id,
+            body: comment.comment,
+            timestamp: comment.timestamp,
+        }],
+        createdAt: comment.timestamp,
+        updatedAt: comment.timestamp,
+    }));
+
+    return getManagedSectionEditForThreads(noteContent, threads);
 }
 
 export function replaceNoteCommentBodyById(
@@ -349,18 +476,39 @@ export function replaceNoteCommentBodyById(
     commentId: string,
     nextCommentBody: string,
 ): string | null {
-    const { comments } = parseNoteComments(noteContent, filePath);
+    const parsed = parseNoteComments(noteContent, filePath);
     let found = false;
+    const normalizedBody = normalizeCommentBody(nextCommentBody);
 
-    const updatedComments = comments.map((comment) => {
-        if (comment.id !== commentId) {
-            return comment;
+    const updatedThreads = parsed.threads.map((thread) => {
+        if (thread.id === commentId) {
+            found = true;
+            const entries = thread.entries.slice();
+            const latestEntry = entries[entries.length - 1];
+            if (latestEntry) {
+                latestEntry.body = normalizedBody;
+            }
+            return {
+                ...thread,
+                entries,
+            };
+        }
+
+        const matchingEntryIndex = thread.entries.findIndex((entry) => entry.id === commentId);
+        if (matchingEntryIndex === -1) {
+            return thread;
         }
 
         found = true;
+        const entries = thread.entries.slice();
+        entries[matchingEntryIndex] = {
+            ...entries[matchingEntryIndex],
+            body: normalizedBody,
+        };
+
         return {
-            ...comment,
-            comment: normalizeCommentBody(nextCommentBody),
+            ...thread,
+            entries,
         };
     });
 
@@ -368,5 +516,40 @@ export function replaceNoteCommentBodyById(
         return null;
     }
 
-    return serializeNoteComments(noteContent, updatedComments);
+    return serializeNoteCommentThreads(noteContent, updatedThreads);
+}
+
+export function appendNoteCommentEntryById(
+    noteContent: string,
+    filePath: string,
+    commentId: string,
+    nextEntry: CommentThreadEntry,
+): string | null {
+    const parsed = parseNoteComments(noteContent, filePath);
+    let found = false;
+    const normalizedEntry = cloneThreadEntry(nextEntry);
+
+    const updatedThreads = parsed.threads.map((thread) => {
+        const matchesThread = thread.id === commentId
+            || thread.entries.some((entry) => entry.id === commentId);
+        if (!matchesThread) {
+            return thread;
+        }
+
+        found = true;
+        const entries = thread.entries.slice();
+        entries.push(normalizedEntry);
+
+        return {
+            ...thread,
+            entries,
+            updatedAt: Math.max(thread.updatedAt, normalizedEntry.timestamp),
+        };
+    });
+
+    if (!found) {
+        return null;
+    }
+
+    return serializeNoteCommentThreads(noteContent, updatedThreads);
 }

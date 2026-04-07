@@ -1,5 +1,6 @@
 import type { TFile } from "obsidian";
 import type { Comment, CommentManager } from "../commentManager";
+import { MAX_SIDENOTE_WORDS, countCommentWords, exceedsCommentWordLimit } from "../core/text/commentWordLimit";
 import { resolveAnchorRange } from "../core/anchors/anchorResolver";
 import { getVisibleNoteContent } from "../core/storage/noteCommentStorage";
 import type { DraftComment } from "../domain/drafts";
@@ -72,6 +73,10 @@ export class CommentMutationController {
             this.host.showNotice("Please enter a comment before saving.");
             return;
         }
+        if (exceedsCommentWordLimit(commentBody)) {
+            this.host.showNotice(`Side notes are limited to ${MAX_SIDENOTE_WORDS} words.`);
+            return;
+        }
 
         const trimmedDraft: DraftComment = {
             ...draft,
@@ -106,8 +111,10 @@ export class CommentMutationController {
         try {
             if (preparedDraft.mode === "new") {
                 saved = await this.addComment(this.toPersistedComment(preparedDraft));
+            } else if (preparedDraft.mode === "append") {
+                saved = await this.appendEntry(preparedDraft);
             } else {
-                saved = await this.editComment(commentId, preparedDraft.comment);
+                saved = await this.editComment(preparedDraft.threadId ?? commentId, preparedDraft.comment);
             }
         } finally {
             if (saved && this.host.getDraftComment()?.id === commentId) {
@@ -159,6 +166,26 @@ export class CommentMutationController {
         }
 
         this.host.getCommentManager().editComment(commentId, newCommentText);
+        await this.host.persistCommentsForFile(latestTarget.file, { immediateAggregateRefresh: true });
+        return true;
+    }
+
+    public async appendEntry(draftComment: DraftComment): Promise<boolean> {
+        const threadId = draftComment.threadId;
+        if (!threadId) {
+            return false;
+        }
+
+        const latestTarget = await this.loadLatestCommentTarget(threadId);
+        if (!latestTarget) {
+            return false;
+        }
+
+        this.host.getCommentManager().appendEntry(threadId, {
+            id: draftComment.id,
+            body: draftComment.comment,
+            timestamp: draftComment.timestamp,
+        });
         await this.host.persistCommentsForFile(latestTarget.file, { immediateAggregateRefresh: true });
         return true;
     }
@@ -253,7 +280,7 @@ export class CommentMutationController {
     }
 
     private toPersistedComment(draftComment: DraftComment): Comment {
-        const { mode: _mode, ...comment } = draftComment;
+        const { mode: _mode, threadId: _threadId, ...comment } = draftComment;
         return comment;
     }
 
