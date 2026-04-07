@@ -3,8 +3,8 @@
   <img src="./logo-readme.svg" alt="SideNote2 logo" width="72">
 </p>
 <p align="center">
-  <a href="https://github.com/vicky469/SideNote2/releases/tag/2.0.2">
-    <img src="https://img.shields.io/badge/beta-2.0.2-f97316?style=flat-square" alt="Current beta">
+  <a href="https://github.com/vicky469/SideNote2/releases/tag/2.0.3">
+    <img src="https://img.shields.io/badge/beta-2.0.3-f97316?style=flat-square" alt="Current beta">
   </a>
   <a href="./docs/README-dev.md">
     <img src="https://img.shields.io/badge/docs-dev%20notes-0f766e?style=flat-square" alt="Dev docs">
@@ -147,6 +147,13 @@ The JSON block is stored in plugin data.
 Setup, local vault install, debugging, and architecture notes live in [README-dev.md](./docs/README-dev.md).
 
 ## Changelog
+
+### 2.0.3 - 2026-04-07
+
+- SideNote2 now manages a vault-root `AGENTS.md` block automatically so Codex and other assistants can route `obsidian://side-note2-comment?...` links, replies, updates, and resolves back to the note-backed source of truth.
+- Added manual `Sync AGENTS.md in vault root` and `Remove SideNote2 agent support from vault` commands, plus bundled CLI support for uninstalling the managed vault instructions and resolving stored comment threads.
+- Refined the index sidebar list and thought-trail tabs so the toolbar state is clearer and targeted reply reveals keep the thread expansion state users expect.
+- Updated the architecture examples and workflow docs to match the current threaded note model and the built-in agent-routing flow.
 
 ### 2.0.2 - 2026-04-07
 

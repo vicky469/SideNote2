@@ -10,13 +10,13 @@ import {
 const baseContext = {
     vaultName: "public",
     vaultRootPath: "/home/bun/Documents/public",
-    pluginVersion: "2.0.2",
+    pluginVersion: "2.0.3",
 } as const;
 
 test("buildVaultAgentsFileContent includes managed markers plus the active vault name and path", () => {
     const content = buildVaultAgentsFileContent(baseContext);
 
-    assert.match(content, /<!-- SideNote2 managed AGENTS start version="2\.0\.2" -->/);
+    assert.match(content, /<!-- SideNote2 managed AGENTS start version="2\.0\.3" -->/);
     assert.match(content, /This Obsidian vault is `public`\./);
     assert.match(content, /Vault root path: `\/home\/bun\/Documents\/public`\./);
     assert.match(content, /obsidian:\/\/side-note2-comment\?\.\.\./);
@@ -39,7 +39,7 @@ test("planVaultAgentsFileSync creates a managed file when AGENTS.md is missing",
 test("planVaultAgentsFileSync updates an existing managed block in place", () => {
     const previousContext = {
         ...baseContext,
-        pluginVersion: "2.0.1",
+        pluginVersion: "2.0.2",
     };
     const existingContent = [
         "# User Vault Rules",
@@ -61,8 +61,8 @@ test("planVaultAgentsFileSync updates an existing managed block in place", () =>
     }
     assert.equal(plan.reason, "updated");
     assert.match(plan.nextContent, /# User Vault Rules/);
-    assert.match(plan.nextContent, /version="2\.0\.2"/);
-    assert.doesNotMatch(plan.nextContent, /version="2\.0\.1"/);
+    assert.match(plan.nextContent, /version="2\.0\.3"/);
+    assert.doesNotMatch(plan.nextContent, /version="2\.0\.2"/);
     assert.match(plan.nextContent, /## Extra/);
 });
 
@@ -75,7 +75,7 @@ test("planVaultAgentsFileSync inserts a managed block into an unmanaged AGENTS.m
     assert.equal(plan.reason, "inserted");
     assert.match(plan.nextContent, /^# User AGENTS/m);
     assert.match(plan.nextContent, /Do not modify this file\./);
-    assert.match(plan.nextContent, /<!-- SideNote2 managed AGENTS start version="2\.0\.2" -->/);
+    assert.match(plan.nextContent, /<!-- SideNote2 managed AGENTS start version="2\.0\.3" -->/);
 });
 
 test("planVaultAgentsFileSync inserts a managed block into an unmanaged AGENTS.md for manual install", () => {
@@ -87,7 +87,7 @@ test("planVaultAgentsFileSync inserts a managed block into an unmanaged AGENTS.m
     assert.equal(plan.reason, "inserted");
     assert.match(plan.nextContent, /^# User AGENTS/m);
     assert.match(plan.nextContent, /Do not modify this file\./);
-    assert.match(plan.nextContent, /<!-- SideNote2 managed AGENTS start version="2\.0\.2" -->/);
+    assert.match(plan.nextContent, /<!-- SideNote2 managed AGENTS start version="2\.0\.3" -->/);
 });
 
 test("planVaultAgentsFileRemoval removes a managed block but preserves unrelated AGENTS content", () => {
@@ -163,7 +163,7 @@ test("vault agents file controller appends a managed block into an existing unma
     await controller.installVaultAgentsFile();
 
     assert.match(writtenContent, /# User AGENTS/);
-    assert.match(writtenContent, /<!-- SideNote2 managed AGENTS start version="2\.0\.2" -->/);
+    assert.match(writtenContent, /<!-- SideNote2 managed AGENTS start version="2\.0\.3" -->/);
     assert.equal(notice, "Inserted SideNote2 AGENTS instructions into existing /home/bun/Documents/public/AGENTS.md");
 });
 
@@ -190,7 +190,7 @@ test("vault agents file controller inserts a managed block into an unmanaged AGE
     await controller.syncVaultAgentsFileOnStartup();
 
     assert.match(writtenContent, /# User AGENTS/);
-    assert.match(writtenContent, /<!-- SideNote2 managed AGENTS start version="2\.0\.2" -->/);
+    assert.match(writtenContent, /<!-- SideNote2 managed AGENTS start version="2\.0\.3" -->/);
     assert.equal(noticeCount, 0);
 });
 

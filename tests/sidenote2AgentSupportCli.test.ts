@@ -28,7 +28,7 @@ test("uninstall-agent-support removes the SideNote2-managed AGENTS block and bun
     const managedAgentsContent = buildVaultAgentsFileContent({
         vaultName: "public",
         vaultRootPath: vaultRoot,
-        pluginVersion: "2.0.2",
+        pluginVersion: "2.0.3",
     });
     await writeFile(agentsPath, `# User Rules\n\nKeep answers brief.\n\n${managedAgentsContent}`, "utf8");
 
@@ -71,7 +71,7 @@ test("uninstall-agent-support deletes AGENTS.md when only SideNote2-managed cont
     await writeFile(agentsPath, buildVaultAgentsFileContent({
         vaultName: "public",
         vaultRootPath: vaultRoot,
-        pluginVersion: "2.0.2",
+        pluginVersion: "2.0.3",
     }), "utf8");
 
     const { stdout } = await execFile("node", [
