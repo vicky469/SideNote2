@@ -81,31 +81,13 @@ SIDENOTE2_HOT_RELOAD=0 npm run dev
 - `npm run build` creates a production bundle.
 - `npm test` runs the Node test suite.
 - `npm run skill:install` copies the packaged SideNote2 Codex skills into the default Codex skills directory. By default it installs every bundled skill under `skills/`; pass `-- --name <skill-name>` to install just one. This matches the end-user install flow.
+- `npm run comment:append -- --file "/abs/path/note.md" --id "<comment-id>" --comment-file "/abs/path/reply.md"` appends one new entry to an existing SideNote2 thread using the same managed block format as the plugin.
 - `npm run comment:migrate-legacy -- --file "/abs/path/note.md" --dry-run` verifies whether a note still uses the legacy flat `comment` payload and rewrites it to threaded storage when rerun without `--dry-run`.
 - `npm run comment:migrate-legacy -- --root "/abs/path/to/vault" --dry-run` scans a whole vault for legacy flat note comments and rewrites every matching note when rerun without `--dry-run`.
 - `npm run comment:update -- --file "/abs/path/note.md" --id "<comment-id>" --comment-file "/abs/path/comment.md"` updates one stored comment body using the same managed block format as the plugin.
-- `comment:migrate-legacy` and `comment:update` now write atomically and refuse to overwrite a note if it changed after the script first read it. If Obsidian Sync or another editor is active, pass `-- --settle-ms 2000` to require a short quiet window before each write, then rerun any skipped notes after Sync settles. Treat skipped-note runs as partial success and retry them instead of hand-editing the managed JSON.
+- `comment:append`, `comment:migrate-legacy`, and `comment:update` now write atomically and refuse to overwrite a note if it changed after the script first read it. If Obsidian Sync or another editor is active, pass `-- --settle-ms 2000` to require a short quiet window before each write, then rerun any skipped notes after Sync settles. Treat skipped-note runs as partial success and retry them instead of hand-editing the managed JSON.
 - `npm version patch|minor|major` updates `package.json`, `manifest.json`, `versions.json`, and the README beta badge together for a release bump.
 - The test suite covers the note-backed comment lifecycle, comment retargeting and pruning, JSON storage updates, aggregate note generation, and the parsed-note cache plus aggregate index behavior.
-
-The canonical repo skills live under `skills/`.
-Use these repo-local skill entry points during development:
-
-- `skills/dev/obsidian-plugin-dev/SKILL.md`
-  Use for general Obsidian plugin repo, API, UI, build, and release work.
-- `skills/side-note2-note-comments/SKILL.md`
-  Use for reading or editing real SideNote2-backed notes in the vault.
-
-When Codex is working in this repo, use the relevant repo-local skill directly. There is no separate sync or link step for day-to-day development.
-If you want to test the global Codex install flow on this machine, run `npm run skill:install` or `npm run skill:install -- --name obsidian-plugin-dev`.
-
-Claude Code should use the same repo-local `SKILL.md` files as the canonical source.
-Do not keep a separate Claude-only copy of the same skill text unless the workflows genuinely diverge.
-
-For user or agent comment edits outside the UI, find the target `id` in the trailing `<!-- SideNote2 comments -->` block in source mode, then run the helper script instead of hand-editing escaped JSON.
-If that block still uses legacy top-level `comment` fields instead of `entries`, run `npm run comment:migrate-legacy -- --file "/abs/path/note.md" --dry-run` first, then rerun without `--dry-run` before updating any comment bodies.
-If the repo is nested inside a larger Obsidian vault, resolve the real vault root from Obsidian state first, then use `npm run comment:migrate-legacy -- --root "/abs/path/to/vault" --dry-run` for vault-wide discovery.
-If Sync is actively reconciling the vault, prefer `npm run comment:migrate-legacy -- --root "/abs/path/to/vault" --settle-ms 2000` and rerun any notes the script skips because they changed mid-run.
 
 ## Local Install
 

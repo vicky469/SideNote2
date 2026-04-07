@@ -24,6 +24,25 @@ description: Use when building, debugging, reviewing, releasing, or submitting a
 3. Follow the existing repo’s structure unless the user explicitly wants a migration.
 4. Validate with the repo’s own build or test commands when possible.
 
+## Repo Skill Routing
+
+- In this repo, treat the repo-local `skills/*/SKILL.md` files as the canonical agent instructions.
+- Use this skill for general plugin repo, API, UI, build, release, and review work.
+- When the task is about real SideNote2-backed vault notes, hidden `<!-- SideNote2 comments -->` blocks, or helper-script based note comment edits, switch to `skills/side-note2-note-comments/SKILL.md`.
+- Do not keep separate Claude-only and Codex-only copies of the same repo-local skill text unless the workflows genuinely diverge.
+- If you need to test the packaged global install flow from this repo, run `npm run skill:install` or `npm run skill:install -- --name obsidian-plugin-dev`.
+
+## Review Workflow
+
+- For isolated repo review, have the main agent or orchestrator prepare a read-only review bundle instead of exposing the live worktree to the reviewer.
+- In this repo, use `npm run review:bundle -- --output /tmp/side-note2-review`.
+- Hand the resulting directory to the reviewer read-only.
+- The reviewer should inspect:
+  - `snapshot/` for the current worktree state without `.git`
+  - `status.txt` for tracked and untracked changes
+  - `review.patch` for the diff against the chosen base ref
+- Prefer this over trying to launch a nested sandbox inside the reviewer worker.
+
 ## Reference Sets
 
 - `references/reference-map.md`
@@ -62,6 +81,9 @@ description: Use when building, debugging, reviewing, releasing, or submitting a
 - If the version changes, update `versions.json` alongside `manifest.json`.
 - Register cleanup through the plugin lifecycle and unload handlers.
 - Prefer official CSS variables over raw hardcoded colors when styling plugin UI.
+- For icon-only buttons, prefer Obsidian's `clickable-icon` pattern.
+- Do not duplicate the same label in both `aria-label` and `title` on icon-only buttons.
+- If an icon-only control already has a clear `aria-label`, omit `title` unless it adds distinct information.
 - Be careful with desktop-only or Node-only APIs if the plugin may run on mobile.
 - For unfamiliar symbols, check the typings before inventing patterns from memory.
 - Prefer the sample plugin’s repo shape unless the target repo already uses another proven setup.
