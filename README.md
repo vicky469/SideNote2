@@ -3,8 +3,8 @@
   <img src="./logo-readme.svg" alt="SideNote2 logo" width="72">
 </p>
 <p align="center">
-  <a href="https://github.com/vicky469/SideNote2/releases/tag/2.0.4">
-    <img src="https://img.shields.io/badge/beta-2.0.4-f97316?style=flat-square" alt="Current beta">
+  <a href="https://github.com/vicky469/SideNote2/releases/tag/2.0.5">
+    <img src="https://img.shields.io/badge/beta-2.0.5-f97316?style=flat-square" alt="Current beta">
   </a>
   <a href="./docs/README-dev.md">
     <img src="https://img.shields.io/badge/docs-dev%20notes-0f766e?style=flat-square" alt="Dev docs">
@@ -147,6 +147,11 @@ The JSON block is stored in plugin data.
 Setup, local vault install, debugging, and architecture notes live in [README-dev.md](./docs/README-dev.md).
 
 ## Changelog
+
+### 2.0.5 - 2026-04-07
+
+- Added a settings shortcut to sync or remove SideNote2's managed vault `AGENTS.md` block so uninstall cleanup is easier to discover before removing the plugin.
+- Clarified the README and dev docs so the `sidenote2` Codex skill and the vault `AGENTS.md` routing are documented as separate pieces of the agent workflow.
 
 ### 2.0.3 - 2026-04-07
 
