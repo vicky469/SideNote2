@@ -6,6 +6,7 @@ import type { DraftComment, DraftSelection } from "../domain/drafts";
 
 export interface CommentEntryHost {
     getAllCommentsNotePath(): string;
+    getFileByPath(filePath: string): TFile | null;
     isCommentableFile(file: TFile | null): file is TFile;
     loadCommentsForFile(file: TFile): Promise<unknown>;
     getKnownCommentById(commentId: string): Comment | null;
@@ -61,11 +62,7 @@ export class CommentEntryController {
         hostFilePath: string | null = null,
     ): Promise<boolean> {
         const comment = this.host.getKnownCommentById(threadId);
-        const commentFile = comment ? ({
-            path: comment.filePath,
-            basename: comment.filePath.split("/").pop()?.replace(/\.[^.]+$/, "") ?? comment.filePath,
-            extension: comment.filePath.split(".").pop() ?? "",
-        } as TFile) : null;
+        const commentFile = comment ? this.host.getFileByPath(comment.filePath) : null;
 
         if (!(comment && commentFile && this.host.isCommentableFile(commentFile))) {
             this.host.showNotice("Unable to find that side note thread.");

@@ -608,6 +608,23 @@
     border-color: var(--interactive-accent);
 }
 
+.sidenote2-comment-draft.is-append {
+    margin-left: 14px;
+    border-color: var(--background-modifier-border);
+    background: var(--background-secondary);
+}
+
+.sidenote2-comment-draft.is-append:hover {
+    background: var(--background-modifier-hover);
+    border-color: var(--background-modifier-border-hover, var(--interactive-accent-hover));
+}
+
+.sidenote2-comment-draft.is-append.active {
+    background: var(--background-modifier-active-hover);
+    border-color: var(--interactive-accent);
+    box-shadow: 0 0 0 1px var(--interactive-accent-translucent);
+}
+
 .sidenote2-comment-header {
     display: flex;
     align-items: center;
@@ -648,6 +665,7 @@
 
 .sidenote2-comment-meta-value {
     flex: 0 0 auto;
+    font-size: 0.9em;
     white-space: nowrap;
 }
 
@@ -706,12 +724,28 @@
     border-top: 1px solid var(--background-modifier-border);
 }
 
+.sidenote2-thread-entry-item {
+    margin-left: 14px;
+}
+
 .sidenote2-thread-footer {
     display: flex;
+    align-items: center;
     width: 100%;
     justify-content: flex-end;
-    gap: 2px;
+    gap: 8px;
     margin-top: 8px;
+}
+
+.sidenote2-thread-footer-actions {
+    display: flex;
+    align-items: center;
+    gap: 2px;
+    flex: 0 0 auto;
+    margin-left: auto;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.14s ease;
 }
 
 .sidenote2-comment-action-button {
@@ -739,6 +773,19 @@
     align-items: center;
     gap: 2px;
     flex: 0 0 auto;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.14s ease;
+}
+
+.sidenote2-comment-item:hover .sidenote2-comment-actions,
+.sidenote2-comment-item:hover .sidenote2-thread-footer-actions,
+.sidenote2-comment-item:focus-within .sidenote2-comment-actions,
+.sidenote2-comment-item:focus-within .sidenote2-thread-footer-actions,
+.sidenote2-comment-item.active .sidenote2-comment-actions,
+.sidenote2-comment-item.active .sidenote2-thread-footer-actions {
+    opacity: 1;
+    pointer-events: auto;
 }
 
 .sidenote2-inline-editor {
@@ -869,8 +916,19 @@
 
 .sidenote2-inline-editor-actions {
     display: flex;
+    align-items: center;
     justify-content: flex-end;
     gap: 8px;
+}
+
+.sidenote2-inline-word-count {
+    margin-left: 0.75ch;
+    margin-right: auto;
+    color: var(--text-faint, var(--text-muted));
+    font-size: var(--font-ui-smaller);
+    line-height: 1.2;
+    white-space: nowrap;
+    font-variant-numeric: tabular-nums;
 }
 
 .sidenote2-inline-editor-actions button {

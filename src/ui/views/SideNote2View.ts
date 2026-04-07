@@ -288,6 +288,7 @@ export default class SideNote2View extends ItemView {
             const totalScopedCount = scopedAllThreads.length;
             const resolvedCount = scopedAllThreads.filter((thread) => thread.resolved).length;
             const hasResolvedComments = resolvedCount > 0;
+            const hasChildComments = scopedVisibleThreads.some((thread) => thread.entries.length > 1);
             const replacedThreadId = visibleDraftComment?.mode === "edit"
                 ? (visibleDraftComment.threadId ?? visibleDraftComment.id)
                 : null;
@@ -312,6 +313,7 @@ export default class SideNote2View extends ItemView {
                 isAllCommentsView,
                 resolvedCount,
                 hasResolvedComments,
+                hasChildComments,
                 indexFileFilterOptions,
                 selectedIndexFileFilterRootPath,
                 filteredIndexFilePaths,
@@ -402,23 +404,26 @@ export default class SideNote2View extends ItemView {
             isAllCommentsView: boolean;
             resolvedCount: number;
             hasResolvedComments: boolean;
+            hasChildComments: boolean;
             indexFileFilterOptions: IndexFileFilterOption[];
             selectedIndexFileFilterRootPath: string | null;
             filteredIndexFilePaths: string[];
         },
     ) {
         const showResolved = this.plugin.shouldShowResolvedComments();
-        if (!options.isAllCommentsView && !options.hasResolvedComments && !showResolved) {
+        const showChildComments = this.plugin.shouldShowChildComments();
+        if (!options.isAllCommentsView && !options.hasResolvedComments && !showResolved && !options.hasChildComments) {
             return;
         }
 
         const toolbarEl = container.createDiv("sidenote2-sidebar-toolbar");
         toolbarEl.classList.toggle("is-index-toolbar", options.isAllCommentsView);
+        let listFilterGroup: HTMLDivElement | null = null;
         if (options.isAllCommentsView) {
             this.renderIndexModeControl(toolbarEl);
 
-            const filterGroup = toolbarEl.createDiv("sidenote2-sidebar-toolbar-group");
-            this.renderToolbarChip(filterGroup, {
+            listFilterGroup = toolbarEl.createDiv("sidenote2-sidebar-toolbar-group");
+            this.renderToolbarChip(listFilterGroup, {
                 label: "Files",
                 icon: "list-filter",
                 active: !!options.selectedIndexFileFilterRootPath,
@@ -434,6 +439,18 @@ export default class SideNote2View extends ItemView {
                 disabled: !options.indexFileFilterOptions.length,
                 onClick: () => {
                     this.openIndexFileFilterModal(options.indexFileFilterOptions);
+                },
+            });
+        }
+
+        if (options.hasChildComments) {
+            const filterGroup = listFilterGroup ?? toolbarEl.createDiv("sidenote2-sidebar-toolbar-group");
+            this.renderToolbarChip(filterGroup, {
+                label: showChildComments ? "Hide replies" : "Show replies",
+                active: showChildComments,
+                ariaLabel: showChildComments ? "Hide child comments" : "Show child comments",
+                onClick: () => {
+                    void this.plugin.toggleShowChildComments();
                 },
             });
         }
@@ -666,6 +683,7 @@ export default class SideNote2View extends ItemView {
             activeCommentId: this.interactionController.getActiveCommentId(),
             currentFilePath,
             showSourceRedirectAction: isIndexView,
+            showChildComments: this.plugin.shouldShowChildComments(),
             getEventTargetElement: (target) => this.interactionController.getEventTargetElement(target),
             isSelectionInsideSidebarContent: (selection) => this.interactionController.isSelectionInsideSidebarContent(selection),
             claimSidebarInteractionOwnership: (focusTarget) => this.interactionController.claimSidebarInteractionOwnership(focusTarget),

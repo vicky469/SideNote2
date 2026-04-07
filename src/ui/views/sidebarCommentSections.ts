@@ -9,7 +9,10 @@ export interface SidebarCommentPresentationLike {
 }
 
 function formatCommentTimestamp(timestamp: number): string {
-    return new Date(timestamp).toLocaleTimeString([], {
+    return new Date(timestamp).toLocaleString([], {
+        month: "short",
+        day: "numeric",
+        year: "numeric",
         hour: "numeric",
         minute: "2-digit",
     });

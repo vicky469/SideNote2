@@ -61,6 +61,7 @@ export default class SideNote2 extends Plugin {
     });
     private readonly commentEntryController = new CommentEntryController({
         getAllCommentsNotePath: () => this.getAllCommentsNotePath(),
+        getFileByPath: (filePath) => this.workspaceViewController.getFileByPath(filePath),
         isCommentableFile: (file): file is TFile => this.isCommentableFile(file),
         loadCommentsForFile: (file) => this.loadCommentsForFile(file),
         getKnownCommentById: (commentId) => this.getKnownCommentById(commentId),
@@ -408,14 +409,24 @@ export default class SideNote2 extends Plugin {
         return this.commentSessionController.getRevealedCommentId(filePath);
     }
 
+    public shouldShowChildComments(): boolean {
+        return this.commentSessionController.shouldShowChildComments();
+    }
+
+    public async toggleShowChildComments(): Promise<void> {
+        await this.commentSessionController.toggleShowChildComments();
+    }
+
     /**
      * Activate the SideNote2 view, highlight a specific comment, and focus the draft
      */
     async activateViewAndHighlightComment(commentId: string) {
+        await this.ensureChildCommentsVisibleForComment(commentId);
         await this.commentNavigationController.activateViewAndHighlightComment(commentId);
     }
 
     async activateIndexComment(commentId: string, indexFilePath: string, sourceFilePath?: string) {
+        await this.ensureChildCommentsVisibleForComment(commentId, sourceFilePath);
         await this.syncIndexCommentHighlightPair(commentId, indexFilePath);
 
         const indexFile = this.workspaceViewController.getFileByPath(indexFilePath);
@@ -425,6 +436,7 @@ export default class SideNote2 extends Plugin {
     }
 
     public async revealIndexCommentFromSidebar(commentId: string, indexFilePath: string) {
+        await this.ensureChildCommentsVisibleForComment(commentId);
         this.commentSessionController.setRevealedCommentState(
             indexFilePath,
             commentId,
@@ -434,6 +446,7 @@ export default class SideNote2 extends Plugin {
     }
 
     public async syncIndexCommentHighlightPair(commentId: string, indexFilePath: string) {
+        await this.ensureChildCommentsVisibleForComment(commentId);
         this.commentSessionController.setRevealedCommentState(
             indexFilePath,
             commentId,
@@ -549,6 +562,7 @@ export default class SideNote2 extends Plugin {
     }
 
     public async revealComment(comment: Comment) {
+        await this.ensureChildCommentsVisibleForComment(comment.id, comment.filePath);
         await this.commentNavigationController.revealComment(comment);
     }
 
@@ -557,10 +571,12 @@ export default class SideNote2 extends Plugin {
     }
 
     private async highlightCommentById(filePath: string, commentId: string) {
+        await this.ensureChildCommentsVisibleForComment(commentId, filePath);
         await this.commentNavigationController.highlightCommentById(filePath, commentId);
     }
 
     private async openCommentById(filePath: string, commentId: string) {
+        await this.ensureChildCommentsVisibleForComment(commentId, filePath);
         await this.commentNavigationController.openCommentById(filePath, commentId);
     }
 
@@ -600,6 +616,7 @@ export default class SideNote2 extends Plugin {
         commentId: string,
         hostFilePath: string | null = this.getSidebarTargetFile()?.path ?? null,
     ) {
+        await this.ensureChildCommentsVisibleForComment(commentId);
         await this.commentMutationController.startEditDraft(commentId, hostFilePath);
     }
 
@@ -615,6 +632,7 @@ export default class SideNote2 extends Plugin {
         threadId: string,
         hostFilePath: string | null = this.getSidebarTargetFile()?.path ?? null,
     ) {
+        await this.ensureChildCommentsVisibleForComment(threadId);
         await this.commentEntryController.startAppendEntryDraft(threadId, hostFilePath);
     }
 
@@ -628,6 +646,28 @@ export default class SideNote2 extends Plugin {
     private getKnownCommentById(commentId: string): Comment | null {
         return this.commentManager.getCommentById(commentId)
             ?? this.aggregateCommentIndex.getCommentById(commentId);
+    }
+
+    private getKnownThreadById(threadId: string): CommentThread | null {
+        return this.commentManager.getThreadById(threadId)
+            ?? this.aggregateCommentIndex.getThreadById(threadId);
+    }
+
+    private async ensureChildCommentsVisibleForComment(commentId: string, filePath?: string | null): Promise<void> {
+        let thread = this.getKnownThreadById(commentId);
+        if (!thread && filePath) {
+            const file = this.workspaceViewController.getFileByPath(filePath);
+            if (this.isCommentableFile(file)) {
+                await this.loadCommentsForFile(file);
+                thread = this.getKnownThreadById(commentId);
+            }
+        }
+
+        if (!thread || thread.entries.length <= 1 || !thread.entries.slice(1).some((entry) => entry.id === commentId)) {
+            return;
+        }
+
+        await this.commentSessionController.setShowChildComments(true);
     }
 
     /**

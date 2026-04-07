@@ -20,6 +20,8 @@ test("formatSidebarCommentMeta omits repeated page and anchored labels", () => {
 
     assert.equal(anchoredMeta.includes("anchored"), false);
     assert.equal(pageMeta.includes("page note"), false);
+    assert.match(anchoredMeta, /[A-Za-z]{3}\s+\d{1,2}/);
+    assert.match(anchoredMeta, /\d{1,2}:\d{2}/);
     assert.equal(orphanedResolvedMeta.includes("orphaned"), true);
     assert.equal(orphanedResolvedMeta.includes("resolved"), true);
 });

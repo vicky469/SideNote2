@@ -75,3 +75,19 @@ test("AggregateCommentIndex updates, renames, deletes, and returns cloned commen
     assert.equal(remaining[0].id, "a-1");
     assert.equal(index.getCommentById("missing"), null);
 });
+
+test("AggregateCommentIndex resolves child thread entries by id", () => {
+    const index = new AggregateCommentIndex();
+    const thread = commentToThread(createComment({ filePath: "a.md", id: "thread-1", comment: "parent" }));
+    thread.entries.push({
+        id: "entry-2",
+        body: "child",
+        timestamp: thread.updatedAt + 100,
+    });
+
+    index.updateFile("a.md", [thread]);
+
+    assert.equal(index.getCommentById("thread-1")?.comment, "parent");
+    assert.equal(index.getCommentById("entry-2")?.comment, "child");
+    assert.equal(index.getThreadById("entry-2")?.id, "thread-1");
+});

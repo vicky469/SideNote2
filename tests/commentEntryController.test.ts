@@ -1,6 +1,7 @@
 import * as assert from "node:assert/strict";
 import test from "node:test";
 import type { Editor, TFile } from "obsidian";
+import type { Comment } from "../src/commentManager";
 import { getPageCommentLabel } from "../src/core/anchors/commentAnchors";
 import { CommentEntryController, type CommentEntryHost } from "../src/control/commentEntryController";
 import type { DraftComment } from "../src/domain/drafts";
@@ -34,20 +35,22 @@ function isCommentableFilePath(path: string): boolean {
     return path.endsWith(".md") || path.endsWith(".pdf");
 }
 
-function createHost() {
+function createHost(options: { knownComments?: Comment[] } = {}) {
     const draftCalls: Array<{ draft: DraftComment | null; hostFilePath?: string | null }> = [];
     const loadedFiles: string[] = [];
     const markedFiles: string[] = [];
     const highlightedCommentIds: string[] = [];
     const notices: string[] = [];
+    const knownComments = new Map((options.knownComments ?? []).map((comment) => [comment.id, comment]));
 
     const host: CommentEntryHost = {
         getAllCommentsNotePath: () => ALL_COMMENTS_NOTE_PATH,
+        getFileByPath: (filePath) => createFile(filePath),
         isCommentableFile: (file): file is TFile => !!file && isCommentableFilePath(file.path),
         loadCommentsForFile: async (file) => {
             loadedFiles.push(file.path);
         },
-        getKnownCommentById: () => null,
+        getKnownCommentById: (commentId) => knownComments.get(commentId) ?? null,
         markDraftFileActive: (file) => {
             markedFiles.push(file.path);
         },
@@ -142,5 +145,79 @@ test("comment entry controller starts page drafts for commentable files", async 
     assert.equal(draft.anchorKind, "page");
     assert.equal(draft.selectedText, getPageCommentLabel(file.path));
     assert.equal(draft.selectedTextHash, `hash:${getPageCommentLabel(file.path)}`);
+    assert.deepEqual(host.notices, []);
+});
+
+test("comment entry controller starts an append-entry draft using the resolved vault file", async () => {
+    const existingComment: Comment = {
+        id: "thread-1",
+        filePath: "docs/architecture.md",
+        startLine: 4,
+        startChar: 2,
+        endLine: 4,
+        endChar: 8,
+        selectedText: "system",
+        selectedTextHash: "hash:system",
+        comment: "existing body",
+        timestamp: 123,
+        anchorKind: "selection",
+        orphaned: false,
+        resolved: false,
+    };
+    const host = createHost({ knownComments: [existingComment] });
+
+    const started = await host.controller.startAppendEntryDraft("thread-1", "docs/host.md");
+
+    assert.equal(started, true);
+    assert.deepEqual(host.loadedFiles, [existingComment.filePath]);
+    assert.deepEqual(host.markedFiles, [existingComment.filePath]);
+    assert.deepEqual(host.highlightedCommentIds, ["thread-1"]);
+    assert.equal(host.draftCalls.length, 1);
+
+    const draft = host.draftCalls[0].draft;
+    assert.ok(draft);
+    assert.equal(draft.id, "comment-1");
+    assert.equal(draft.threadId, "thread-1");
+    assert.equal(draft.mode, "append");
+    assert.equal(draft.filePath, existingComment.filePath);
+    assert.equal(draft.comment, "");
+    assert.equal(host.draftCalls[0].hostFilePath, "docs/host.md");
+    assert.deepEqual(host.notices, []);
+});
+
+test("comment entry controller can start an append-entry draft from a child entry id", async () => {
+    const childComment: Comment = {
+        id: "entry-2",
+        filePath: "docs/architecture.md",
+        startLine: 4,
+        startChar: 2,
+        endLine: 4,
+        endChar: 8,
+        selectedText: "system",
+        selectedTextHash: "hash:system",
+        comment: "child body",
+        timestamp: 456,
+        anchorKind: "selection",
+        orphaned: false,
+        resolved: false,
+    };
+    const host = createHost({ knownComments: [childComment] });
+
+    const started = await host.controller.startAppendEntryDraft("entry-2", "docs/host.md");
+
+    assert.equal(started, true);
+    assert.deepEqual(host.loadedFiles, [childComment.filePath]);
+    assert.deepEqual(host.markedFiles, [childComment.filePath]);
+    assert.deepEqual(host.highlightedCommentIds, ["entry-2"]);
+    assert.equal(host.draftCalls.length, 1);
+
+    const draft = host.draftCalls[0].draft;
+    assert.ok(draft);
+    assert.equal(draft.id, "comment-1");
+    assert.equal(draft.threadId, "entry-2");
+    assert.equal(draft.mode, "append");
+    assert.equal(draft.filePath, childComment.filePath);
+    assert.equal(draft.comment, "");
+    assert.equal(host.draftCalls[0].hostFilePath, "docs/host.md");
     assert.deepEqual(host.notices, []);
 });

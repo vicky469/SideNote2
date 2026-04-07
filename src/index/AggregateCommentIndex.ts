@@ -1,5 +1,12 @@
 import type { Comment, CommentThread } from "../commentManager";
-import { cloneCommentThreads, commentToThread, threadToComment, cloneCommentThread } from "../commentManager";
+import {
+    cloneCommentThreads,
+    commentToThread,
+    threadToComment,
+    cloneCommentThread,
+    getFirstThreadEntry,
+    threadEntryToComment,
+} from "../commentManager";
 
 function isThreadLike(value: Comment | CommentThread): value is CommentThread {
     return Array.isArray((value as CommentThread).entries);
@@ -51,7 +58,8 @@ export class AggregateCommentIndex {
 
     getThreadById(threadId: string): CommentThread | null {
         for (const threads of this.threadsByFile.values()) {
-            const thread = threads.find((entry) => entry.id === threadId);
+            const thread = threads.find((entry) =>
+                entry.id === threadId || entry.entries.some((threadEntry) => threadEntry.id === threadId));
             if (thread) {
                 return cloneCommentThread(thread);
             }
@@ -66,6 +74,11 @@ export class AggregateCommentIndex {
 
     getCommentById(commentId: string): Comment | null {
         const thread = this.getThreadById(commentId);
-        return thread ? threadToComment(thread) : null;
+        if (!thread) {
+            return null;
+        }
+
+        const entry = thread.entries.find((threadEntry) => threadEntry.id === commentId) ?? getFirstThreadEntry(thread);
+        return threadEntryToComment(thread, entry);
     }
 }

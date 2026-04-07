@@ -1,6 +1,6 @@
 import * as assert from "node:assert/strict";
 import test from "node:test";
-import { Comment, CommentManager } from "../src/commentManager";
+import { Comment, CommentManager, commentToThread } from "../src/commentManager";
 
 function createComment(id: string, timestamp: number, text: string): Comment {
     return {
@@ -43,6 +43,34 @@ test("CommentManager edits/deletes/resolves by id under timestamp collision", ()
     const remaining = manager.getCommentsForFile("note.md");
     assert.equal(remaining.length, 1);
     assert.equal(remaining[0].id, "id-2");
+});
+
+test("CommentManager targets child thread entries by id", () => {
+    const thread = commentToThread(createComment("thread-1", 1710000000000, "parent"));
+    thread.entries.push({
+        id: "entry-2",
+        body: "child",
+        timestamp: 1710000001000,
+    });
+
+    const manager = new CommentManager([thread]);
+
+    assert.equal(manager.getCommentById("thread-1")?.comment, "parent");
+    assert.equal(manager.getCommentById("entry-2")?.comment, "child");
+
+    manager.editComment("entry-2", "child-updated");
+    assert.equal(manager.getCommentById("entry-2")?.comment, "child-updated");
+
+    manager.appendEntry("entry-2", {
+        id: "entry-3",
+        body: "grandchild",
+        timestamp: 1710000002000,
+    });
+    assert.equal(manager.getCommentById("entry-3")?.comment, "grandchild");
+
+    manager.deleteComment("entry-2");
+    assert.equal(manager.getCommentById("entry-2"), undefined);
+    assert.equal(manager.getThreadById("entry-3")?.entries.length, 2);
 });
 
 test("CommentManager preserves a comment when its anchor text is gone", async () => {

@@ -52,3 +52,17 @@ test("buildDraftCommentPresentation includes draft state classes and add/save la
     ]);
     assert.equal(editPresentation.saveLabel, "Save");
 });
+
+test("buildDraftCommentPresentation keeps append drafts distinct from new drafts", () => {
+    const appendPresentation = buildDraftCommentPresentation(createDraft({
+        mode: "append",
+    }), null);
+
+    assert.deepEqual(appendPresentation.classes, [
+        "sidenote2-comment-item",
+        "sidenote2-comment-draft",
+        "is-append",
+    ]);
+    assert.equal(appendPresentation.saveLabel, "Add");
+    assert.equal(appendPresentation.placeholder, "Add another entry to this thread.");
+});

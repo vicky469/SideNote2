@@ -70,6 +70,14 @@ export function getLatestThreadEntry(thread: CommentThread): CommentThreadEntry 
     };
 }
 
+export function getFirstThreadEntry(thread: CommentThread): CommentThreadEntry {
+    return thread.entries[0] ?? {
+        id: thread.id,
+        body: "",
+        timestamp: thread.createdAt || thread.updatedAt,
+    };
+}
+
 function normalizeThread(thread: CommentThread): CommentThread {
     const entries = thread.entries.length > 0
         ? thread.entries.map((entry) => cloneThreadEntry(entry))
@@ -118,9 +126,17 @@ export function commentToThread(comment: Comment): CommentThread {
 export function threadToComment(thread: CommentThread): Comment {
     const normalized = normalizeThread(thread);
     const latestEntry = getLatestThreadEntry(normalized);
+    return {
+        ...threadEntryToComment(normalized, latestEntry),
+        id: normalized.id,
+    };
+}
+
+export function threadEntryToComment(thread: CommentThread, entry: CommentThreadEntry): Comment {
+    const normalized = normalizeThread(thread);
 
     return {
-        id: normalized.id,
+        id: entry.id,
         filePath: normalized.filePath,
         startLine: normalized.startLine,
         startChar: normalized.startChar,
@@ -128,8 +144,8 @@ export function threadToComment(thread: CommentThread): Comment {
         endChar: normalized.endChar,
         selectedText: normalized.selectedText,
         selectedTextHash: normalized.selectedTextHash,
-        comment: latestEntry.body,
-        timestamp: latestEntry.timestamp,
+        comment: entry.body,
+        timestamp: entry.timestamp,
         anchorKind: normalized.anchorKind,
         orphaned: normalized.orphaned === true,
         resolved: normalized.resolved === true,
@@ -155,7 +171,8 @@ export class CommentManager {
     }
 
     getThreadById(id: string): CommentThread | undefined {
-        const thread = this.threads.find((candidate) => candidate.id === id);
+        const thread = this.threads.find((candidate) =>
+            candidate.id === id || candidate.entries.some((entry) => entry.id === id));
         return thread ? cloneCommentThread(thread) : undefined;
     }
 
@@ -170,8 +187,14 @@ export class CommentManager {
     }
 
     getCommentById(id: string): Comment | undefined {
-        const thread = this.threads.find((candidate) => candidate.id === id);
-        return thread ? threadToComment(thread) : undefined;
+        const thread = this.threads.find((candidate) =>
+            candidate.id === id || candidate.entries.some((entry) => entry.id === id));
+        if (!thread) {
+            return undefined;
+        }
+
+        const entry = thread.entries.find((candidate) => candidate.id === id) ?? getFirstThreadEntry(thread);
+        return threadEntryToComment(thread, entry);
     }
 
     getAllComments(): Comment[] {
@@ -200,7 +223,8 @@ export class CommentManager {
     }
 
     appendEntry(threadId: string, entry: CommentThreadEntry) {
-        const thread = this.threads.find((candidate) => candidate.id === threadId);
+        const thread = this.threads.find((candidate) =>
+            candidate.id === threadId || candidate.entries.some((candidateEntry) => candidateEntry.id === threadId));
         if (!thread) {
             return;
         }
@@ -210,35 +234,56 @@ export class CommentManager {
     }
 
     editComment(id: string, newCommentText: string) {
-        const thread = this.threads.find((candidate) => candidate.id === id);
+        const thread = this.threads.find((candidate) =>
+            candidate.id === id || candidate.entries.some((entry) => entry.id === id));
         if (!thread) {
             return;
         }
 
-        const latestEntry = thread.entries[thread.entries.length - 1];
-        if (!latestEntry) {
+        const matchingEntry = thread.entries.find((entry) => entry.id === id) ?? thread.entries[0];
+        if (!matchingEntry) {
             return;
         }
 
-        latestEntry.body = newCommentText;
+        matchingEntry.body = newCommentText;
     }
 
     deleteComment(id: string) {
-        const indexToDelete = this.threads.findIndex((thread) => thread.id === id);
-        if (indexToDelete > -1) {
-            this.threads.splice(indexToDelete, 1);
+        const indexToDelete = this.threads.findIndex((thread) =>
+            thread.id === id || thread.entries.some((entry) => entry.id === id));
+        if (indexToDelete === -1) {
+            return;
         }
+
+        const thread = this.threads[indexToDelete];
+        if (thread.id === id) {
+            this.threads.splice(indexToDelete, 1);
+            return;
+        }
+
+        thread.entries = thread.entries.filter((entry) => entry.id !== id);
+        if (!thread.entries.length) {
+            this.threads.splice(indexToDelete, 1);
+            return;
+        }
+
+        thread.updatedAt = Math.max(
+            thread.createdAt,
+            ...thread.entries.map((entry) => entry.timestamp),
+        );
     }
 
     resolveComment(id: string) {
-        const thread = this.threads.find((candidate) => candidate.id === id);
+        const thread = this.threads.find((candidate) =>
+            candidate.id === id || candidate.entries.some((entry) => entry.id === id));
         if (thread) {
             thread.resolved = true;
         }
     }
 
     unresolveComment(id: string) {
-        const thread = this.threads.find((candidate) => candidate.id === id);
+        const thread = this.threads.find((candidate) =>
+            candidate.id === id || candidate.entries.some((entry) => entry.id === id));
         if (thread) {
             thread.resolved = false;
         }

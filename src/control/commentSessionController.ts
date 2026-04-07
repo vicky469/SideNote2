@@ -17,6 +17,7 @@ export class CommentSessionController {
     private readonly draftSessionStore = new DraftSessionStore();
     private readonly revealedCommentSelectionStore = new RevealedCommentSelectionStore();
     private showResolvedComments = false;
+    private showChildComments = true;
 
     constructor(private readonly host: CommentSessionHost) {}
 
@@ -85,6 +86,24 @@ export class CommentSessionController {
 
     public shouldShowResolvedComments(): boolean {
         return this.showResolvedComments;
+    }
+
+    public shouldShowChildComments(): boolean {
+        return this.showChildComments;
+    }
+
+    public async setShowChildComments(showChildComments: boolean): Promise<boolean> {
+        if (this.showChildComments === showChildComments) {
+            return false;
+        }
+
+        this.showChildComments = showChildComments;
+        await this.host.refreshCommentViews();
+        return true;
+    }
+
+    public async toggleShowChildComments(): Promise<boolean> {
+        return this.setShowChildComments(!this.showChildComments);
     }
 
     public async setShowResolvedComments(showResolved: boolean): Promise<boolean> {
