@@ -115,10 +115,20 @@ That means most bugs reduce to one of three questions:
         "id": "8cc93bfb-ac20-4069-b430-57896f23393e",
         "body": "Cross-section means: a cut-through view of something, as if you sliced it and looked inside.\n\nFor example, a codebase “cross-section” might show:\n\n  - UI layer\n  - application logic\n  - storage layer\n  - indexing/cache layer\n\n  So if you use cross-section visually for software, it suggests:\n\n  - internal composition\n  - layered architecture\n  - hidden structure made visible",
         "timestamp": 1774912991539
+      },
+      {
+        "id": "2ffd6f57-f0f1-4458-b09b-ed9c871d77b0",
+        "body": "update",
+        "timestamp": 1775537967014
+      },
+      {
+        "id": "0d27a831-86e5-4fdd-be42-7a67146b64e8",
+        "body": "this is nested",
+        "timestamp": 1775538575210
       }
     ],
     "createdAt": 1774912991539,
-    "updatedAt": 1774912991539
+    "updatedAt": 1775538575210
   }
 ]
 -->
