@@ -1,7 +1,5 @@
 import { ItemView, MarkdownRenderer, Notice, TFile, WorkspaceLeaf, loadMermaid, setIcon, type ViewStateResult } from "obsidian";
 import type { Comment, CommentThread } from "../../commentManager";
-import { threadToComment } from "../../commentManager";
-import { compareCommentsForSidebarOrder } from "../../core/anchors/commentSectionOrder";
 import { buildCommentLocationUrl } from "../../core/derived/allCommentsNote";
 import {
     buildIndexFileFilterGraph,
@@ -34,6 +32,7 @@ import { INDEX_SIDEBAR_LIST_LIMIT, limitIndexSidebarListItems } from "./indexSid
 import { filterCommentsByResolvedVisibility } from "../../core/rules/resolvedCommentVisibility";
 import { SidebarInteractionController } from "./sidebarInteractionController";
 import { renderPersistedCommentCard } from "./sidebarPersistedComment";
+import { sortSidebarRenderableItems, type SidebarRenderableItem } from "./sidebarRenderOrder";
 import { extractThoughtTrailClickTargets, parseThoughtTrailOpenFilePath, resolveThoughtTrailNodeId } from "./thoughtTrailNodeLinks";
 import {
     scopeIndexThreadsByFilePaths,
@@ -48,24 +47,8 @@ import {
     type IndexSidebarMode,
 } from "./viewState";
 
-function isDraftComment(comment: Comment | DraftComment): comment is DraftComment {
-    return "mode" in comment;
-}
-
-type SidebarRenderableItem =
-    | { kind: "thread"; thread: CommentThread }
-    | { kind: "draft"; draft: DraftComment };
-
 function matchesResolvedVisibility(resolved: boolean | undefined, showResolved: boolean): boolean {
     return showResolved ? resolved === true : resolved !== true;
-}
-
-function sortRenderableItems(items: SidebarRenderableItem[]): SidebarRenderableItem[] {
-    return items.slice().sort((left, right) => {
-        const leftComment = left.kind === "thread" ? threadToComment(left.thread) : left.draft;
-        const rightComment = right.kind === "thread" ? threadToComment(right.thread) : right.draft;
-        return compareCommentsForSidebarOrder(leftComment, rightComment);
-    });
 }
 
 function parseIndexSidebarMode(value: unknown): IndexSidebarMode | null {
@@ -293,7 +276,7 @@ export default class SideNote2View extends ItemView {
             const replacedThreadId = visibleDraftComment?.mode === "edit"
                 ? (visibleDraftComment.threadId ?? visibleDraftComment.id)
                 : null;
-            const renderableItems = sortRenderableItems(
+            const renderableItems = sortSidebarRenderableItems(
                 scopedVisibleThreads
                     .filter((thread) => thread.id !== replacedThreadId)
                     .map((thread) => ({ kind: "thread", thread } as SidebarRenderableItem))
