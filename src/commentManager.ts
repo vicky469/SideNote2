@@ -289,6 +289,33 @@ export class CommentManager {
         }
     }
 
+    reanchorCommentThread(
+        id: string,
+        anchor: {
+            startLine: number;
+            startChar: number;
+            endLine: number;
+            endChar: number;
+            selectedText: string;
+            selectedTextHash: string;
+        },
+    ) {
+        const thread = this.threads.find((candidate) =>
+            candidate.id === id || candidate.entries.some((entry) => entry.id === id));
+        if (!thread) {
+            return;
+        }
+
+        thread.startLine = anchor.startLine;
+        thread.startChar = anchor.startChar;
+        thread.endLine = anchor.endLine;
+        thread.endChar = anchor.endChar;
+        thread.selectedText = anchor.selectedText;
+        thread.selectedTextHash = anchor.selectedTextHash;
+        thread.anchorKind = "selection";
+        thread.orphaned = false;
+    }
+
     renameFile(oldPath: string, newPath: string) {
         this.threads.forEach((thread) => {
             if (thread.filePath === oldPath) {

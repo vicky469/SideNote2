@@ -65,6 +65,18 @@ test("buildPersistedCommentPresentation includes orphaned class for orphaned sel
         "sidenote2-thread-item",
         "orphaned",
     ]);
+    assert.deepEqual(presentation.reanchorAction, {
+        label: "Re-anchor to current selection",
+    });
+});
+
+test("buildPersistedCommentPresentation omits re-anchor action for page notes", () => {
+    const presentation = buildPersistedCommentPresentation(createThread({
+        anchorKind: "page",
+        orphaned: false,
+    }), null);
+
+    assert.equal(presentation.reanchorAction, null);
 });
 
 test("buildPersistedCommentPresentation chooses the right resolve action copy and icon", () => {

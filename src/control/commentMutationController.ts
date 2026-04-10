@@ -1,9 +1,10 @@
 import type { TFile } from "obsidian";
 import type { Comment, CommentManager } from "../commentManager";
+import { lineChToOffset, offsetToLineCh } from "../core/anchors/anchorResolver";
 import { MAX_SIDENOTE_WORDS, countCommentWords, exceedsCommentWordLimit } from "../core/text/commentWordLimit";
 import { resolveAnchorRange } from "../core/anchors/anchorResolver";
-import { getVisibleNoteContent } from "../core/storage/noteCommentStorage";
-import type { DraftComment } from "../domain/drafts";
+import { getManagedSectionRange, getVisibleNoteContent } from "../core/storage/noteCommentStorage";
+import type { DraftComment, DraftSelection } from "../domain/drafts";
 import { debugCount, debugLog } from "../debug";
 
 type PersistOptions = {
@@ -27,11 +28,13 @@ export interface CommentMutationHost {
     getLoadedCommentById(commentId: string): Comment | null;
     getFileByPath(filePath: string): TFile | null;
     getCurrentNoteContent(file: TFile): Promise<string>;
+    getCurrentSelectionForFile(file: TFile): DraftSelection | null;
     isCommentableFile(file: TFile | null): file is TFile;
     loadCommentsForFile(file: TFile): Promise<unknown>;
     persistCommentsForFile(file: TFile, options?: PersistOptions): Promise<void>;
     getCommentManager(): CommentManager;
     activateViewAndHighlightComment(commentId: string): Promise<void>;
+    hashText(text: string): Promise<string>;
     showNotice(message: string): void;
     now(): number;
 }
@@ -229,6 +232,36 @@ export class CommentMutationController {
         }
     }
 
+    public async reanchorCommentThreadToCurrentSelection(commentId: string): Promise<boolean> {
+        debugCount("reanchorCommentThreadToCurrentSelection");
+        debugLog("reanchorCommentThreadToCurrentSelection", { id: commentId });
+        const latestTarget = await this.loadLatestCommentTarget(commentId);
+        if (!latestTarget) {
+            return false;
+        }
+
+        if (latestTarget.latestComment.anchorKind === "page") {
+            this.host.showNotice("Only anchored side notes can be re-anchored.");
+            return false;
+        }
+
+        const currentSelection = this.host.getCurrentSelectionForFile(latestTarget.file);
+        if (!currentSelection || !currentSelection.selectedText.trim()) {
+            this.host.showNotice("Select text in the source note to re-anchor this side note.");
+            return false;
+        }
+
+        const noteContent = await this.host.getCurrentNoteContent(latestTarget.file);
+        const nextAnchor = await this.prepareCurrentSelectionAnchorForSave(noteContent, currentSelection);
+        if (!nextAnchor) {
+            return false;
+        }
+
+        this.host.getCommentManager().reanchorCommentThread(commentId, nextAnchor);
+        await this.host.persistCommentsForFile(latestTarget.file, { immediateAggregateRefresh: true });
+        return true;
+    }
+
     private async loadLatestCommentTarget(
         commentId: string,
     ): Promise<{ file: TFile; latestComment: Comment } | null> {
@@ -276,6 +309,59 @@ export class CommentMutationController {
             endChar: resolvedAnchor.endChar,
             selectedText: resolvedAnchor.text,
             orphaned: false,
+        };
+    }
+
+    private async prepareCurrentSelectionAnchorForSave(
+        noteContent: string,
+        selection: DraftSelection,
+    ): Promise<{
+        startLine: number;
+        startChar: number;
+        endLine: number;
+        endChar: number;
+        selectedText: string;
+        selectedTextHash: string;
+    } | null> {
+        const normalizedNoteContent = noteContent.replace(/\r\n/g, "\n");
+        const rawStartOffset = lineChToOffset(normalizedNoteContent, selection.startLine, selection.startChar);
+        const rawEndOffset = lineChToOffset(normalizedNoteContent, selection.endLine, selection.endChar);
+        if (rawStartOffset === null || rawEndOffset === null || rawEndOffset <= rawStartOffset) {
+            this.host.showNotice("Select text in the source note to re-anchor this side note.");
+            return null;
+        }
+
+        const managedRange = getManagedSectionRange(normalizedNoteContent);
+        if (managedRange && rawStartOffset < managedRange.toOffset && rawEndOffset > managedRange.fromOffset) {
+            this.host.showNotice("Select text outside the SideNote2 comments block to re-anchor this side note.");
+            return null;
+        }
+
+        const managedSectionLength = managedRange
+            ? managedRange.toOffset - managedRange.fromOffset
+            : 0;
+        const adjustedStartOffset = managedRange && rawStartOffset >= managedRange.toOffset
+            ? rawStartOffset - managedSectionLength
+            : rawStartOffset;
+        const adjustedEndOffset = managedRange && rawEndOffset >= managedRange.toOffset
+            ? rawEndOffset - managedSectionLength
+            : rawEndOffset;
+        const visibleNoteContent = getVisibleNoteContent(normalizedNoteContent);
+        const selectedText = visibleNoteContent.slice(adjustedStartOffset, adjustedEndOffset);
+        if (!selectedText.trim()) {
+            this.host.showNotice("Select text in the source note to re-anchor this side note.");
+            return null;
+        }
+
+        const start = offsetToLineCh(visibleNoteContent, adjustedStartOffset);
+        const end = offsetToLineCh(visibleNoteContent, adjustedEndOffset);
+        return {
+            startLine: start.line,
+            startChar: start.ch,
+            endLine: end.line,
+            endChar: end.ch,
+            selectedText,
+            selectedTextHash: await this.host.hashText(selectedText),
         };
     }
 

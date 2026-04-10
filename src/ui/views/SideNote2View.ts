@@ -711,6 +711,9 @@ export default class SideNote2View extends ItemView {
             startAppendEntryDraft: (commentId, hostFilePath) => {
                 void this.plugin.startAppendEntryDraft(commentId, hostFilePath);
             },
+            reanchorCommentThreadToCurrentSelection: (commentId) => {
+                void this.plugin.reanchorCommentThreadToCurrentSelection(commentId);
+            },
             deleteCommentWithConfirm: (commentId) => {
                 void this.deleteCommentWithConfirm(commentId);
             },

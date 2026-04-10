@@ -9,6 +9,9 @@ import { formatSidebarCommentMeta } from "./sidebarCommentSections";
 export interface PersistedCommentPresentation {
     classes: string[];
     metaText: string;
+    reanchorAction: {
+        label: string;
+    } | null;
     redirectHint: {
         ariaLabel: string;
         icon: string;
@@ -45,6 +48,7 @@ export interface SidebarPersistedCommentHost {
     unresolveComment(commentId: string): void;
     startEditDraft(commentId: string, hostFilePath: string | null): void;
     startAppendEntryDraft(commentId: string, hostFilePath: string | null): void;
+    reanchorCommentThreadToCurrentSelection(commentId: string): void;
     deleteCommentWithConfirm(commentId: string): void;
     setIcon(element: HTMLElement, icon: string): void;
 }
@@ -97,6 +101,11 @@ export function buildPersistedCommentPresentation(
     return {
         classes,
         metaText: formatSidebarCommentMeta(comment),
+        reanchorAction: isOrphanedComment(comment) && !isPageComment(comment)
+            ? {
+                label: "Re-anchor to current selection",
+            }
+            : null,
         redirectHint: {
             ariaLabel: "Open source note",
             icon: "obsidian-external-link",
@@ -326,6 +335,24 @@ function renderThreadFooterActions(
     };
 }
 
+function renderThreadReanchorAction(
+    commentEl: HTMLDivElement,
+    threadId: string,
+    label: string,
+    host: SidebarPersistedCommentHost,
+): void {
+    const actionRow = commentEl.createDiv("sidenote2-thread-reanchor");
+    const button = actionRow.createEl("button", {
+        cls: "sidenote2-thread-reanchor-button",
+        text: label,
+    });
+    button.setAttribute("type", "button");
+    button.onclick = (event) => {
+        event.stopPropagation();
+        host.reanchorCommentThreadToCurrentSelection(threadId);
+    };
+}
+
 export async function renderPersistedCommentCard(
     commentsContainer: HTMLDivElement,
     thread: CommentThread,
@@ -386,6 +413,9 @@ export async function renderPersistedCommentCard(
             presentation.redirectHint.icon,
             host,
         );
+    }
+    if (presentation.reanchorAction) {
+        renderThreadReanchorAction(commentEl, thread.id, presentation.reanchorAction.label, host);
     }
     renderThreadFooterActions(commentEl, comment, host);
 

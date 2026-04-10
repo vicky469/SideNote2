@@ -16,7 +16,7 @@ import { PluginRegistrationController } from "./control/pluginRegistrationContro
 import { WorkspaceContextController } from "./control/workspaceContextController";
 import { WorkspaceViewController } from "./control/workspaceViewController";
 import { VaultAgentsFileController } from "./control/vaultAgentsFileController";
-import { DraftComment } from "./domain/drafts";
+import { DraftComment, DraftSelection } from "./domain/drafts";
 import { parsePromptDeleteSetting } from "./core/config/appConfig";
 import { DerivedCommentMetadataManager } from "./core/derived/derivedCommentMetadata";
 import { isAttachmentCommentableFile, isAttachmentCommentablePath, isMarkdownCommentableFile, isSidebarSupportedFile } from "./core/rules/commentableFiles";
@@ -109,11 +109,13 @@ export default class SideNote2 extends Plugin {
         getLoadedCommentById: (commentId) => this.commentManager.getCommentById(commentId) ?? null,
         getFileByPath: (filePath) => this.workspaceViewController.getFileByPath(filePath),
         getCurrentNoteContent: (file) => this.workspaceViewController.getCurrentNoteContent(file),
+        getCurrentSelectionForFile: (file) => this.getCurrentSelectionForFile(file),
         isCommentableFile: (file): file is TFile => this.isCommentableFile(file),
         loadCommentsForFile: (file) => this.loadCommentsForFile(file),
         persistCommentsForFile: (file, options) => this.persistCommentsForFile(file, options),
         getCommentManager: () => this.commentManager,
         activateViewAndHighlightComment: (commentId) => this.activateViewAndHighlightComment(commentId),
+        hashText: (text) => generateHash(text),
         showNotice: (message) => {
             new Notice(message);
         },
@@ -684,6 +686,10 @@ export default class SideNote2 extends Plugin {
         await this.commentEntryController.startAppendEntryDraft(threadId, hostFilePath);
     }
 
+    public async reanchorCommentThreadToCurrentSelection(commentId: string): Promise<boolean> {
+        return this.commentMutationController.reanchorCommentThreadToCurrentSelection(commentId);
+    }
+
     private markDraftFileActive(file: TFile) {
         if (isMarkdownCommentableFile(file, this.getAllCommentsNotePath())) {
             this.activeMarkdownFile = file;
@@ -814,6 +820,29 @@ export default class SideNote2 extends Plugin {
 
     async unresolveComment(commentId: string) {
         await this.commentMutationController.unresolveComment(commentId);
+    }
+
+    private getCurrentSelectionForFile(file: TFile): DraftSelection | null {
+        const markdownView = this.workspaceViewController.getMarkdownViewForFile(file);
+        if (!markdownView || markdownView.file?.path !== file.path) {
+            return null;
+        }
+
+        const selectedText = markdownView.editor.getSelection();
+        if (!selectedText.trim()) {
+            return null;
+        }
+
+        const start = markdownView.editor.getCursor("from");
+        const end = markdownView.editor.getCursor("to");
+        return {
+            file,
+            selectedText,
+            startLine: start.line,
+            startChar: start.ch,
+            endLine: end.line,
+            endChar: end.ch,
+        };
     }
 
     /**

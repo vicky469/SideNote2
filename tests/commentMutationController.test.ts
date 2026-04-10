@@ -6,7 +6,7 @@ import {
     CommentMutationController,
     type CommentMutationHost,
 } from "../src/control/commentMutationController";
-import type { DraftComment } from "../src/domain/drafts";
+import type { DraftComment, DraftSelection } from "../src/domain/drafts";
 
 function createFile(path: string): TFile {
     return {
@@ -49,6 +49,7 @@ function createHost(options: {
     loadedComments?: Comment[];
     currentNoteContentByPath?: Record<string, string>;
     getCurrentNoteContent?: (file: TFile) => Promise<string>;
+    currentSelectionByPath?: Record<string, DraftSelection | null>;
     now?: number;
     showResolvedComments?: boolean;
 } = {}) {
@@ -115,6 +116,7 @@ function createHost(options: {
         getCurrentNoteContent: async (file) => options.getCurrentNoteContent
             ? options.getCurrentNoteContent(file)
             : options.currentNoteContentByPath?.[file.path] ?? "",
+        getCurrentSelectionForFile: (file) => options.currentSelectionByPath?.[file.path] ?? null,
         isCommentableFile: (file): file is TFile => !!file && (file.extension === "md" || file.extension === "pdf"),
         loadCommentsForFile: async (file) => {
             loadedFiles.push(file.path);
@@ -129,6 +131,7 @@ function createHost(options: {
         activateViewAndHighlightComment: async (commentId) => {
             highlightedCommentIds.push(commentId);
         },
+        hashText: async (text) => `hash:${text}`,
         showNotice: (message) => {
             notices.push(message);
         },
@@ -396,4 +399,83 @@ test("comment mutation controller exits resolved-only mode after reopening a com
     }]);
     assert.deepEqual(host.setShowResolvedCalls, [false]);
     assert.equal(host.getShowResolvedComments(), false);
+});
+
+test("comment mutation controller re-anchors an orphaned thread to the current selection", async () => {
+    const comment = createComment({
+        id: "comment-1",
+        orphaned: true,
+        selectedText: "Missing anchor",
+        selectedTextHash: "hash:missing",
+        startLine: 10,
+        startChar: 2,
+        endLine: 10,
+        endChar: 15,
+    });
+    const host = createHost({
+        knownComments: [comment],
+        loadedComments: [comment],
+        currentNoteContentByPath: {
+            [comment.filePath]: "# Title\nBefore\n<!-- SideNote2 comments\n[]\n-->\nAfter\n",
+        },
+        currentSelectionByPath: {
+            [comment.filePath]: {
+                file: createFile(comment.filePath),
+                selectedText: "After",
+                startLine: 5,
+                startChar: 0,
+                endLine: 5,
+                endChar: 5,
+            },
+        },
+    });
+
+    const reanchored = await host.controller.reanchorCommentThreadToCurrentSelection(comment.id);
+
+    assert.equal(reanchored, true);
+    assert.deepEqual(host.persistedFiles, [{
+        path: comment.filePath,
+        immediateAggregateRefresh: true,
+    }]);
+    assert.equal(host.manager.getCommentById(comment.id)?.orphaned, false);
+    assert.equal(host.manager.getCommentById(comment.id)?.selectedText, "After");
+    assert.equal(host.manager.getCommentById(comment.id)?.selectedTextHash, "hash:After");
+    assert.equal(host.manager.getCommentById(comment.id)?.startLine, 3);
+    assert.equal(host.manager.getCommentById(comment.id)?.startChar, 0);
+    assert.equal(host.manager.getCommentById(comment.id)?.endLine, 3);
+    assert.equal(host.manager.getCommentById(comment.id)?.endChar, 5);
+    assert.deepEqual(host.notices, []);
+});
+
+test("comment mutation controller rejects re-anchoring inside the managed comment block", async () => {
+    const comment = createComment({
+        id: "comment-1",
+        orphaned: true,
+    });
+    const host = createHost({
+        knownComments: [comment],
+        loadedComments: [comment],
+        currentNoteContentByPath: {
+            [comment.filePath]: "# Title\nBefore\n<!-- SideNote2 comments\n[]\n-->\nAfter\n",
+        },
+        currentSelectionByPath: {
+            [comment.filePath]: {
+                file: createFile(comment.filePath),
+                selectedText: "<!-- SideNote2 comments",
+                startLine: 2,
+                startChar: 0,
+                endLine: 2,
+                endChar: 23,
+            },
+        },
+    });
+
+    const reanchored = await host.controller.reanchorCommentThreadToCurrentSelection(comment.id);
+
+    assert.equal(reanchored, false);
+    assert.deepEqual(host.persistedFiles, []);
+    assert.equal(host.manager.getCommentById(comment.id)?.orphaned, true);
+    assert.deepEqual(host.notices, [
+        "Select text outside the SideNote2 comments block to re-anchor this side note.",
+    ]);
 });
