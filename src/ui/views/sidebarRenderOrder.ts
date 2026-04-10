@@ -16,6 +16,23 @@ export function getSidebarSortCommentForThread(thread: CommentThread): Comment {
     };
 }
 
+export function getReplacedThreadIdForEditDraft(
+    threads: readonly CommentThread[],
+    draft: DraftComment | null,
+): string | null {
+    if (!draft || draft.mode !== "edit") {
+        return null;
+    }
+
+    if (draft.threadId) {
+        return draft.threadId;
+    }
+
+    return threads.find((thread) =>
+        thread.id === draft.id || thread.entries.some((entry) => entry.id === draft.id)
+    )?.id ?? draft.id;
+}
+
 export function sortSidebarRenderableItems(items: readonly SidebarRenderableItem[]): SidebarRenderableItem[] {
     return items.slice().sort((left, right) => {
         const leftComment = left.kind === "thread" ? getSidebarSortCommentForThread(left.thread) : left.draft;

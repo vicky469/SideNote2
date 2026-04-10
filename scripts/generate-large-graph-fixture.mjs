@@ -2,7 +2,7 @@
 
 import * as esbuild from "esbuild";
 import { createHash } from "node:crypto";
-import { mkdir, writeFile } from "node:fs/promises";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -177,11 +177,133 @@ function buildCommentBody({ pattern, componentKey, size, outgoingLinks }) {
     return lines.join("\n");
 }
 
+function parseArgs(argv) {
+    const options = {
+        vaultRoot: null,
+        limit: null,
+    };
+
+    for (let index = 0; index < argv.length; index += 1) {
+        const arg = argv[index];
+        if (arg === "--vault-root") {
+            const value = argv[index + 1];
+            if (!value) {
+                throw new Error("Missing value for --vault-root");
+            }
+            options.vaultRoot = path.resolve(value);
+            index += 1;
+            continue;
+        }
+
+        if (arg === "--limit") {
+            const value = argv[index + 1];
+            const parsedValue = value ? Number.parseInt(value, 10) : Number.NaN;
+            if (!Number.isInteger(parsedValue) || parsedValue <= 0) {
+                throw new Error("Expected a positive integer for --limit");
+            }
+            options.limit = parsedValue;
+            index += 1;
+            continue;
+        }
+
+        throw new Error(`Unknown argument: ${arg}`);
+    }
+
+    return options;
+}
+
+function buildSyntheticThread({
+    vaultRelativePath,
+    nodeName,
+    pattern,
+    componentKey,
+    size,
+    outgoingLinks,
+    timestamp,
+}) {
+    const selectedText = makePageCommentLabel(vaultRelativePath);
+    const body = buildCommentBody({
+        pattern,
+        componentKey,
+        size,
+        outgoingLinks,
+    });
+
+    return {
+        id: `lg-${nodeName}`,
+        filePath: vaultRelativePath,
+        startLine: 0,
+        startChar: 0,
+        endLine: 0,
+        endChar: 0,
+        selectedText,
+        selectedTextHash: makeHash(selectedText),
+        anchorKind: "page",
+        orphaned: false,
+        resolved: false,
+        entries: [{
+            id: `lg-${nodeName}`,
+            body,
+            timestamp,
+        }],
+        createdAt: timestamp,
+        updatedAt: timestamp,
+    };
+}
+
+function mergeSyntheticThread(existingThreads, syntheticThread) {
+    const existingThread = existingThreads.find((thread) => thread.id === syntheticThread.id);
+    if (!existingThread) {
+        return existingThreads.concat({
+            ...syntheticThread,
+            entries: syntheticThread.entries.map((entry) => ({ ...entry })),
+        });
+    }
+
+    const [syntheticEntry] = syntheticThread.entries;
+    const [existingFirstEntry, ...existingReplyEntries] = existingThread.entries;
+
+    return existingThreads.map((thread) => {
+        if (thread.id !== syntheticThread.id) {
+            return {
+                ...thread,
+                entries: thread.entries.map((entry) => ({ ...entry })),
+            };
+        }
+
+        const mergedEntries = [{
+            id: existingFirstEntry?.id ?? syntheticEntry.id,
+            body: syntheticEntry.body,
+            timestamp: existingFirstEntry?.timestamp ?? syntheticEntry.timestamp,
+        }].concat(existingReplyEntries.map((entry) => ({ ...entry })));
+
+        return {
+            ...existingThread,
+            filePath: syntheticThread.filePath,
+            startLine: syntheticThread.startLine,
+            startChar: syntheticThread.startChar,
+            endLine: syntheticThread.endLine,
+            endChar: syntheticThread.endChar,
+            selectedText: syntheticThread.selectedText,
+            selectedTextHash: syntheticThread.selectedTextHash,
+            anchorKind: syntheticThread.anchorKind,
+            orphaned: false,
+            entries: mergedEntries,
+            createdAt: existingThread.createdAt || mergedEntries[0].timestamp,
+            updatedAt: Math.max(
+                existingThread.updatedAt || 0,
+                ...mergedEntries.map((entry) => entry.timestamp),
+            ),
+        };
+    });
+}
+
 async function main() {
     const repoRoot = getRepoRoot(import.meta.url);
-    const vaultRoot = path.resolve(repoRoot, "..");
+    const options = parseArgs(process.argv.slice(2));
+    const vaultRoot = options.vaultRoot ?? path.resolve(repoRoot, "..");
     const outputRoot = path.join(vaultRoot, "SideNote2 Graph Fixtures", "graph-1000");
-    const { serializeNoteComments } = await loadStorageModule(repoRoot);
+    const { parseNoteComments, serializeNoteCommentThreads } = await loadStorageModule(repoRoot);
     const componentDefinitions = buildComponentDefinitions();
     let generatedNoteCount = 0;
     let timestamp = Date.UTC(2026, 0, 1, 0, 0, 0);
@@ -196,11 +318,14 @@ async function main() {
         await mkdir(componentDir, { recursive: true });
 
         for (const [index, nodeName] of nodeNames.entries()) {
+            if (options.limit !== null && generatedNoteCount >= options.limit) {
+                break;
+            }
+
             const fileName = `${nodeName}.md`;
             const absoluteFilePath = path.join(componentDir, fileName);
             const vaultRelativePath = normalizeVaultPath(path.relative(vaultRoot, absoluteFilePath));
             const outgoingLinks = edges.get(nodeName) ?? [];
-            const selectedText = makePageCommentLabel(vaultRelativePath);
             const noteBody = buildNoteBody({
                 nodeName,
                 pattern,
@@ -209,34 +334,41 @@ async function main() {
                 nodeIndex: index + 1,
                 outgoingLinks,
             });
-            const serialized = serializeNoteComments(noteBody, [{
-                id: `lg-${nodeName}`,
-                filePath: vaultRelativePath,
-                startLine: 0,
-                startChar: 0,
-                endLine: 0,
-                endChar: 0,
-                selectedText,
-                selectedTextHash: makeHash(selectedText),
-                comment: buildCommentBody({
-                    pattern,
-                    componentKey,
-                    size,
-                    outgoingLinks,
-                }),
+            const syntheticThread = buildSyntheticThread({
+                vaultRelativePath,
+                nodeName,
+                pattern,
+                componentKey,
+                size,
+                outgoingLinks,
                 timestamp,
-                anchorKind: "page",
-                orphaned: false,
-                resolved: false,
-            }]);
+            });
+            let existingThreads = [];
+            try {
+                const existingContent = await readFile(absoluteFilePath, "utf8");
+                existingThreads = parseNoteComments(existingContent, vaultRelativePath).threads;
+            } catch (error) {
+                if (!(error && typeof error === "object" && "code" in error && error.code === "ENOENT")) {
+                    throw error;
+                }
+            }
+
+            const serialized = serializeNoteCommentThreads(
+                noteBody,
+                mergeSyntheticThread(existingThreads, syntheticThread),
+            );
 
             await writeFile(absoluteFilePath, serialized, "utf8");
             generatedNoteCount += 1;
             timestamp += 1000;
         }
+
+        if (options.limit !== null && generatedNoteCount >= options.limit) {
+            break;
+        }
     }
 
-    if (generatedNoteCount !== 1000) {
+    if (options.limit === null && generatedNoteCount !== 1000) {
         throw new Error(`Expected to generate 1000 notes, generated ${generatedNoteCount}`);
     }
 

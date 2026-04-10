@@ -32,7 +32,11 @@ import { INDEX_SIDEBAR_LIST_LIMIT, limitIndexSidebarListItems } from "./indexSid
 import { filterCommentsByResolvedVisibility } from "../../core/rules/resolvedCommentVisibility";
 import { SidebarInteractionController } from "./sidebarInteractionController";
 import { renderPersistedCommentCard } from "./sidebarPersistedComment";
-import { sortSidebarRenderableItems, type SidebarRenderableItem } from "./sidebarRenderOrder";
+import {
+    getReplacedThreadIdForEditDraft,
+    sortSidebarRenderableItems,
+    type SidebarRenderableItem,
+} from "./sidebarRenderOrder";
 import { extractThoughtTrailClickTargets, parseThoughtTrailOpenFilePath, resolveThoughtTrailNodeId } from "./thoughtTrailNodeLinks";
 import {
     scopeIndexThreadsByFilePaths,
@@ -273,9 +277,10 @@ export default class SideNote2View extends ItemView {
             const resolvedCount = scopedAllThreads.filter((thread) => thread.resolved).length;
             const hasResolvedComments = resolvedCount > 0;
             const hasChildComments = scopedVisibleThreads.some((thread) => thread.entries.length > 1);
-            const replacedThreadId = visibleDraftComment?.mode === "edit"
-                ? (visibleDraftComment.threadId ?? visibleDraftComment.id)
-                : null;
+            const replacedThreadId = getReplacedThreadIdForEditDraft(
+                scopedVisibleThreads,
+                visibleDraftComment,
+            );
             const renderableItems = sortSidebarRenderableItems(
                 scopedVisibleThreads
                     .filter((thread) => thread.id !== replacedThreadId)

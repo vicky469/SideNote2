@@ -1,8 +1,13 @@
 import * as assert from "node:assert/strict";
 import test from "node:test";
 import { commentToThread, type Comment } from "../src/commentManager";
+import type { DraftComment } from "../src/domain/drafts";
 import type { SidebarRenderableItem } from "../src/ui/views/sidebarRenderOrder";
-import { getSidebarSortCommentForThread, sortSidebarRenderableItems } from "../src/ui/views/sidebarRenderOrder";
+import {
+    getReplacedThreadIdForEditDraft,
+    getSidebarSortCommentForThread,
+    sortSidebarRenderableItems,
+} from "../src/ui/views/sidebarRenderOrder";
 
 function createComment(overrides: Partial<Comment> = {}): Comment {
     return {
@@ -68,4 +73,30 @@ test("sortSidebarRenderableItems keeps page-note thread order stable after later
         "page-note-older",
         "page-note-newer",
     ]);
+});
+
+test("getReplacedThreadIdForEditDraft replaces the parent thread when editing a child entry", () => {
+    const thread = commentToThread(createComment({
+        id: "thread-1",
+        anchorKind: "selection",
+        timestamp: 100,
+    }));
+    thread.entries.push({
+        id: "reply-1",
+        body: "Child reply",
+        timestamp: 200,
+    });
+    thread.updatedAt = 200;
+
+    const draft: DraftComment = {
+        ...createComment({
+            id: "reply-1",
+            anchorKind: "selection",
+            comment: "Child reply",
+            timestamp: 200,
+        }),
+        mode: "edit",
+    };
+
+    assert.equal(getReplacedThreadIdForEditDraft([thread], draft), "thread-1");
 });

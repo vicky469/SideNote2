@@ -22,6 +22,9 @@ data.json
 # Exclude macOS Finder (System Explorer) View States
 .DS_Store
 
+# Local Codex marker
+.codex
+
 # Test build output
 .test-dist
 .test-dist*
