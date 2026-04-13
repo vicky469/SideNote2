@@ -48,6 +48,7 @@ export interface CommentNavigationHost {
     loadCommentsForFile(file: TFile): Promise<unknown>;
     getLoadedCommentById(commentId: string): Comment | undefined;
     showNotice(message: string): void;
+    log?(level: "info" | "warn" | "error", area: string, event: string, payload?: Record<string, unknown>): Promise<void>;
 }
 
 export class CommentNavigationController {
@@ -180,6 +181,10 @@ export class CommentNavigationController {
         for (const leaf of leaves) {
             if (isSidebarViewLike(leaf.view)) {
                 await this.syncIndexSidebarScope(leaf, sidebarFile, scopeRootFilePath);
+                void this.host.log?.("info", "sidebar", "sidebar.focus.requested", {
+                    commentId,
+                    filePath: scopeRootFilePath,
+                });
                 await leaf.view.highlightAndFocusDraft(commentId);
             }
         }
@@ -251,6 +256,10 @@ export class CommentNavigationController {
     }
 
     public async revealComment(comment: Comment): Promise<void> {
+        void this.host.log?.("info", "navigation", "navigation.reveal.requested", {
+            commentId: comment.id,
+            filePath: comment.filePath,
+        });
         const file = this.host.getFileByPath(comment.filePath);
         if (!file) {
             this.host.showNotice("Unable to find that file.");
@@ -299,6 +308,11 @@ export class CommentNavigationController {
                 true,
             );
             editor.focus();
+            void this.host.log?.("info", "navigation", "navigation.reveal.resolved", {
+                commentId: comment.id,
+                filePath: comment.filePath,
+                anchorKind: "page",
+            });
             await this.activateViewAndHighlightComment(comment.id);
             return;
         }
@@ -319,8 +333,17 @@ export class CommentNavigationController {
                 },
                 true,
             );
+            void this.host.log?.("info", "navigation", "navigation.reveal.resolved", {
+                commentId: comment.id,
+                filePath: comment.filePath,
+                anchorKind: "selection",
+            });
         } else {
             this.host.showNotice("Side note anchor text is missing; showing the stored location.");
+            void this.host.log?.("warn", "navigation", "navigation.reveal.fallback", {
+                commentId: comment.id,
+                filePath: comment.filePath,
+            });
             editor.scrollIntoView(
                 {
                     from: { line: comment.startLine, ch: 0 },

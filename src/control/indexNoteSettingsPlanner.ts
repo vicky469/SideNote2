@@ -9,11 +9,12 @@ import type { SideNote2Settings } from "../ui/settings/SideNote2SettingTab";
 export type PersistedPluginData = Partial<SideNote2Settings> & {
     attachmentComments?: unknown;
     confirmDelete?: unknown;
+    enableDebugMode?: unknown;
 };
 
 export interface LoadedSettingsResolution {
     settings: SideNote2Settings;
-    shouldRewriteLegacyConfirmDelete: boolean;
+    shouldRewriteLegacySettings: boolean;
 }
 
 export type IndexNotePathChangePlan =
@@ -38,16 +39,14 @@ export function resolveLoadedSettings(
 ): LoadedSettingsResolution {
     return {
         settings: {
-            enableDebugMode: typeof loaded?.enableDebugMode === "boolean"
-                ? loaded.enableDebugMode
-                : defaults.enableDebugMode,
             indexNotePath: normalizeAllCommentsNotePath(loaded?.indexNotePath),
             indexHeaderImageUrl: normalizeAllCommentsNoteImageUrl(loaded?.indexHeaderImageUrl),
             indexHeaderImageCaption: hasOwn(loaded ?? {}, "indexHeaderImageCaption")
                 ? normalizeAllCommentsNoteImageCaption(loaded?.indexHeaderImageCaption)
                 : defaults.indexHeaderImageCaption,
         },
-        shouldRewriteLegacyConfirmDelete: hasOwn(loaded ?? {}, "confirmDelete"),
+        shouldRewriteLegacySettings: hasOwn(loaded ?? {}, "confirmDelete")
+            || hasOwn(loaded ?? {}, "enableDebugMode"),
     };
 }
 

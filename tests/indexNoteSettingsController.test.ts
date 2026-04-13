@@ -40,7 +40,6 @@ function createComment(overrides: Partial<Comment> = {}): Comment {
 
 function createSettings(overrides: Partial<SideNote2Settings> = {}): SideNote2Settings {
     return {
-        enableDebugMode: overrides.enableDebugMode ?? false,
         indexNotePath: overrides.indexNotePath ?? "SideNote2 index.md",
         indexHeaderImageUrl: overrides.indexHeaderImageUrl ?? "https://example.com/default.webp",
         indexHeaderImageCaption: overrides.indexHeaderImageCaption ?? "Default caption",
@@ -156,12 +155,11 @@ test("loaded settings resolution normalizes persisted values and marks legacy co
     }, createSettings());
 
     assert.deepEqual(resolved.settings, {
-        enableDebugMode: true,
         indexNotePath: "notes/index.md",
         indexHeaderImageUrl: "https://example.com/header.webp",
         indexHeaderImageCaption: "Custom caption",
     });
-    assert.equal(resolved.shouldRewriteLegacyConfirmDelete, true);
+    assert.equal(resolved.shouldRewriteLegacySettings, true);
 });
 
 test("index note path planner distinguishes noop, missing parent, conflict, and apply cases", () => {
@@ -266,7 +264,6 @@ test("index note settings controller loads attachment comments and rewrites lega
     await harness.controller.loadSettings();
 
     assert.deepEqual(harness.getSettings(), {
-        enableDebugMode: true,
         indexNotePath: "docs/index.md",
         indexHeaderImageUrl: "https://example.com/header.webp",
         indexHeaderImageCaption: "Header",

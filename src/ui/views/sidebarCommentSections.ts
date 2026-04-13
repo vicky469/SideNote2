@@ -1,5 +1,6 @@
 import type { CommentAnchorKind } from "../../commentManager";
 import { isOrphanedComment } from "../../core/anchors/commentAnchors";
+import { formatFriendlyLocalDateTime } from "../../core/time/dateTime";
 
 export interface SidebarCommentPresentationLike {
     timestamp: number;
@@ -9,13 +10,7 @@ export interface SidebarCommentPresentationLike {
 }
 
 function formatCommentTimestamp(timestamp: number): string {
-    return new Date(timestamp).toLocaleString([], {
-        month: "short",
-        day: "numeric",
-        year: "numeric",
-        hour: "numeric",
-        minute: "2-digit",
-    });
+    return formatFriendlyLocalDateTime(timestamp) ?? "";
 }
 
 export function formatSidebarCommentMeta(comment: SidebarCommentPresentationLike): string {

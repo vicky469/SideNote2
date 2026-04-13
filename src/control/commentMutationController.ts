@@ -5,7 +5,6 @@ import { MAX_SIDENOTE_WORDS, countCommentWords, exceedsCommentWordLimit } from "
 import { resolveAnchorRange } from "../core/anchors/anchorResolver";
 import { getManagedSectionRange, getVisibleNoteContent } from "../core/storage/noteCommentStorage";
 import type { DraftComment, DraftSelection } from "../domain/drafts";
-import { debugCount, debugLog } from "../debug";
 
 type PersistOptions = {
     immediateAggregateRefresh?: boolean;
@@ -37,6 +36,7 @@ export interface CommentMutationHost {
     hashText(text: string): Promise<string>;
     showNotice(message: string): void;
     now(): number;
+    log?(level: "info" | "warn" | "error", area: string, event: string, payload?: Record<string, unknown>): Promise<void>;
 }
 
 export class CommentMutationController {
@@ -49,6 +49,10 @@ export class CommentMutationController {
         commentId: string,
         hostFilePath: string | null = this.host.getSidebarTargetFilePath(),
     ): Promise<boolean> {
+        void this.host.log?.("info", "draft", "draft.edit.begin", {
+            commentId,
+            hostFilePath,
+        });
         const latestTarget = await this.loadLatestCommentTarget(commentId);
         if (!latestTarget) {
             return false;
@@ -85,6 +89,12 @@ export class CommentMutationController {
             ...draft,
             comment: commentBody,
         };
+        void this.host.log?.("info", "draft", "draft.save.begin", {
+            commentId,
+            draftMode: draft.mode,
+            filePath: draft.filePath,
+            wordCount: countCommentWords(commentBody),
+        });
         this.host.setDraftCommentValue(trimmedDraft);
         this.host.setSavingDraftCommentId(commentId);
         await this.host.refreshCommentViews();
@@ -119,6 +129,21 @@ export class CommentMutationController {
             } else {
                 saved = await this.editComment(preparedDraft.threadId ?? commentId, preparedDraft.comment);
             }
+            if (saved) {
+                void this.host.log?.("info", "draft", preparedDraft.mode === "edit" ? "draft.edit.success" : "draft.save.success", {
+                    commentId,
+                    draftMode: preparedDraft.mode,
+                    filePath: preparedDraft.filePath,
+                });
+            }
+        } catch (error) {
+            void this.host.log?.("error", "draft", "draft.save.error", {
+                commentId,
+                draftMode: preparedDraft.mode,
+                filePath: preparedDraft.filePath,
+                error,
+            });
+            throw error;
         } finally {
             if (saved && this.host.getDraftComment()?.id === commentId) {
                 this.host.clearDraftState();
@@ -130,8 +155,6 @@ export class CommentMutationController {
     }
 
     public async addComment(newComment: Comment): Promise<boolean> {
-        debugCount("addComment");
-        debugLog("addComment", { filePath: newComment.filePath, id: newComment.id });
         if (newComment.filePath === this.host.getAllCommentsNotePath()) {
             this.host.showNotice(`Cannot add comments to ${this.host.getAllCommentsNotePath()}.`);
             return false;
@@ -161,8 +184,6 @@ export class CommentMutationController {
     }
 
     public async editComment(commentId: string, newCommentText: string): Promise<boolean> {
-        debugCount("editComment");
-        debugLog("editComment", { id: commentId, length: newCommentText.length });
         const latestTarget = await this.loadLatestCommentTarget(commentId);
         if (!latestTarget) {
             return false;
@@ -194,8 +215,7 @@ export class CommentMutationController {
     }
 
     public async deleteComment(commentId: string): Promise<void> {
-        debugCount("deleteComment");
-        debugLog("deleteComment", { id: commentId });
+        void this.host.log?.("info", "draft", "thread.delete", { commentId });
         const latestTarget = await this.loadLatestCommentTarget(commentId);
         if (!latestTarget) {
             return;
@@ -206,8 +226,7 @@ export class CommentMutationController {
     }
 
     public async resolveComment(commentId: string): Promise<void> {
-        debugCount("resolveComment");
-        debugLog("resolveComment", { id: commentId });
+        void this.host.log?.("info", "draft", "thread.resolve", { commentId });
         const latestTarget = await this.loadLatestCommentTarget(commentId);
         if (!latestTarget) {
             return;
@@ -218,8 +237,7 @@ export class CommentMutationController {
     }
 
     public async unresolveComment(commentId: string): Promise<void> {
-        debugCount("unresolveComment");
-        debugLog("unresolveComment", { id: commentId });
+        void this.host.log?.("info", "draft", "thread.reopen", { commentId });
         const latestTarget = await this.loadLatestCommentTarget(commentId);
         if (!latestTarget) {
             return;
@@ -233,8 +251,7 @@ export class CommentMutationController {
     }
 
     public async reanchorCommentThreadToCurrentSelection(commentId: string): Promise<boolean> {
-        debugCount("reanchorCommentThreadToCurrentSelection");
-        debugLog("reanchorCommentThreadToCurrentSelection", { id: commentId });
+        void this.host.log?.("info", "draft", "thread.reanchor.begin", { commentId });
         const latestTarget = await this.loadLatestCommentTarget(commentId);
         if (!latestTarget) {
             return false;
@@ -254,11 +271,19 @@ export class CommentMutationController {
         const noteContent = await this.host.getCurrentNoteContent(latestTarget.file);
         const nextAnchor = await this.prepareCurrentSelectionAnchorForSave(noteContent, currentSelection);
         if (!nextAnchor) {
+            void this.host.log?.("warn", "draft", "thread.reanchor.error", {
+                commentId,
+                filePath: latestTarget.file.path,
+            });
             return false;
         }
 
         this.host.getCommentManager().reanchorCommentThread(commentId, nextAnchor);
         await this.host.persistCommentsForFile(latestTarget.file, { immediateAggregateRefresh: true });
+        void this.host.log?.("info", "draft", "thread.reanchor.success", {
+            commentId,
+            filePath: latestTarget.file.path,
+        });
         return true;
     }
 

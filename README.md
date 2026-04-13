@@ -115,20 +115,6 @@ If multiple side comments in the same note use the same selected text, include a
 ## Command
 
 - `SideNote2: Add comment to selection`
-- `SideNote2: Sync AGENTS.md in vault root`
-- `SideNote2: Remove SideNote2 agent support from vault`
-
-## Uninstall
-
-Before uninstalling SideNote2, remove its managed agent-routing block from the vault.
-
-Press Command + P to open the command palette, then run:
-
-- `SideNote2: Remove SideNote2 agent support from vault`
-
-Then uninstall the plugin from Obsidian.
-
-This removes only SideNote2's managed `AGENTS.md` instructions. Stored side comments remain in the markdown notes until you edit or remove them separately.
 
 ## Storage
 

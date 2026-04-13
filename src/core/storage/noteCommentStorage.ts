@@ -66,6 +66,11 @@ interface FoundManagedSection {
     hasVisibleContentAfterSection: boolean;
 }
 
+interface OffsetRange {
+    fromOffset: number;
+    toOffset: number;
+}
+
 export type ManagedSectionKind = "none" | "threaded" | "unsupported";
 
 function normalizeCommentBody(body: string): string {
@@ -295,8 +300,61 @@ function parseJsonSection(sectionContent: string, filePath: string): CommentThre
     return cloneCommentThreads(threads);
 }
 
+function buildFencedCodeBlockRanges(normalized: string): OffsetRange[] {
+    const ranges: OffsetRange[] = [];
+    const lines = normalized.split("\n");
+    let currentOffset = 0;
+    let openFence: { char: string; length: number; fromOffset: number } | null = null;
+
+    for (const line of lines) {
+        const fenceMatch = /^(?: {0,3})(`{3,}|~{3,})/.exec(line);
+        if (fenceMatch) {
+            const fenceToken = fenceMatch[1];
+            const fenceChar = fenceToken[0];
+
+            if (!openFence) {
+                openFence = {
+                    char: fenceChar,
+                    length: fenceToken.length,
+                    fromOffset: currentOffset,
+                };
+            } else if (openFence.char === fenceChar && fenceToken.length >= openFence.length) {
+                ranges.push({
+                    fromOffset: openFence.fromOffset,
+                    toOffset: currentOffset + line.length,
+                });
+                openFence = null;
+            }
+        }
+
+        currentOffset += line.length + 1;
+    }
+
+    if (openFence) {
+        ranges.push({
+            fromOffset: openFence.fromOffset,
+            toOffset: normalized.length,
+        });
+    }
+
+    return ranges;
+}
+
+function isOffsetInsideRanges(offset: number, ranges: readonly OffsetRange[]): boolean {
+    return ranges.some((range) => offset >= range.fromOffset && offset <= range.toOffset);
+}
+
+function hasInlineCloseMarkerOnSameLine(normalized: string, sectionStart: number): boolean {
+    const lineEnd = normalized.indexOf("\n", sectionStart);
+    const openerLine = lineEnd === -1
+        ? normalized.slice(sectionStart)
+        : normalized.slice(sectionStart, lineEnd);
+    return openerLine.includes(HIDDEN_SECTION_CLOSE);
+}
+
 function findLastManagedSection(normalized: string): FoundManagedSection | null {
     const matches = Array.from(normalized.matchAll(/<!-- SideNote2 comments(?=$|[\s\[{])/g));
+    const fencedCodeBlockRanges = buildFencedCodeBlockRanges(normalized);
     for (let index = matches.length - 1; index >= 0; index -= 1) {
         const match = matches[index];
         if (typeof match.index !== "number") {
@@ -304,6 +362,12 @@ function findLastManagedSection(normalized: string): FoundManagedSection | null 
         }
 
         const sectionStart = match.index;
+        if (isOffsetInsideRanges(sectionStart, fencedCodeBlockRanges)) {
+            continue;
+        }
+        if (hasInlineCloseMarkerOnSameLine(normalized, sectionStart)) {
+            continue;
+        }
         const closeIndex = normalized.indexOf(`\n${HIDDEN_SECTION_CLOSE}`, sectionStart);
         if (closeIndex === -1) {
             continue;

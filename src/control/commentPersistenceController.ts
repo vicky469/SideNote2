@@ -18,7 +18,7 @@ import {
 } from "../core/rules/commentSyncPolicy";
 import {
     getManagedSectionEditForThreads,
-    getManagedSectionEdit,
+    getManagedSectionKind,
     serializeNoteComments,
     serializeNoteCommentThreads,
     type ParsedNoteComments,
@@ -60,6 +60,7 @@ export interface CommentPersistenceHost {
     getCommentMentionedPageLabels(comment: Comment): string[];
     syncIndexNoteLeafMode(leaf: WorkspaceLeaf | null): Promise<void>;
     saveSettings(): Promise<void>;
+    log?(level: "info" | "warn" | "error", area: string, event: string, payload?: Record<string, unknown>): Promise<void>;
 }
 
 export class CommentPersistenceController {
@@ -87,6 +88,9 @@ export class CommentPersistenceController {
                 fileContent,
                 rewrittenContent,
             })) {
+                void this.host.log?.("warn", "persistence", "storage.note.write.conflict", {
+                    filePath: file.path,
+                });
                 this.scheduleDeferredCommentPersist(file);
                 await this.afterCommentsChanged();
                 return;
@@ -101,6 +105,10 @@ export class CommentPersistenceController {
             await this.afterCommentsChanged();
         } catch (error) {
             console.error("Error syncing note-backed comments:", error);
+            void this.host.log?.("error", "persistence", "storage.note.write.error", {
+                filePath: file.path,
+                error,
+            });
         }
     }
 
@@ -247,6 +255,9 @@ export class CommentPersistenceController {
     }
 
     private async parseAndNormalizeFileComments(filePath: string, noteContent: string): Promise<ParsedNoteComments> {
+        void this.host.log?.("info", "persistence", "storage.note.parse.begin", {
+            filePath,
+        });
         if (this.host.isAllCommentsNotePath(filePath)) {
             const parsed = this.host.getParsedNoteComments(filePath, noteContent);
             return {
@@ -256,6 +267,11 @@ export class CommentPersistenceController {
             };
         }
 
+        if (getManagedSectionKind(noteContent) === "unsupported") {
+            void this.host.log?.("warn", "persistence", "storage.note.parse.unsupported", {
+                filePath,
+            });
+        }
         const parsed = this.host.getParsedNoteComments(filePath, noteContent);
         const normalizedThreads: CommentThread[] = [];
 
@@ -322,6 +338,10 @@ export class CommentPersistenceController {
     private async writeCommentsForFile(file: TFile, options: PersistOptions = {}): Promise<string> {
         this.clearPendingCommentPersistTimer(file.path);
         const threads = this.host.getCommentManager().getThreadsForFile(file.path);
+        void this.host.log?.("info", "persistence", "storage.note.write.begin", {
+            filePath: file.path,
+            threadCount: threads.length,
+        });
         const openView = this.host.getMarkdownViewForFile(file);
 
         if (openView) {
@@ -349,6 +369,10 @@ export class CommentPersistenceController {
             }
             await this.syncFileCommentsFromContent(file, nextContent);
             await this.afterCommentsChanged(options);
+            void this.host.log?.("info", "persistence", "storage.note.write.success", {
+                filePath: file.path,
+                threadCount: threads.length,
+            });
             return nextContent;
         }
 
@@ -357,6 +381,10 @@ export class CommentPersistenceController {
         );
         await this.syncFileCommentsFromContent(file, nextContent);
         await this.afterCommentsChanged(options);
+        void this.host.log?.("info", "persistence", "storage.note.write.success", {
+            filePath: file.path,
+            threadCount: threads.length,
+        });
         return nextContent;
     }
 
@@ -389,60 +417,81 @@ export class CommentPersistenceController {
     }
 
     private async refreshAggregateNote(): Promise<void> {
-        await this.ensureAggregateCommentIndexInitialized();
-        const comments = this.host.getAggregateCommentIndex().getAllComments();
-        const noteOptions: AllCommentsNoteBuildOptions = {
-            allCommentsNotePath: this.host.getAllCommentsNotePath(),
-            headerImageUrl: this.host.getIndexHeaderImageUrl(),
-            headerImageCaption: this.host.getIndexHeaderImageCaption(),
+        void this.host.log?.("info", "index", "index.refresh.begin", {
             showResolved: this.host.shouldShowResolvedComments(),
-            hasSourceFile: (filePath: string) => this.host.app.vault.getAbstractFileByPath(filePath) instanceof TFile,
-            getMentionedPageLabels: (comment: Comment) => this.host.getCommentMentionedPageLabels(comment),
-            resolveWikiLinkPath: (linkPath: string, sourceFilePath: string) => {
-                const linkedFile = this.host.app.metadataCache.getFirstLinkpathDest(linkPath, sourceFilePath);
-                return linkedFile instanceof TFile ? linkedFile.path : null;
-            },
-        };
-        const nextContent = buildAllCommentsNoteContent(this.host.app.vault.getName(), comments, noteOptions);
-        const allCommentsNotePath = this.host.getAllCommentsNotePath();
-        let existingFile = this.host.getMarkdownFileByPath(allCommentsNotePath);
+        });
+        try {
+            await this.ensureAggregateCommentIndexInitialized();
+            const comments = this.host.getAggregateCommentIndex().getAllComments();
+            const noteOptions: AllCommentsNoteBuildOptions = {
+                allCommentsNotePath: this.host.getAllCommentsNotePath(),
+                headerImageUrl: this.host.getIndexHeaderImageUrl(),
+                headerImageCaption: this.host.getIndexHeaderImageCaption(),
+                showResolved: this.host.shouldShowResolvedComments(),
+                hasSourceFile: (filePath: string) => this.host.app.vault.getAbstractFileByPath(filePath) instanceof TFile,
+                getMentionedPageLabels: (comment: Comment) => this.host.getCommentMentionedPageLabels(comment),
+                resolveWikiLinkPath: (linkPath: string, sourceFilePath: string) => {
+                    const linkedFile = this.host.app.metadataCache.getFirstLinkpathDest(linkPath, sourceFilePath);
+                    return linkedFile instanceof TFile ? linkedFile.path : null;
+                },
+            };
+            const nextContent = buildAllCommentsNoteContent(this.host.app.vault.getName(), comments, noteOptions);
+            const allCommentsNotePath = this.host.getAllCommentsNotePath();
+            let existingFile = this.host.getMarkdownFileByPath(allCommentsNotePath);
 
-        if (!existingFile) {
-            const legacyFile = this.host.getMarkdownFileByPath(LEGACY_ALL_COMMENTS_NOTE_PATH);
-            if (legacyFile) {
-                await this.host.app.fileManager.renameFile(legacyFile, allCommentsNotePath);
-                existingFile = this.host.getMarkdownFileByPath(allCommentsNotePath);
+            if (!existingFile) {
+                const legacyFile = this.host.getMarkdownFileByPath(LEGACY_ALL_COMMENTS_NOTE_PATH);
+                if (legacyFile) {
+                    await this.host.app.fileManager.renameFile(legacyFile, allCommentsNotePath);
+                    existingFile = this.host.getMarkdownFileByPath(allCommentsNotePath);
+                }
             }
-        }
 
-        if (!existingFile) {
-            await this.host.app.vault.create(allCommentsNotePath, nextContent);
-            return;
-        }
-
-        const currentContent = await this.host.getCurrentNoteContent(existingFile);
-        const openView = this.host.getMarkdownViewForFile(existingFile);
-        if (openView) {
-            await this.host.syncIndexNoteLeafMode(openView.leaf);
-            if (openView.getViewData() !== nextContent) {
-                openView.setViewData(nextContent, false);
+            if (!existingFile) {
+                await this.host.app.vault.create(allCommentsNotePath, nextContent);
+                void this.host.log?.("info", "index", "index.refresh.success", {
+                    commentCount: comments.length,
+                    created: true,
+                });
+                return;
             }
-            if (currentContent !== nextContent) {
-                await openView.save();
+
+            const currentContent = await this.host.getCurrentNoteContent(existingFile);
+            const openView = this.host.getMarkdownViewForFile(existingFile);
+            if (openView) {
+                await this.host.syncIndexNoteLeafMode(openView.leaf);
+                if (openView.getViewData() !== nextContent) {
+                    openView.setViewData(nextContent, false);
+                }
+                if (currentContent !== nextContent) {
+                    await openView.save();
+                }
+                if (openView.getMode() === "preview") {
+                    openView.previewMode.rerender(true);
+                }
             }
-            if (openView.getMode() === "preview") {
-                openView.previewMode.rerender(true);
+
+            if (shouldSkipAggregateViewRefresh(currentContent, nextContent, !!openView)) {
+                void this.host.log?.("info", "index", "index.refresh.success", {
+                    commentCount: comments.length,
+                    skippedViewRefresh: true,
+                });
+                return;
             }
-        }
 
-        if (shouldSkipAggregateViewRefresh(currentContent, nextContent, !!openView)) {
-            return;
-        }
+            if (!openView) {
+                await this.host.app.vault.modify(existingFile, nextContent);
+            }
 
-        if (openView) {
-            return;
+            void this.host.log?.("info", "index", "index.refresh.success", {
+                commentCount: comments.length,
+                skippedViewRefresh: false,
+            });
+        } catch (error) {
+            void this.host.log?.("error", "index", "index.refresh.error", {
+                error,
+            });
+            throw error;
         }
-
-        await this.host.app.vault.modify(existingFile, nextContent);
     }
 }

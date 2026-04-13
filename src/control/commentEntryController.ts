@@ -16,6 +16,7 @@ export interface CommentEntryHost {
     createCommentId(): string;
     hashText(text: string): Promise<string>;
     showNotice(message: string): void;
+    log?(level: "info" | "warn" | "error", area: string, event: string, payload?: Record<string, unknown>): Promise<void>;
 }
 
 export class CommentEntryController {
@@ -80,6 +81,11 @@ export class CommentEntryController {
         };
         this.host.markDraftFileActive(commentFile);
         await this.host.setDraftComment(draft, hostFilePath ?? comment.filePath);
+        void this.host.log?.("info", "draft", "draft.append.created", {
+            filePath: comment.filePath,
+            threadId,
+            commentId: draft.id,
+        });
         await this.host.activateViewAndHighlightComment(draft.id);
         return true;
     }
@@ -101,6 +107,11 @@ export class CommentEntryController {
         const draft = await this.buildDraftComment(selection);
         this.host.markDraftFileActive(selection.file);
         await this.host.setDraftComment(draft, selection.file.path);
+        void this.host.log?.("info", "draft", selection.anchorKind === "page" ? "draft.page.created" : "draft.selection.created", {
+            filePath: selection.file.path,
+            commentId: draft.id,
+            anchorKind: draft.anchorKind,
+        });
         await this.host.activateViewAndHighlightComment(draft.id);
         return true;
     }

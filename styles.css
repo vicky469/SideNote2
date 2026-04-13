@@ -208,12 +208,13 @@
 }
 
 .sidenote2-view-container {
+    position: relative;
     height: 100%;
     overflow-y: auto;
 }
 
 .sidenote2-comments-container {
-    padding: 8px 8px 56px;
+    padding: 8px 8px 72px;
 }
 
 .sidenote2-sidebar-toolbar {
@@ -554,6 +555,42 @@
 .sidenote2-toolbar-icon-button.is-active {
     color: var(--icon-color-hover, var(--text-normal));
     opacity: 1;
+}
+
+.sidenote2-support-button-slot {
+    position: sticky;
+    bottom: 32px;
+    z-index: 3;
+    display: flex;
+    justify-content: flex-end;
+    padding: 0 10px;
+    pointer-events: none;
+}
+
+.sidenote2-support-button {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 34px;
+    height: 34px;
+    border: 1px solid color-mix(in srgb, var(--background-modifier-border) 68%, transparent);
+    border-radius: 999px;
+    background: color-mix(in srgb, var(--background-primary) 88%, var(--background-secondary) 12%);
+    color: var(--icon-color, var(--text-muted));
+    box-shadow: 0 8px 24px color-mix(in srgb, var(--background-modifier-box-shadow) 18%, transparent);
+    pointer-events: auto;
+}
+
+.sidenote2-support-button svg {
+    width: 15px;
+    height: 15px;
+}
+
+.sidenote2-support-button:hover,
+.sidenote2-support-button:focus-visible {
+    color: var(--icon-color-hover, var(--text-normal));
+    border-color: color-mix(in srgb, var(--interactive-accent) 32%, var(--background-modifier-border) 68%);
+    background: color-mix(in srgb, var(--background-primary) 80%, var(--interactive-accent) 20%);
 }
 
 .sidenote2-comment-section-add-button svg {
@@ -1111,6 +1148,456 @@
     height: auto;
     padding: 2px 0 0;
     text-align: left;
+}
+
+.sidenote2-support-report-modal {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.sidenote2-support-log-preview-modal {
+    display: flex;
+    flex: 1 1 auto;
+    flex-direction: column;
+    gap: 10px;
+    height: 100%;
+    min-height: 0;
+}
+
+.sidenote2-support-log-modal {
+    display: flex;
+    flex-direction: column;
+    width: min(96vw, 1680px);
+    max-width: 96vw;
+    height: min(92vh, 1200px);
+    max-height: 92vh;
+}
+
+.sidenote2-support-intro,
+.sidenote2-support-preview-note {
+    margin: 0;
+    color: var(--text-muted);
+    font-size: var(--font-ui-small);
+    line-height: 1.35;
+}
+
+.sidenote2-support-field,
+.sidenote2-support-textarea {
+    width: 100%;
+    border: 1px solid var(--background-modifier-border);
+    border-radius: 10px;
+    background: var(--background-primary);
+    color: var(--text-normal);
+    font-family: inherit;
+    font-size: var(--font-ui-small);
+}
+
+.sidenote2-support-field {
+    min-height: 36px;
+    padding: 8px 10px;
+}
+
+.sidenote2-support-textarea {
+    min-height: 132px;
+    padding: 10px 12px;
+    line-height: 1.45;
+    resize: vertical;
+}
+
+.sidenote2-support-attachments-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    margin-top: 4px;
+}
+
+.sidenote2-support-attachments-header h3 {
+    margin: 0;
+    font-size: var(--font-ui-small);
+}
+
+.sidenote2-support-attachments {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.sidenote2-support-attachment {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    padding: 10px 12px;
+    border: 1px solid var(--background-modifier-border);
+    border-radius: 12px;
+    background: var(--background-secondary);
+}
+
+.sidenote2-support-attachment-empty {
+    justify-content: flex-start;
+    color: var(--text-muted);
+    font-size: var(--font-ui-small);
+}
+
+.sidenote2-support-attachment-meta {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+    min-width: 0;
+}
+
+.sidenote2-support-attachment-meta strong,
+.sidenote2-support-attachment-meta span {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.sidenote2-support-attachment-meta span {
+    color: var(--text-muted);
+    font-size: var(--font-ui-small);
+}
+
+.sidenote2-support-attachment-actions {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.sidenote2-support-log-preview-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 8px;
+}
+
+.sidenote2-support-log-dev-panel {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    padding: 12px 14px;
+    border: 1px solid var(--background-modifier-border);
+    border-radius: 12px;
+    background: color-mix(in srgb, var(--background-secondary) 90%, var(--background-primary) 10%);
+}
+
+.sidenote2-support-log-dev-panel-header {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.sidenote2-support-log-dev-panel-header strong {
+    font-size: var(--font-ui-small);
+}
+
+.sidenote2-support-log-dev-panel-header span {
+    color: var(--text-muted);
+    font-size: var(--font-ui-small);
+    line-height: 1.35;
+}
+
+.sidenote2-support-log-dev-dropzone {
+    border: 1px dashed color-mix(in srgb, var(--background-modifier-border) 82%, transparent);
+    border-radius: 12px;
+    background: color-mix(in srgb, var(--background-primary) 86%, var(--background-secondary) 14%);
+    transition: border-color 120ms ease, background 120ms ease;
+}
+
+.sidenote2-support-log-dev-dropzone.is-active {
+    border-color: color-mix(in srgb, var(--interactive-accent) 42%, var(--background-modifier-border) 58%);
+    background: color-mix(in srgb, var(--interactive-accent) 10%, var(--background-primary) 90%);
+}
+
+.sidenote2-support-log-dev-input {
+    width: 100%;
+    min-height: 132px;
+    padding: 12px;
+    border: 0;
+    background: transparent;
+    color: var(--text-normal);
+    font-family: var(--font-monospace);
+    font-size: 12px;
+    line-height: 1.45;
+    resize: vertical;
+}
+
+.sidenote2-support-log-dev-input:focus {
+    outline: none;
+}
+
+.sidenote2-support-log-filter-bar {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
+}
+
+.sidenote2-support-log-filter-label {
+    color: var(--text-muted);
+    font-size: var(--font-ui-small);
+    font-weight: 600;
+}
+
+.sidenote2-support-log-filter-button {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 28px;
+    padding: 0 10px;
+    border: 1px solid var(--background-modifier-border);
+    border-radius: 999px;
+    background: var(--background-secondary);
+    color: var(--text-muted);
+    font-size: 12px;
+    font-weight: 600;
+}
+
+.sidenote2-support-log-filter-button:hover,
+.sidenote2-support-log-filter-button:focus-visible {
+    color: var(--text-normal);
+    border-color: color-mix(in srgb, var(--interactive-accent) 28%, var(--background-modifier-border) 72%);
+}
+
+.sidenote2-support-log-filter-button.is-active {
+    background: color-mix(in srgb, var(--interactive-accent) 18%, var(--background-primary) 82%);
+    color: var(--text-normal);
+    border-color: color-mix(in srgb, var(--interactive-accent) 38%, var(--background-modifier-border) 62%);
+}
+
+.sidenote2-support-log-summary {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 12px 14px;
+    border: 1px solid var(--background-modifier-border);
+    border-radius: 12px;
+    background:
+        linear-gradient(180deg,
+            color-mix(in srgb, var(--background-secondary) 92%, var(--interactive-accent) 8%) 0%,
+            var(--background-secondary) 100%);
+}
+
+.sidenote2-support-log-summary-meta {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    min-width: 0;
+}
+
+.sidenote2-support-log-summary-meta strong {
+    font-size: var(--font-ui-medium);
+}
+
+.sidenote2-support-log-summary-meta span {
+    color: var(--text-muted);
+    font-size: var(--font-ui-small);
+    line-height: 1.35;
+}
+
+.sidenote2-support-log-summary-badges {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    gap: 8px;
+}
+
+.sidenote2-support-log-summary-badge,
+.sidenote2-support-log-row-level,
+.sidenote2-support-log-row-kind {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 24px;
+    padding: 0 10px;
+    border: 1px solid transparent;
+    border-radius: 999px;
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.02em;
+    text-transform: uppercase;
+    user-select: text;
+    -webkit-user-select: text;
+}
+
+.sidenote2-support-log-summary-badge.is-info,
+.sidenote2-support-log-row-level.is-info {
+    border-color: color-mix(in srgb, #2e8bff 38%, var(--background-modifier-border) 62%);
+    background: color-mix(in srgb, #2e8bff 16%, var(--background-primary) 84%);
+    color: color-mix(in srgb, #2e8bff 72%, var(--text-normal) 28%);
+}
+
+.sidenote2-support-log-summary-badge.is-warn,
+.sidenote2-support-log-row-level.is-warn {
+    border-color: color-mix(in srgb, #f0a000 42%, var(--background-modifier-border) 58%);
+    background: color-mix(in srgb, #f0a000 18%, var(--background-primary) 82%);
+    color: color-mix(in srgb, #f0a000 82%, var(--text-normal) 18%);
+}
+
+.sidenote2-support-log-summary-badge.is-error,
+.sidenote2-support-log-row-level.is-error {
+    border-color: color-mix(in srgb, #d94b4b 42%, var(--background-modifier-border) 58%);
+    background: color-mix(in srgb, #d94b4b 18%, var(--background-primary) 82%);
+    color: color-mix(in srgb, #d94b4b 78%, var(--text-normal) 22%);
+}
+
+.sidenote2-support-log-summary-badge.is-user,
+.sidenote2-support-log-row-kind.is-user {
+    border-color: color-mix(in srgb, #0e8f6f 42%, var(--background-modifier-border) 58%);
+    background: color-mix(in srgb, #0e8f6f 16%, var(--background-primary) 84%);
+    color: color-mix(in srgb, #0e8f6f 78%, var(--text-normal) 22%);
+}
+
+.sidenote2-support-log-summary-badge.is-system,
+.sidenote2-support-log-row-kind.is-system {
+    border-color: color-mix(in srgb, #7b61ff 38%, var(--background-modifier-border) 62%);
+    background: color-mix(in srgb, #7b61ff 14%, var(--background-primary) 86%);
+    color: color-mix(in srgb, #7b61ff 74%, var(--text-normal) 26%);
+}
+
+.sidenote2-support-log-table-wrap {
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow: auto;
+    border: 1px solid var(--background-modifier-border);
+    border-radius: 12px;
+    background: var(--background-primary);
+}
+
+.sidenote2-support-log-table {
+    width: 100%;
+    border-collapse: separate;
+    border-spacing: 0;
+}
+
+.sidenote2-support-log-table thead th {
+    position: sticky;
+    top: 0;
+    z-index: 1;
+    padding: 10px 12px;
+    border-bottom: 1px solid var(--background-modifier-border);
+    background: color-mix(in srgb, var(--background-primary) 92%, var(--background-secondary) 8%);
+    color: var(--text-muted);
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    text-align: left;
+    text-transform: uppercase;
+}
+
+.sidenote2-support-log-table tbody td {
+    padding: 10px 12px;
+    border-bottom: 1px solid color-mix(in srgb, var(--background-modifier-border) 62%, transparent);
+    vertical-align: top;
+}
+
+.sidenote2-support-log-table tbody tr:last-child td {
+    border-bottom: none;
+}
+
+.sidenote2-support-log-table tbody tr.is-info {
+    background: color-mix(in srgb, #2e8bff 4%, var(--background-primary) 96%);
+}
+
+.sidenote2-support-log-table tbody tr.is-warn {
+    background: color-mix(in srgb, #f0a000 5%, var(--background-primary) 95%);
+}
+
+.sidenote2-support-log-table tbody tr.is-error {
+    background: color-mix(in srgb, #d94b4b 6%, var(--background-primary) 94%);
+}
+
+.sidenote2-support-log-row-time {
+    display: inline-block;
+    min-width: 86px;
+    color: var(--text-muted);
+    font-family: var(--font-monospace);
+    font-size: 12px;
+}
+
+.sidenote2-support-log-row-area {
+    display: inline-block;
+    color: var(--text-muted);
+    font-size: 12px;
+    font-weight: 600;
+    letter-spacing: 0.01em;
+    text-transform: uppercase;
+}
+
+.sidenote2-support-log-row-event {
+    display: inline-block;
+    color: var(--text-normal);
+    font-family: var(--font-monospace);
+    font-size: 12px;
+    font-weight: 600;
+    overflow-wrap: anywhere;
+}
+
+.sidenote2-support-log-row-details {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+}
+
+.sidenote2-support-log-row-token {
+    display: inline-flex;
+    align-items: center;
+    max-width: 100%;
+    padding: 5px 8px;
+    border: 1px solid color-mix(in srgb, var(--background-modifier-border) 78%, transparent);
+    border-radius: 10px;
+    background: color-mix(in srgb, var(--background-secondary) 88%, var(--background-primary) 12%);
+    color: var(--text-muted);
+    font-family: var(--font-monospace);
+    font-size: 11px;
+    line-height: 1.35;
+    overflow-wrap: anywhere;
+}
+
+.sidenote2-support-log-row-token.is-empty {
+    color: var(--text-faint);
+}
+
+.sidenote2-support-empty-log-state {
+    padding: 16px;
+    border: 1px dashed var(--background-modifier-border);
+    border-radius: 12px;
+    color: var(--text-muted);
+    font-size: var(--font-ui-small);
+    text-align: center;
+}
+
+.sidenote2-support-log-preview {
+    width: 100%;
+    flex: 1 1 auto;
+    min-height: 0;
+    padding: 12px;
+    overflow: auto;
+    border: 1px solid var(--background-modifier-border);
+    border-radius: 12px;
+    background: var(--background-primary);
+    color: var(--text-normal);
+    font-family: var(--font-monospace);
+    font-size: 12px;
+    line-height: 1.45;
+    resize: vertical;
+    cursor: text;
+    user-select: text;
+    -webkit-user-select: text;
+}
+
+.sidenote2-support-log-preview-raw {
+    white-space: pre;
+}
+
+.sidenote2-support-image-preview {
+    display: block;
+    max-width: 100%;
+    height: auto;
+    margin: 0 auto;
+    border-radius: 12px;
 }
 
 .sidenote2-highlight {

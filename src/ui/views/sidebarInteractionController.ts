@@ -41,6 +41,7 @@ export interface SidebarInteractionHost {
     revealComment(comment: Comment): Promise<void>;
     getPreferredFileLeaf(): WorkspaceLeaf | null;
     openLinkText(href: string, sourcePath: string): Promise<void>;
+    log?(level: "info" | "warn" | "error", area: string, event: string, payload?: Record<string, unknown>): Promise<void>;
 }
 
 export class SidebarInteractionController {
@@ -157,12 +158,18 @@ export class SidebarInteractionController {
             const commentEl = this.host.containerEl.querySelector(`[data-comment-id="${commentId}"], [data-draft-id="${commentId}"]`);
             if (commentEl) {
                 commentEl.scrollIntoView({ behavior: "smooth", block: "center" });
+                void this.host.log?.("info", "sidebar", "sidebar.draft.scrollIntoView", {
+                    commentId,
+                });
             }
         });
     }
 
     public async highlightAndFocusDraft(commentId: string): Promise<void> {
         this.activeCommentId = commentId;
+        void this.host.log?.("info", "sidebar", "sidebar.focus.requested", {
+            commentId,
+        });
 
         const draftEl = this.host.containerEl.querySelector(`[data-draft-id="${commentId}"]`);
         const persistedEl = this.host.containerEl.querySelector(`[data-comment-id="${commentId}"]`);
@@ -181,6 +188,9 @@ export class SidebarInteractionController {
 
         if (commentEl) {
             commentEl.scrollIntoView({ behavior: "smooth", block: "center" });
+            void this.host.log?.("info", "sidebar", "sidebar.draft.scrollIntoView", {
+                commentId,
+            });
         }
         this.scheduleDraftFocus(commentId);
     }
@@ -189,7 +199,13 @@ export class SidebarInteractionController {
         const commentEl = this.host.containerEl.querySelector(`[data-draft-id="${commentId}"]`);
         if (commentEl) {
             commentEl.scrollIntoView({ behavior: "smooth", block: "center" });
+            void this.host.log?.("info", "sidebar", "sidebar.draft.scrollIntoView", {
+                commentId,
+            });
         }
+        void this.host.log?.("info", "sidebar", "sidebar.focus.requested", {
+            commentId,
+        });
         this.scheduleDraftFocus(commentId);
     }
 

@@ -114,6 +114,7 @@ export default class SideNote2View extends ItemView {
             revealComment: (comment) => this.plugin.revealComment(comment),
             getPreferredFileLeaf: () => this.plugin.getPreferredFileLeaf(),
             openLinkText: (href, sourcePath) => this.app.workspace.openLinkText(href, sourcePath, false),
+            log: (level, area, event, payload) => this.plugin.logEvent(level, area, event, payload),
         });
         this.draftEditorController = new SidebarDraftEditorController({
             getAllIndexedComments: () => this.plugin.getAllIndexedComments(),
@@ -160,12 +161,20 @@ export default class SideNote2View extends ItemView {
         const nextMode = parseIndexSidebarMode(state.indexSidebarMode);
         if (nextMode && nextMode !== this.indexSidebarMode) {
             this.indexSidebarMode = nextMode;
+            void this.plugin.logEvent("info", "index", "index.mode.changed", {
+                mode: nextMode,
+                source: "view-state",
+            });
             shouldRender = true;
         }
 
         const nextRootPath = resolveIndexFileFilterRootPathFromState(state);
         if (nextRootPath !== undefined && nextRootPath !== this.selectedIndexFileFilterRootPath) {
             this.selectedIndexFileFilterRootPath = nextRootPath;
+            void this.plugin.logEvent("info", "index", "index.filter.changed", {
+                rootFilePath: nextRootPath,
+                source: "view-state",
+            });
             shouldRender = true;
         }
 
@@ -333,6 +342,9 @@ export default class SideNote2View extends ItemView {
                 };
             const renderedItems = limitedComments.visibleItems;
             const commentsContainer = this.containerEl.createDiv("sidenote2-comments-container");
+            const supportThreadCount = isAllCommentsView
+                ? persistedThreads.length
+                : this.plugin.getThreadsForFile(file.path).length;
 
             this.renderSidebarToolbar(commentsContainer, {
                 isAllCommentsView,
@@ -367,6 +379,13 @@ export default class SideNote2View extends ItemView {
                 await this.renderThoughtTrail(commentsContainer, trailComments, file, {
                     hasFileFilter: filteredIndexFilePaths.length > 0,
                 });
+                if (this.plugin.isLocalRuntime()) {
+                    this.renderSupportButton({
+                        filePath: file.path,
+                        isAllCommentsView,
+                        threadCount: supportThreadCount,
+                    });
+                }
                 return;
             }
 
@@ -431,6 +450,16 @@ export default class SideNote2View extends ItemView {
             const emptyStateEl = this.containerEl.createDiv("sidenote2-empty-state");
             emptyStateEl.createEl("p", { text: "No file selected." });
             emptyStateEl.createEl("p", { text: "Open a file to see its comments." });
+        }
+
+        if (this.plugin.isLocalRuntime()) {
+            this.renderSupportButton({
+                filePath: file?.path ?? null,
+                isAllCommentsView,
+                threadCount: file
+                    ? (isAllCommentsView ? this.plugin.getAllIndexedThreads().length : this.plugin.getThreadsForFile(file.path).length)
+                    : 0,
+            });
         }
     }
 
@@ -621,6 +650,10 @@ export default class SideNote2View extends ItemView {
                 }
 
                 this.indexSidebarMode = "list";
+                void this.plugin.logEvent("info", "index", "index.mode.changed", {
+                    mode: "list",
+                    source: "toolbar",
+                });
                 void this.renderComments();
             },
         });
@@ -634,6 +667,10 @@ export default class SideNote2View extends ItemView {
                 }
 
                 this.indexSidebarMode = "thought-trail";
+                void this.plugin.logEvent("info", "index", "index.mode.changed", {
+                    mode: "thought-trail",
+                    source: "toolbar",
+                });
                 void this.renderComments();
             },
         });
@@ -717,6 +754,10 @@ export default class SideNote2View extends ItemView {
         }
 
         this.selectedIndexFileFilterRootPath = normalizedRootPath;
+        void this.plugin.logEvent("info", "index", "index.filter.changed", {
+            rootFilePath: normalizedRootPath,
+            source: "sidebar",
+        });
         this.interactionController.clearActiveState();
         await this.renderComments();
     }
@@ -724,7 +765,32 @@ export default class SideNote2View extends ItemView {
     private ensureListModeForIndexCommentFocus(): void {
         if (this.file && this.plugin.isAllCommentsNotePath(this.file.path) && this.indexSidebarMode !== "list") {
             this.indexSidebarMode = "list";
+            void this.plugin.logEvent("info", "index", "index.mode.changed", {
+                mode: "list",
+                source: "comment-focus",
+            });
         }
+    }
+
+    private renderSupportButton(options: {
+        filePath: string | null;
+        isAllCommentsView: boolean;
+        threadCount: number;
+    }): void {
+        const slot = this.containerEl.createDiv("sidenote2-support-button-slot");
+        const button = slot.createEl("button", {
+            cls: "clickable-icon sidenote2-support-button",
+        });
+        button.setAttribute("type", "button");
+        button.setAttribute("aria-label", "Open SideNote2 log inspector");
+        setIcon(button, "life-buoy");
+        button.onclick = () => {
+            void this.plugin.openSupportLogInspectorModal({
+                filePath: options.filePath,
+                surface: options.isAllCommentsView ? "index" : "note",
+                threadCount: options.threadCount,
+            });
+        };
     }
 
     private renderCommentsList(container: HTMLElement): HTMLDivElement {

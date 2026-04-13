@@ -23,7 +23,6 @@ function printMainUsage(stream = process.stderr) {
             "  comment:update  Update one stored SideNote2 comment body in a note",
             "  comment:resolve  Mark one SideNote2 comment thread as resolved in a note",
             "  install-skill   Copy bundled SideNote2 Codex skill(s) into the Codex skills directory",
-            "  uninstall-agent-support  Remove SideNote2 AGENTS routing from a vault and uninstall bundled skills",
             "",
             "Run `sidenote2 <command> --help` for command-specific usage.",
         ].join("\n") + "\n",
@@ -92,23 +91,6 @@ function printSkillUsage(command, stream = process.stderr) {
             "Defaults:",
             "  installs all bundled skills when --name is omitted",
             "  --dest defaults to $CODEX_HOME/skills or ~/.codex/skills",
-        ].join("\n") + "\n",
-    );
-}
-
-function printUninstallAgentSupportUsage(stream = process.stderr) {
-    stream.write(
-        [
-            "Usage:",
-            "  sidenote2 uninstall-agent-support (--vault-root <vault-dir> | --vault <vault-name>) [--skills-root <skills-root>]",
-            "",
-            "Defaults:",
-            "  --skills-root defaults to $CODEX_HOME/skills or ~/.codex/skills",
-            "",
-            "Examples:",
-            "  sidenote2 uninstall-agent-support --vault-root /path/to/vault",
-            "  sidenote2 uninstall-agent-support --vault public",
-            "  sidenote2 uninstall-agent-support --vault-root /path/to/vault --skills-root /tmp/skills",
         ].join("\n") + "\n",
     );
 }
@@ -255,44 +237,6 @@ function parseSkillArgs(argv) {
     return options;
 }
 
-function parseUninstallAgentSupportArgs(argv) {
-    const options = {
-        vaultRoot: "",
-        vaultName: "",
-        skillsRoot: getDefaultSkillsRoot(),
-    };
-
-    for (let index = 0; index < argv.length; index += 1) {
-        const arg = argv[index];
-        switch (arg) {
-            case "--vault-root":
-                options.vaultRoot = argv[index + 1] ?? "";
-                index += 1;
-                break;
-            case "--vault":
-                options.vaultName = argv[index + 1] ?? "";
-                index += 1;
-                break;
-            case "--skills-root":
-                options.skillsRoot = path.resolve(process.cwd(), argv[index + 1] ?? "");
-                index += 1;
-                break;
-            case "--help":
-            case "-h":
-                return null;
-            default:
-                throw new Error(`Unknown argument: ${arg}`);
-        }
-    }
-
-    const targetCount = [Boolean(options.vaultRoot), Boolean(options.vaultName)].filter(Boolean).length;
-    if (targetCount !== 1) {
-        throw new Error("Expected exactly one of --vault-root or --vault.");
-    }
-
-    return options;
-}
-
 function getDefaultSkillsRoot() {
     const codexHome = process.env.CODEX_HOME?.trim();
     return codexHome
@@ -434,8 +378,6 @@ async function loadCommentBody(options) {
 }
 
 const COMMENT_LOCATION_PROTOCOL = "side-note2-comment";
-const VAULT_AGENTS_MANAGED_BLOCK_START_PREFIX = "<!-- SideNote2 managed AGENTS start";
-const VAULT_AGENTS_MANAGED_BLOCK_END = "<!-- SideNote2 managed AGENTS end -->";
 
 function parseCommentProtocolUri(uri) {
     try {
@@ -511,14 +453,6 @@ async function resolveVaultRootByName(vaultName) {
     return matchingVaultRoots[0];
 }
 
-async function resolveVaultRootForAgentSupport(options) {
-    if (options.vaultRoot) {
-        return path.resolve(process.cwd(), options.vaultRoot);
-    }
-
-    return resolveVaultRootByName(options.vaultName);
-}
-
 function resolveVaultRelativeNotePath(vaultRoot, filePath) {
     const resolvedNotePath = path.resolve(vaultRoot, filePath);
     const relativePath = path.relative(vaultRoot, resolvedNotePath);
@@ -582,79 +516,6 @@ async function getBundledSkills() {
     }
 
     return { repoRoot, skillDirectories };
-}
-
-function normalizeTextLineEndings(content) {
-    return content.replace(/\r\n/g, "\n");
-}
-
-function findVaultAgentsManagedBlockRange(content) {
-    const normalizedContent = normalizeTextLineEndings(content);
-    const start = normalizedContent.indexOf(VAULT_AGENTS_MANAGED_BLOCK_START_PREFIX);
-    if (start === -1) {
-        return null;
-    }
-
-    const endMarkerStart = normalizedContent.indexOf(VAULT_AGENTS_MANAGED_BLOCK_END, start);
-    if (endMarkerStart === -1) {
-        return null;
-    }
-
-    let end = endMarkerStart + VAULT_AGENTS_MANAGED_BLOCK_END.length;
-    if (normalizedContent.charAt(end) === "\n") {
-        end += 1;
-    }
-
-    return { start, end };
-}
-
-function isLegacyManagedVaultAgentsFileContent(content) {
-    const normalizedContent = normalizeTextLineEndings(content).trim();
-    return normalizedContent.startsWith("# SideNote2 Vault Agent Routing")
-        && normalizedContent.includes("When a user is working with real SideNote2 comments in this vault:")
-        && normalizedContent.includes("obsidian://side-note2-comment?...");
-}
-
-function removeManagedBlockFromDocument(existingContent, blockRange) {
-    const normalizedContent = normalizeTextLineEndings(existingContent);
-    const before = normalizedContent.slice(0, blockRange.start).replace(/\s+$/u, "");
-    const after = normalizedContent.slice(blockRange.end).replace(/^\s+/u, "");
-
-    if (!before && !after) {
-        return "";
-    }
-
-    if (!before) {
-        return `${after}\n`;
-    }
-
-    if (!after) {
-        return `${before}\n`;
-    }
-
-    return `${before}\n\n${after}\n`;
-}
-
-function stripSideNote2ManagedAgentsContent(existingContent) {
-    const managedBlockRange = findVaultAgentsManagedBlockRange(existingContent);
-    if (managedBlockRange) {
-        return {
-            kind: "removed",
-            nextContent: removeManagedBlockFromDocument(existingContent, managedBlockRange),
-        };
-    }
-
-    if (isLegacyManagedVaultAgentsFileContent(existingContent)) {
-        return {
-            kind: "removed",
-            nextContent: "",
-        };
-    }
-
-    return {
-        kind: "noop",
-        nextContent: normalizeTextLineEndings(existingContent),
-    };
 }
 
 async function loadStorageModule(repoRoot) {
@@ -904,65 +765,6 @@ async function runInstallSkill(argv, streamOut, streamErr) {
     return 0;
 }
 
-async function runUninstallAgentSupport(argv, streamOut, streamErr) {
-    let options;
-    try {
-        options = parseUninstallAgentSupportArgs(argv);
-    } catch (error) {
-        streamErr.write(`${error instanceof Error ? error.message : String(error)}\n`);
-        printUninstallAgentSupportUsage(streamErr);
-        return 1;
-    }
-
-    if (options === null) {
-        printUninstallAgentSupportUsage(streamOut);
-        return 0;
-    }
-
-    const vaultRoot = await resolveVaultRootForAgentSupport(options);
-    const vaultAgentsPath = path.join(vaultRoot, "AGENTS.md");
-    let agentsResult = "No AGENTS.md found.";
-
-    if (await pathExists(vaultAgentsPath)) {
-        const existingAgentsContent = await readFile(vaultAgentsPath, "utf8");
-        const stripResult = stripSideNote2ManagedAgentsContent(existingAgentsContent);
-        if (stripResult.kind === "removed") {
-            if (stripResult.nextContent.trim().length === 0) {
-                await rm(vaultAgentsPath, { force: true });
-                agentsResult = `Removed SideNote2 AGENTS.md content and deleted ${vaultAgentsPath}.`;
-            } else {
-                await writeFileAtomically(vaultAgentsPath, stripResult.nextContent);
-                agentsResult = `Removed the SideNote2-managed AGENTS block from ${vaultAgentsPath}.`;
-            }
-        } else {
-            agentsResult = `No SideNote2-managed AGENTS block found in ${vaultAgentsPath}.`;
-        }
-    }
-
-    const { skillDirectories } = await getBundledSkills();
-    const removedSkillNames = [];
-    for (const skillName of [...skillDirectories.keys()].sort((left, right) => left.localeCompare(right))) {
-        const destinationDir = path.join(options.skillsRoot, skillName);
-        if (!(await pathExists(destinationDir))) {
-            continue;
-        }
-
-        await rm(destinationDir, { recursive: true, force: true });
-        removedSkillNames.push(skillName);
-    }
-
-    streamOut.write(`${agentsResult}\n`);
-    if (removedSkillNames.length > 0) {
-        for (const skillName of removedSkillNames) {
-            streamOut.write(`Removed skill ${skillName} from ${path.join(options.skillsRoot, skillName)}\n`);
-        }
-    } else {
-        streamOut.write(`No bundled SideNote2 skills found under ${options.skillsRoot}\n`);
-    }
-    streamOut.write("Restart Codex to drop any cached skills.\n");
-    return 0;
-}
-
 export {
     createContentFingerprint,
     writeObservedNoteSafely,
@@ -979,8 +781,6 @@ export async function runCli(argv, io = { stdout: process.stdout, stderr: proces
             return runCommentResolve(rest, io.stdout, io.stderr);
         case "install-skill":
             return runInstallSkill(rest, io.stdout, io.stderr);
-        case "uninstall-agent-support":
-            return runUninstallAgentSupport(rest, io.stdout, io.stderr);
         case "--help":
         case "-h":
         case undefined:

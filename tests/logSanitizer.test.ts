@@ -1,0 +1,45 @@
+import * as assert from "node:assert/strict";
+import test from "node:test";
+import { sanitizeErrorForLog, sanitizeLogPayload } from "../src/logs/logSanitizer";
+
+const context = {
+    vaultRootPath: "/Users/tester/Vault",
+    pluginDirPath: "/Users/tester/Vault/.obsidian/plugins/side-note2",
+    pluginDirRelativePath: ".obsidian/plugins/side-note2",
+};
+
+test("sanitizeLogPayload scrubs absolute paths and omits disallowed raw-text fields", () => {
+    const payload = sanitizeLogPayload({
+        filePath: "/Users/tester/Vault/Folder/Note.md",
+        logPath: "/Users/tester/Vault/.obsidian/plugins/side-note2/logs/2026-04-13.jsonl",
+        noteContent: "# Hidden",
+        comment: "Do not store this body",
+        selectedText: "secret selection",
+        nested: {
+            path: "/Users/tester/Vault/Folder/Child.md",
+            body: "remove me",
+        },
+        message: "Failed near /Users/tester/Vault/Folder/Note.md",
+    }, context);
+
+    assert.deepEqual(payload, {
+        filePath: "Folder/Note.md",
+        logPath: ".obsidian/plugins/side-note2/logs/2026-04-13.jsonl",
+        nested: {
+            path: "Folder/Child.md",
+        },
+        message: "Failed near Folder/Note.md",
+    });
+});
+
+test("sanitizeErrorForLog keeps concise error metadata and removes absolute paths", () => {
+    const payload = sanitizeErrorForLog(
+        new Error("Unable to read /Users/tester/Vault/Folder/Note.md"),
+        context,
+    );
+
+    assert.deepEqual(payload, {
+        name: "Error",
+        message: "Unable to read Folder/Note.md",
+    });
+});

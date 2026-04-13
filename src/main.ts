@@ -1,5 +1,6 @@
 import { addIcon, WorkspaceLeaf, TFile, Notice, Plugin, normalizePath, MarkdownView, FileSystemAdapter, type Editor } from "obsidian";
 import type { EditorView } from "@codemirror/view";
+import { dirname } from "path";
 import { Comment, CommentManager, CommentThread, type ReorderPlacement } from "./commentManager";
 import { CommentEntryController } from "./control/commentEntryController";
 import { CommentHighlightController } from "./control/commentHighlightController";
@@ -14,7 +15,6 @@ import { PluginLifecycleController } from "./control/pluginLifecycleController";
 import { PluginRegistrationController } from "./control/pluginRegistrationController";
 import { WorkspaceContextController } from "./control/workspaceContextController";
 import { WorkspaceViewController } from "./control/workspaceViewController";
-import { VaultAgentsFileController } from "./control/vaultAgentsFileController";
 import { DraftComment, DraftSelection } from "./domain/drafts";
 import { parsePromptDeleteSetting } from "./core/config/appConfig";
 import { DerivedCommentMetadataManager } from "./core/derived/derivedCommentMetadata";
@@ -25,8 +25,12 @@ import { ParsedNoteCache } from "./cache/ParsedNoteCache";
 import { parseNoteComments, ParsedNoteComments } from "./core/storage/noteCommentStorage";
 import SideNote2SettingTab, { DEFAULT_SETTINGS, SideNote2Settings } from "./ui/settings/SideNote2SettingTab";
 import { SIDE_NOTE2_ICON_ID, SIDE_NOTE2_ICON_SVG } from "./ui/sideNote2Icon";
+import SupportLogInspectorModal from "./ui/modals/SupportLogInspectorModal";
 import SideNote2View from "./ui/views/SideNote2View";
-import { debugLog, initializeDebug, setDebugEnabled } from "./debug";
+import {
+    SideNote2LogService,
+    type SideNote2LogLevel,
+} from "./logs/logService";
 
 // Helper function to generate SHA256 hash using Web Crypto API (works on mobile)
 async function generateHash(text: string): Promise<string> {
@@ -45,6 +49,9 @@ function generateCommentId(): string {
 export default class SideNote2 extends Plugin {
     commentManager!: CommentManager;
     settings: SideNote2Settings = DEFAULT_SETTINGS;
+    private logService: SideNote2LogService | null = null;
+    private supportLogLocationAvailable: boolean | null = null;
+    private runtime: "local" | "release" = "release";
     private readonly workspaceViewController: WorkspaceViewController = new WorkspaceViewController({
         app: this.app,
         isSidebarSupportedFile: (file): file is TFile => isSidebarSupportedFile(file, this.getAllCommentsNotePath()),
@@ -72,8 +79,9 @@ export default class SideNote2 extends Plugin {
         createCommentId: () => generateCommentId(),
         hashText: (text) => generateHash(text),
         showNotice: (message) => {
-            new Notice(message);
+            this.showNotice(message, "draft", "draft.notice");
         },
+        log: (level, area, event, payload) => this.logEvent(level, area, event, payload),
     });
     private readonly commentHighlightController = new CommentHighlightController({
         app: this.app,
@@ -116,9 +124,10 @@ export default class SideNote2 extends Plugin {
         activateViewAndHighlightComment: (commentId) => this.activateViewAndHighlightComment(commentId),
         hashText: (text) => generateHash(text),
         showNotice: (message) => {
-            new Notice(message);
+            this.showNotice(message, "draft", "draft.notice");
         },
         now: () => Date.now(),
+        log: (level, area, event, payload) => this.logEvent(level, area, event, payload),
     });
     private readonly derivedCommentMetadataManager = new DerivedCommentMetadataManager(this.app);
     private readonly commentNavigationController = new CommentNavigationController({
@@ -133,8 +142,9 @@ export default class SideNote2 extends Plugin {
         loadCommentsForFile: (file) => this.loadCommentsForFile(file),
         getLoadedCommentById: (commentId) => this.commentManager.getCommentById(commentId),
         showNotice: (message) => {
-            new Notice(message);
+            this.showNotice(message, "navigation", "navigation.notice");
         },
+        log: (level, area, event, payload) => this.logEvent(level, area, event, payload),
     });
     private readonly commentPersistenceController: CommentPersistenceController = new CommentPersistenceController({
         app: this.app,
@@ -160,6 +170,7 @@ export default class SideNote2 extends Plugin {
         getCommentMentionedPageLabels: (comment) => this.getCommentMentionedPageLabels(comment),
         syncIndexNoteLeafMode: (leaf) => this.syncIndexNoteLeafMode(leaf),
         saveSettings: () => this.saveSettings(),
+        log: (level, area, event, payload) => this.logEvent(level, area, event, payload),
     });
     private readonly indexNoteSettingsController = new IndexNoteSettingsController({
         app: this.app,
@@ -182,7 +193,7 @@ export default class SideNote2 extends Plugin {
         loadData: () => this.loadData(),
         saveData: (data) => this.saveData(data),
         showNotice: (message) => {
-            new Notice(message);
+            this.showNotice(message, "index", "index.notice");
         },
     });
     private readonly pluginLifecycleController = new PluginLifecycleController({
@@ -206,27 +217,9 @@ export default class SideNote2 extends Plugin {
         scheduleTimer: (callback, ms) => window.setTimeout(callback, ms),
         clearTimer: (timerId) => window.clearTimeout(timerId),
         warn: (message, error) => {
-            console.warn(message, error);
+            this.warn(message, error, "startup", "startup.warn");
         },
-    });
-    private readonly vaultAgentsFileController = new VaultAgentsFileController({
-        getVaultAgentsFileContext: () => ({
-            vaultName: this.app.vault.getName(),
-            vaultRootPath: this.app.vault.adapter instanceof FileSystemAdapter
-                ? this.app.vault.adapter.getBasePath()
-                : null,
-            pluginVersion: this.manifest.version,
-        }),
-        vaultRootFileExists: (relativePath) => this.app.vault.adapter.exists(relativePath),
-        readVaultRootFile: (relativePath) => this.app.vault.adapter.read(relativePath),
-        writeVaultRootFile: (relativePath, content) => this.app.vault.adapter.write(relativePath, content),
-        deleteVaultRootFile: (relativePath) => this.app.vault.adapter.remove(relativePath),
-        showNotice: (message) => {
-            new Notice(message);
-        },
-        warn: (message, error) => {
-            console.warn(message, error);
-        },
+        log: (level, area, event, payload) => this.logEvent(level, area, event, payload),
     });
     private readonly pluginRegistrationController = new PluginRegistrationController({
         manifestId: this.manifest.id,
@@ -254,8 +247,6 @@ export default class SideNote2 extends Plugin {
             this.commentEntryController.startDraftFromEditorSelection(editor as unknown as Editor, file),
         highlightCommentById: (filePath, commentId) => this.highlightCommentById(filePath, commentId),
         openIndexNote: () => this.openIndexNote(),
-        installVaultAgentsFile: () => this.installVaultAgentsFile(),
-        uninstallVaultAgentsFile: () => this.uninstallVaultAgentsFile(),
     });
     private readonly workspaceContextController = new WorkspaceContextController({
         app: this.app,
@@ -276,14 +267,49 @@ export default class SideNote2 extends Plugin {
     private activeSidebarFile: TFile | null = null;
     private aggregateCommentIndex = new AggregateCommentIndex();
     private parsedNoteCache = new ParsedNoteCache(20);
+
+    private async detectRuntimeMode(): Promise<"local" | "release"> {
+        const pluginRootRelativePath = normalizePath(`${this.app.vault.configDir}/plugins/${this.manifest.id}`);
+        const packageJsonPath = normalizePath(`${pluginRootRelativePath}/package.json`);
+        const sourceEntryPath = normalizePath(`${pluginRootRelativePath}/src/main.ts`);
+
+        try {
+            const [hasPackageJson, hasSourceEntry] = await Promise.all([
+                this.app.vault.adapter.exists(packageJsonPath),
+                this.app.vault.adapter.exists(sourceEntryPath),
+            ]);
+            return hasPackageJson && hasSourceEntry ? "local" : "release";
+        } catch {
+            return "release";
+        }
+    }
+
     async onload() {
-        initializeDebug();
-        debugLog("plugin.onload", { version: this.manifest.version });
+        this.runtime = await this.detectRuntimeMode();
+        this.logService = new SideNote2LogService({
+            adapter: this.app.vault.adapter,
+            pluginVersion: this.manifest.version,
+            pluginDirPath: this.manifest.dir ?? normalizePath(`${this.app.vault.configDir}/plugins/${this.manifest.id}`),
+            pluginDirRelativePath: normalizePath(`${this.app.vault.configDir}/plugins/${this.manifest.id}`),
+            vaultRootPath: this.app.vault.adapter instanceof FileSystemAdapter
+                ? this.app.vault.adapter.getBasePath()
+                : null,
+        });
+        await this.logService.initialize();
+        console.info(`[SideNote2] runtime=${this.runtime}`, {
+            pluginVersion: this.manifest.version,
+        });
+        await this.logEvent("info", "startup", "startup.load.begin", {
+            runtime: this.runtime,
+            pluginVersion: this.manifest.version,
+        });
         addIcon(SIDE_NOTE2_ICON_ID, SIDE_NOTE2_ICON_SVG);
 
         this.commentManager = new CommentManager([]);
         await this.loadSettings();
-        setDebugEnabled(this.settings.enableDebugMode);
+        await this.logEvent("info", "startup", "startup.settings.loaded", {
+            indexNotePath: this.getAllCommentsNotePath(),
+        });
         this.derivedCommentMetadataManager.installMetadataCacheAugmentation();
         const activeFile = this.app.workspace.getActiveFile();
         this.workspaceContextController.initializeActiveFiles(activeFile);
@@ -299,11 +325,9 @@ export default class SideNote2 extends Plugin {
         this.commentHighlightController.registerMarkdownPreviewHighlights(this);
         if (this.app.workspace.layoutReady) {
             await this.pluginLifecycleController.handleLayoutReady();
-            await this.vaultAgentsFileController.syncVaultAgentsFileOnStartup();
         } else {
             this.app.workspace.onLayoutReady(async () => {
                 await this.pluginLifecycleController.handleLayoutReady();
-                await this.vaultAgentsFileController.syncVaultAgentsFileOnStartup();
             });
         }
 
@@ -353,9 +377,11 @@ export default class SideNote2 extends Plugin {
     }
 
     onunload() {
+        void this.logEvent("info", "startup", "startup.unload");
         this.pluginLifecycleController.clearPendingEditorRefreshes();
         this.derivedCommentMetadataManager.restoreMetadataCacheAugmentation();
         this.derivedCommentMetadataManager.clearAllDerivedCommentLinks();
+        void this.logService?.flush();
     }
 
     async loadSettings() {
@@ -394,14 +420,6 @@ export default class SideNote2 extends Plugin {
         await this.indexNoteSettingsController.setIndexHeaderImageCaption(nextCaptionInput);
     }
 
-    public async syncVaultAgentsFile(): Promise<void> {
-        await this.installVaultAgentsFile();
-    }
-
-    public async removeVaultAgentSupport(): Promise<void> {
-        await this.uninstallVaultAgentsFile();
-    }
-
     public async shouldConfirmDelete(): Promise<boolean> {
         const appConfigPath = normalizePath(`${this.app.vault.configDir}/app.json`);
 
@@ -413,9 +431,52 @@ export default class SideNote2 extends Plugin {
             const appConfig = await this.app.vault.adapter.read(appConfigPath);
             return parsePromptDeleteSetting(appConfig) ?? true;
         } catch (error) {
-            console.warn("Failed to read Obsidian app config for promptDelete.", error);
+            this.warn("Failed to read Obsidian app config for promptDelete.", error, "startup", "startup.app-config.warn");
             return true;
         }
+    }
+
+    public async logEvent(
+        level: SideNote2LogLevel,
+        area: string,
+        event: string,
+        payload?: Record<string, unknown>,
+    ): Promise<void> {
+        await this.logService?.log(level, area, event, payload);
+    }
+
+    public getLogSessionId(): string {
+        return this.logService?.getSessionId() ?? "unknown";
+    }
+
+    public isLocalRuntime(): boolean {
+        return this.runtime === "local";
+    }
+
+    private showNotice(
+        message: string,
+        area: string,
+        event: string,
+        payload?: Record<string, unknown>,
+    ): void {
+        new Notice(message);
+        void this.logEvent("warn", area, event, {
+            ...payload,
+            message,
+        });
+    }
+
+    private warn(
+        message: string,
+        error: unknown,
+        area: string,
+        event: string,
+    ): void {
+        console.warn(message, error);
+        void this.logEvent("warn", area, event, {
+            message,
+            error,
+        });
     }
 
     public getRevealedCommentId(filePath: string): string | null {
@@ -599,14 +660,6 @@ export default class SideNote2 extends Plugin {
         await this.commentNavigationController.openCommentById(filePath, commentId);
     }
 
-    private async installVaultAgentsFile(): Promise<void> {
-        await this.vaultAgentsFileController.installVaultAgentsFile();
-    }
-
-    private async uninstallVaultAgentsFile(): Promise<void> {
-        await this.vaultAgentsFileController.uninstallVaultAgentsFile();
-    }
-
     public getDraftForFile(filePath: string): DraftComment | null {
         return this.commentSessionController.getDraftForFile(filePath);
     }
@@ -786,7 +839,9 @@ export default class SideNote2 extends Plugin {
 
         const indexFilePath = this.getAllCommentsNotePath();
         if (!this.workspaceViewController.getMarkdownFileByPath(indexFilePath)) {
-            new Notice(`Unable to open ${indexFilePath}.`);
+            this.showNotice(`Unable to open ${indexFilePath}.`, "index", "index.open.error", {
+                filePath: indexFilePath,
+            });
             return;
         }
 
@@ -854,5 +909,125 @@ export default class SideNote2 extends Plugin {
      */
     refreshEditorDecorations() {
         this.commentHighlightController.refreshEditorDecorations();
+    }
+
+    private async resolveCurrentLogAttachment() {
+        return this.logService?.getCurrentLogAttachment() ?? null;
+    }
+
+    public canLocateSupportLogFileLocation(): boolean {
+        if (this.supportLogLocationAvailable !== null) {
+            return this.supportLogLocationAvailable;
+        }
+
+        if (!(this.app.vault.adapter instanceof FileSystemAdapter)) {
+            this.supportLogLocationAvailable = false;
+            return false;
+        }
+
+        const electronRequire = typeof window !== "undefined"
+            ? (window as Window & {
+                require?: (moduleName: string) => unknown;
+            }).require
+            : undefined;
+        if (typeof electronRequire !== "function") {
+            this.supportLogLocationAvailable = false;
+            return false;
+        }
+
+        try {
+            const electronModule = electronRequire("electron") as {
+                shell?: {
+                    showItemInFolder?: (filePath: string) => void;
+                    openPath?: (filePath: string) => Promise<string>;
+                };
+            };
+            const shell = electronModule.shell;
+            this.supportLogLocationAvailable = typeof shell?.showItemInFolder === "function"
+                || typeof shell?.openPath === "function";
+            return this.supportLogLocationAvailable;
+        } catch {
+            this.supportLogLocationAvailable = false;
+            return false;
+        }
+    }
+
+    public async openSupportLogFileLocation(relativePath: string): Promise<boolean> {
+        if (!this.canLocateSupportLogFileLocation()) {
+            return false;
+        }
+
+        const electronRequire = typeof window !== "undefined"
+            ? (window as Window & {
+                require?: (moduleName: string) => unknown;
+            }).require
+            : undefined;
+        if (typeof electronRequire !== "function" || !(this.app.vault.adapter instanceof FileSystemAdapter)) {
+            this.supportLogLocationAvailable = false;
+            return false;
+        }
+
+        try {
+            const electronModule = electronRequire("electron") as {
+                shell?: {
+                    showItemInFolder?: (filePath: string) => void;
+                    openPath?: (filePath: string) => Promise<string>;
+                };
+            };
+            const fullPath = this.app.vault.adapter.getFullPath(relativePath);
+            const folderPath = dirname(fullPath);
+            const openPath = electronModule.shell?.openPath;
+            const showItemInFolder = electronModule.shell?.showItemInFolder;
+            if (typeof openPath === "function") {
+                const openResult = await openPath(folderPath);
+                if (openResult) {
+                    throw new Error(openResult);
+                }
+            } else if (typeof showItemInFolder === "function") {
+                showItemInFolder(fullPath);
+            } else {
+                throw new Error("Electron shell.openPath and shell.showItemInFolder are unavailable.");
+            }
+
+            await this.logEvent("info", "support", "support.log.file.location.opened", {
+                filePath: relativePath,
+            });
+            return true;
+        } catch (error) {
+            this.supportLogLocationAvailable = false;
+            console.error("[SideNote2] Failed to reveal support log file location.", error);
+            await this.logEvent("warn", "support", "support.log.file.location.open.error", {
+                filePath: relativePath,
+                error,
+            });
+            return false;
+        }
+    }
+
+    public async openSupportLogInspectorModal(context: {
+        filePath: string | null;
+        surface: "index" | "note";
+        threadCount: number;
+    }): Promise<void> {
+        if (!this.isLocalRuntime()) {
+            return;
+        }
+
+        await this.logEvent("info", "support", "support.debugger.opened", {
+            filePath: context.filePath,
+            surface: context.surface,
+            threadCount: context.threadCount,
+        });
+
+        const attachedLog = await this.resolveCurrentLogAttachment();
+        const locateLogFile = attachedLog && this.canLocateSupportLogFileLocation()
+            ? () => this.openSupportLogFileLocation(attachedLog.relativePath)
+            : undefined;
+
+        new SupportLogInspectorModal(this.app, {
+            fileName: "Log Inspector",
+            logContent: "",
+            locateLogFile,
+        }).open();
     }
 }

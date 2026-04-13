@@ -348,6 +348,75 @@ test("getManagedSectionKind distinguishes threaded, unsupported, and missing man
     assert.equal(getManagedSectionKind("Body\n"), "none");
 });
 
+test("parseNoteComments ignores SideNote2 comment markers inside fenced code blocks", () => {
+    const note = [
+        "# Title",
+        "",
+        "```md",
+        "<!-- SideNote2 comments",
+        "[",
+        '  { "id": "legacy-comment-1", "comment": "Example only" }',
+        "]",
+        "-->",
+        "```",
+        "",
+        "Visible body.",
+        "",
+    ].join("\n");
+
+    const parsed = parseNoteComments(note, "note.md");
+    assert.equal(parsed.comments.length, 0);
+    assert.equal(parsed.mainContent, note.trimEnd());
+    assert.equal(getManagedSectionKind(note), "none");
+});
+
+test("getManagedSectionKind ignores inline prose examples before a fenced SideNote2 block sample", () => {
+    const note = [
+        "# Title",
+        "",
+        "Each note stores comments in a trailing hidden `<!-- SideNote2 comments -->` block:",
+        "",
+        "```md",
+        "<!-- SideNote2 comments",
+        "[",
+        '  { "id": "legacy-comment-1", "comment": "Example only" }',
+        "]",
+        "-->",
+        "```",
+        "",
+        "Visible body.",
+        "",
+    ].join("\n");
+
+    assert.equal(getManagedSectionKind(note), "none");
+    const parsed = parseNoteComments(note, "note.md");
+    assert.equal(parsed.comments.length, 0);
+    assert.equal(parsed.mainContent, note.trimEnd());
+});
+
+test("parseNoteComments still reads the real trailing managed block after a fenced example", () => {
+    const realManagedBlock = serializeNoteComments("Visible body.\n", [createComment()]);
+    const note = [
+        "# Title",
+        "",
+        "```md",
+        "<!-- SideNote2 comments",
+        "[",
+        '  { "id": "legacy-comment-1", "comment": "Example only" }',
+        "]",
+        "-->",
+        "```",
+        "",
+        realManagedBlock.trimEnd(),
+        "",
+    ].join("\n");
+
+    const parsed = parseNoteComments(note, "note.md");
+    assert.equal(parsed.comments.length, 1);
+    assert.equal(parsed.comments[0].id, "comment-1");
+    assert.equal(getManagedSectionKind(note), "threaded");
+});
+
 test("serializeNoteCommentThreads refuses to write threaded data into an unsupported managed block", () => {
     const legacyNote = [
         "# Title",

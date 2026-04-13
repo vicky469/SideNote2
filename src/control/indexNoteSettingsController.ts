@@ -68,7 +68,7 @@ export class IndexNoteSettingsController {
             this.host.getCommentManager().replaceThreadsForFile(thread.filePath, nextThreads);
         }
 
-        if (resolved.shouldRewriteLegacyConfirmDelete) {
+        if (resolved.shouldRewriteLegacySettings) {
             await this.saveSettings();
         }
     }

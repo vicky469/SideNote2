@@ -23,6 +23,7 @@ export interface PluginLifecycleHost {
     scheduleTimer(callback: () => void, ms: number): number;
     clearTimer(timerId: number): void;
     warn(message: string, error: unknown): void;
+    log?(level: "info" | "warn" | "error", area: string, event: string, payload?: Record<string, unknown>): Promise<void>;
 }
 
 export class PluginLifecycleController {
@@ -32,10 +33,12 @@ export class PluginLifecycleController {
 
     public async handleLayoutReady(): Promise<void> {
         await this.host.ensureSidebarView();
+        void this.host.log?.("info", "startup", "startup.sidebar.ready");
         await this.host.refreshCommentViews();
         this.host.refreshEditorDecorations();
         this.host.scheduleAggregateNoteRefresh();
         this.host.syncIndexNoteViewClasses();
+        void this.host.log?.("info", "startup", "startup.layout.ready");
     }
 
     public handleFileRename(file: TFile | null, oldPath: string): void {
