@@ -57,12 +57,14 @@ It is built for a minimal workflow: humans work in the sidebar, while agents can
    <p align="center">
      <img src="./image.png" alt="Install SideNote2 with BRAT" width="420">
    </p>
-3. If you want Codex to expose SideNote2 as a skill in `/skills`, ask Codex to install it directly from the GitHub skill URL:
+3. Optional: install the `sidenote2` skill for agent workflows.
 
 ```text
 Use the skill-installer skill and install:
 https://github.com/vicky469/SideNote2/tree/main/skills/sidenote2
 ```
+
+Or copy the instructions from [`skills/sidenote2/SKILL.md`](./skills/sidenote2/SKILL.md) into your tool's project instructions.
 
 4. Restart Codex, then run `/skills`.
    You should see `sidenote2`.
@@ -88,24 +90,17 @@ https://github.com/vicky469/SideNote2/tree/main/skills/sidenote2
 | Bold or highlight text | Use the sidebar `B` and `H` buttons to wrap the current selection with `**bold**` or `==highlight==`. |
 | Cancel a draft or edit | Press `Esc`. |
 
-For power users:
+## Agent Workflow
 
-Agents can read, add, update, resolve the side notes from markdown.
+1. In SideNote2, click <img src="./assets/share-side-note-icon.svg" alt="Share side note icon" width="16" height="16"> on the comment you want to send to an agent.
+   This copies an `obsidian://side-note2-comment?...` link.
+2. Paste that link into Codex, Claude Code, Kimi Code, or another assistant with the `sidenote2` instructions installed.
+3. Ask one of these:
+   - `reply to this`
+   - `update this side note to: ...`
+   - `resolve this side note`
 
-In Codex CLI, Claude Code, or another assistant, you can ask:
-
-```text
-Show me the side comment for "selected text" in "/path/to/note.md".
-```
-
-Or update it:
-
-```text
-Update the side comment for "selected text" in "/path/to/note.md" to:
-Your new side comment text here.
-```
-
-If multiple side comments in the same note use the same selected text, include a little more nearby context or the comment id.
+The `sidenote2` skill/instructions tell the agent to use the real markdown note as source of truth and to safely append, update, or resolve the stored thread.
 
 ## Settings
 
