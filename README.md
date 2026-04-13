@@ -6,15 +6,6 @@
   <a href="https://github.com/vicky469/SideNote2/releases/tag/2.0.10">
     <img src="https://img.shields.io/badge/beta-2.0.10-f97316?style=flat-square" alt="Current beta">
   </a>
-  <a href="./src/README-dev.md">
-    <img src="https://img.shields.io/badge/docs-dev%20notes-0f766e?style=flat-square" alt="Dev docs">
-  </a>
-  <a href="./src/README-dev.md">
-    <img src="https://img.shields.io/badge/built-mostly%20in--repo-2563eb?style=flat-square" alt="Built mostly in repo">
-  </a>
-  <a href="./src/README-dev.md#dependencies">
-    <img src="https://img.shields.io/badge/runtime-no%20bundled%20deps-16a34a?style=flat-square" alt="No bundled runtime dependencies">
-  </a>
 </p>
 <p align="center">
   <a href="https://obsidian.md">
@@ -127,10 +118,6 @@ The JSON block is stored in plugin data.
 - The index sidebar `Files` filter only scopes the sidebar view. Selecting one file there does not rewrite `SideNote2 index.md` down to that single file section.
 - In the index sidebar list view, the nested-comments toggle is hidden when the filter scope resolves to exactly one file.
 - The generated index note only shows a visibility banner in resolved-only mode.
-
-## Development
-
-Setup, local vault install, debugging, and architecture notes live in [README-dev.md](README-dev.md).
 
 ## Changelog
 
