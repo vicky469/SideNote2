@@ -10,7 +10,6 @@ import { CommentPersistenceController } from "./control/commentPersistenceContro
 import { getResolvedVisibilityForCommentSelection } from "./control/commentSelectionVisibility";
 import { CommentSessionController } from "./control/commentSessionController";
 import { IndexNoteSettingsController } from "./control/indexNoteSettingsController";
-import { LegacyNoteCommentsMigrationController } from "./control/legacyNoteCommentsMigrationController";
 import { PluginLifecycleController } from "./control/pluginLifecycleController";
 import { PluginRegistrationController } from "./control/pluginRegistrationController";
 import { WorkspaceContextController } from "./control/workspaceContextController";
@@ -210,27 +209,6 @@ export default class SideNote2 extends Plugin {
             console.warn(message, error);
         },
     });
-    private readonly legacyNoteCommentsMigrationController = new LegacyNoteCommentsMigrationController({
-        app: this.app,
-        getSettings: () => this.settings,
-        setSettings: (settings) => {
-            this.settings = settings;
-        },
-        saveSettings: () => this.saveSettings(),
-        getAllCommentsNotePath: () => this.getAllCommentsNotePath(),
-        getCurrentNoteContent: (file) => this.workspaceViewController.getCurrentNoteContent(file),
-        getMarkdownViewForFile: (file) => this.workspaceViewController.getMarkdownViewForFile(file),
-        loadVisibleFiles: () => this.workspaceViewController.loadVisibleFiles(),
-        refreshCommentViews: () => this.workspaceViewController.refreshCommentViews(),
-        refreshEditorDecorations: () => this.refreshEditorDecorations(),
-        refreshAggregateNoteNow: () => this.refreshAggregateNoteNow(),
-        showNotice: (message) => {
-            new Notice(message);
-        },
-        warn: (message, error) => {
-            console.warn(message, error);
-        },
-    });
     private readonly vaultAgentsFileController = new VaultAgentsFileController({
         getVaultAgentsFileContext: () => ({
             vaultName: this.app.vault.getName(),
@@ -321,12 +299,10 @@ export default class SideNote2 extends Plugin {
         this.commentHighlightController.registerMarkdownPreviewHighlights(this);
         if (this.app.workspace.layoutReady) {
             await this.pluginLifecycleController.handleLayoutReady();
-            await this.legacyNoteCommentsMigrationController.runStartupMigrationIfNeeded();
             await this.vaultAgentsFileController.syncVaultAgentsFileOnStartup();
         } else {
             this.app.workspace.onLayoutReady(async () => {
                 await this.pluginLifecycleController.handleLayoutReady();
-                await this.legacyNoteCommentsMigrationController.runStartupMigrationIfNeeded();
                 await this.vaultAgentsFileController.syncVaultAgentsFileOnStartup();
             });
         }

@@ -19,7 +19,6 @@ function printMainUsage(stream = process.stderr) {
             "  sidenote2 <command> [options]",
             "",
             "Commands:",
-            "  comment:migrate-legacy  Maintenance: rewrite one note from legacy flat comments to threaded storage",
             "  comment:append  Append one entry to an existing SideNote2 comment thread in a note",
             "  comment:update  Update one stored SideNote2 comment body in a note",
             "  comment:resolve  Mark one SideNote2 comment thread as resolved in a note",
@@ -71,23 +70,6 @@ function printCommentResolveUsage(stream = process.stderr) {
             "  sidenote2 comment:resolve --file ./note.md --id comment-1",
             "  sidenote2 comment:resolve --uri \"obsidian://side-note2-comment?...\"",
             "  sidenote2 comment:resolve --file ./note.md --id comment-1 --settle-ms 2000",
-        ].join("\n") + "\n",
-    );
-}
-
-function printCommentMigrateLegacyUsage(stream = process.stderr) {
-    stream.write(
-        [
-            "Usage:",
-            "  sidenote2 comment:migrate-legacy (--file <note.md> | --root <vault-dir>) [--dry-run] [--settle-ms <milliseconds>]",
-            "",
-            "Maintenance fallback for notes that missed the automatic 2.0.1 startup migration.",
-            "",
-            "Examples:",
-            "  sidenote2 comment:migrate-legacy --file ./note.md --dry-run",
-            "  sidenote2 comment:migrate-legacy --file ./note.md",
-            "  sidenote2 comment:migrate-legacy --file ./note.md --settle-ms 2000",
-            "  sidenote2 comment:migrate-legacy --root /path/to/vault --dry-run",
         ].join("\n") + "\n",
     );
 }
@@ -235,48 +217,6 @@ function parseCommentResolveArgs(argv) {
     const hasUriTarget = Boolean(options.uri);
     if ((hasFileOrIdTarget ? 1 : 0) + (hasUriTarget ? 1 : 0) !== 1 || (hasFileOrIdTarget && !hasFileAndIdTarget)) {
         throw new Error("Expected exactly one target form: either --file with --id, or --uri.");
-    }
-
-    return options;
-}
-
-function parseCommentMigrateLegacyArgs(argv) {
-    const options = {
-        file: "",
-        root: "",
-        dryRun: false,
-        settleMs: 0,
-    };
-
-    for (let index = 0; index < argv.length; index += 1) {
-        const arg = argv[index];
-        switch (arg) {
-            case "--file":
-                options.file = argv[index + 1] ?? "";
-                index += 1;
-                break;
-            case "--dry-run":
-                options.dryRun = true;
-                break;
-            case "--root":
-                options.root = argv[index + 1] ?? "";
-                index += 1;
-                break;
-            case "--settle-ms":
-                options.settleMs = parseNonNegativeIntegerOption(argv[index + 1] ?? "", "--settle-ms");
-                index += 1;
-                break;
-            case "--help":
-            case "-h":
-                return null;
-            default:
-                throw new Error(`Unknown argument: ${arg}`);
-        }
-    }
-
-    const targetCount = [Boolean(options.file), Boolean(options.root)].filter(Boolean).length;
-    if (targetCount !== 1) {
-        throw new Error("Expected exactly one of --file or --root.");
     }
 
     return options;
@@ -738,276 +678,6 @@ async function loadStorageModule(repoRoot) {
     return import(moduleUrl);
 }
 
-const HIDDEN_SECTION_OPEN = "<!-- SideNote2 comments";
-const HIDDEN_SECTION_CLOSE = "-->";
-
-function normalizeCommentBody(body) {
-    return body.replace(/\r\n/g, "\n").replace(/\n+$/, "");
-}
-
-function parseManagedSectionJson(sectionContent) {
-    if (!sectionContent.startsWith(HIDDEN_SECTION_OPEN)) {
-        return null;
-    }
-
-    const closeMarker = `\n${HIDDEN_SECTION_CLOSE}`;
-    if (!sectionContent.endsWith(closeMarker)) {
-        return null;
-    }
-
-    const bodyWithPrefix = sectionContent.slice(HIDDEN_SECTION_OPEN.length, -closeMarker.length);
-    const jsonText = bodyWithPrefix.replace(/^[ \t]*\n?/, "").trim();
-    if (!jsonText.length) {
-        return null;
-    }
-
-    try {
-        const parsed = JSON.parse(jsonText);
-        return Array.isArray(parsed) ? parsed : null;
-    } catch {
-        return null;
-    }
-}
-
-function findJsonManagedSection(noteContent) {
-    const normalized = noteContent.replace(/\r\n/g, "\n");
-    const matches = Array.from(normalized.matchAll(/<!-- SideNote2 comments(?=$|[\s\[{])/g));
-    for (let index = matches.length - 1; index >= 0; index -= 1) {
-        const match = matches[index];
-        if (typeof match.index !== "number") {
-            continue;
-        }
-
-        const sectionStart = match.index;
-        const closeIndex = normalized.indexOf(`\n${HIDDEN_SECTION_CLOSE}`, sectionStart);
-        if (closeIndex === -1) {
-            continue;
-        }
-
-        const blockEnd = closeIndex + `\n${HIDDEN_SECTION_CLOSE}`.length;
-        const sectionContent = normalized.slice(sectionStart, blockEnd).trim();
-        const items = parseManagedSectionJson(sectionContent);
-        if (items === null) {
-            continue;
-        }
-
-        const mainPrefix = normalized.slice(0, sectionStart).trimEnd();
-        const trailingContent = normalized.slice(blockEnd);
-        const hasVisibleContentAfterSection = trailingContent.trim().length > 0;
-        const mainContent = `${mainPrefix}${hasVisibleContentAfterSection ? trailingContent : ""}`.trimEnd();
-
-        return {
-            mainContent,
-            items,
-        };
-    }
-
-    return null;
-}
-
-function toLegacyThread(candidate, filePath) {
-    if (!candidate || typeof candidate !== "object") {
-        return null;
-    }
-
-    const item = candidate;
-    if (
-        typeof item.id !== "string"
-        || typeof item.startLine !== "number"
-        || typeof item.startChar !== "number"
-        || typeof item.endLine !== "number"
-        || typeof item.endChar !== "number"
-        || typeof item.selectedText !== "string"
-        || typeof item.selectedTextHash !== "string"
-        || typeof item.comment !== "string"
-        || typeof item.timestamp !== "number"
-    ) {
-        return null;
-    }
-
-    if (
-        ("entries" in item && item.entries !== undefined)
-        || ("createdAt" in item && item.createdAt !== undefined)
-        || ("updatedAt" in item && item.updatedAt !== undefined)
-    ) {
-        return null;
-    }
-
-    if (
-        (item.anchorKind !== undefined && item.anchorKind !== "selection" && item.anchorKind !== "page")
-        || (item.orphaned !== undefined && typeof item.orphaned !== "boolean")
-        || (item.resolved !== undefined && typeof item.resolved !== "boolean")
-    ) {
-        return null;
-    }
-
-    return {
-        id: item.id,
-        filePath,
-        startLine: item.startLine,
-        startChar: item.startChar,
-        endLine: item.endLine,
-        endChar: item.endChar,
-        selectedText: item.selectedText,
-        selectedTextHash: item.selectedTextHash,
-        anchorKind: item.anchorKind === "page" ? "page" : "selection",
-        orphaned: item.anchorKind === "page" ? false : item.orphaned === true,
-        resolved: item.resolved === true,
-        entries: [{
-            id: item.id,
-            body: normalizeCommentBody(item.comment),
-            timestamp: item.timestamp,
-        }],
-        createdAt: item.timestamp,
-        updatedAt: item.timestamp,
-    };
-}
-
-function isThreadEntryCandidate(candidate) {
-    if (!candidate || typeof candidate !== "object") {
-        return false;
-    }
-
-    const item = candidate;
-    return (
-        typeof item.id === "string"
-        && typeof item.body === "string"
-        && typeof item.timestamp === "number"
-    );
-}
-
-function isThreadedStoredThread(candidate) {
-    if (!candidate || typeof candidate !== "object") {
-        return false;
-    }
-
-    const item = candidate;
-    if (
-        typeof item.id !== "string"
-        || typeof item.startLine !== "number"
-        || typeof item.startChar !== "number"
-        || typeof item.endLine !== "number"
-        || typeof item.endChar !== "number"
-        || typeof item.selectedText !== "string"
-        || typeof item.selectedTextHash !== "string"
-        || !Array.isArray(item.entries)
-        || item.entries.length === 0
-        || typeof item.createdAt !== "number"
-        || typeof item.updatedAt !== "number"
-    ) {
-        return false;
-    }
-
-    if (
-        (item.anchorKind !== undefined && item.anchorKind !== "selection" && item.anchorKind !== "page")
-        || (item.orphaned !== undefined && typeof item.orphaned !== "boolean")
-        || (item.resolved !== undefined && typeof item.resolved !== "boolean")
-    ) {
-        return false;
-    }
-
-    return item.entries.every((entry) => isThreadEntryCandidate(entry));
-}
-
-function classifyManagedSectionItems(items) {
-    if (items.length === 0) {
-        return "threaded";
-    }
-
-    const allLegacy = items.every((item) => toLegacyThread(item, "__probe__") !== null);
-    if (allLegacy) {
-        return "legacy";
-    }
-
-    const allThreaded = items.every((item) => isThreadedStoredThread(item));
-    if (allThreaded) {
-        return "threaded";
-    }
-
-    return "unsupported";
-}
-
-function countManagedSections(noteContent) {
-    return (noteContent.match(/<!-- SideNote2 comments/g) || []).length;
-}
-
-function shouldSkipVaultScanDirectory(entryName) {
-    return entryName === ".obsidian"
-        || entryName === ".git"
-        || entryName === "node_modules"
-        || entryName === ".test-dist";
-}
-
-async function collectMarkdownFiles(rootDir) {
-    const markdownFiles = [];
-
-    async function walk(currentDir) {
-        const entries = await readdir(currentDir, { withFileTypes: true });
-        entries.sort((left, right) => left.name.localeCompare(right.name));
-
-        for (const entry of entries) {
-            const fullPath = path.join(currentDir, entry.name);
-            if (entry.isDirectory()) {
-                if (shouldSkipVaultScanDirectory(entry.name)) {
-                    continue;
-                }
-
-                await walk(fullPath);
-                continue;
-            }
-
-            if (entry.isFile() && entry.name.toLowerCase().endsWith(".md")) {
-                markdownFiles.push(fullPath);
-            }
-        }
-    }
-
-    await walk(rootDir);
-    return markdownFiles;
-}
-
-function formatPathRelativeToRoot(rootDir, filePath) {
-    const relativePath = path.relative(rootDir, filePath).replace(/\\/g, "/");
-    return relativePath || path.basename(filePath);
-}
-
-function verifyMigratedNote(storageModule, noteContent, notePath, expectedThreadCount, expectedMainContent) {
-    if (countManagedSections(noteContent) !== 1) {
-        throw new Error("Migration would produce multiple managed comment blocks.");
-    }
-
-    if (storageModule.getManagedSectionRange(noteContent) === null) {
-        throw new Error("Migration output does not contain a valid threaded managed block.");
-    }
-
-    const parsed = storageModule.parseNoteComments(noteContent, notePath);
-    if (parsed.threads.length !== expectedThreadCount) {
-        throw new Error(`Migration output parsed ${parsed.threads.length} threads, expected ${expectedThreadCount}.`);
-    }
-
-    if (parsed.mainContent !== expectedMainContent) {
-        throw new Error("Migration output changed the visible note body unexpectedly.");
-    }
-}
-
-function buildLegacyMigrationPlan(notePath, noteContent, storageModule) {
-    const plan = storageModule.buildLegacyNoteCommentMigrationPlan(noteContent, notePath);
-    if (plan.kind !== "legacy") {
-        return {
-            kind: plan.kind,
-            notePath,
-        };
-    }
-
-    return {
-        kind: "legacy",
-        notePath,
-        nextContent: plan.nextContent,
-        sourceFingerprint: createContentFingerprint(noteContent),
-        threadCount: plan.threadCount,
-    };
-}
-
 async function runCommentUpdate(argv, streamOut, streamErr) {
     let options;
     try {
@@ -1040,12 +710,9 @@ async function runCommentUpdate(argv, streamOut, streamErr) {
     const updated = storageModule.replaceNoteCommentBodyById(noteContent, notePath, commentId, nextCommentBody);
 
     if (typeof updated !== "string") {
-        const plan = buildLegacyMigrationPlan(notePath, noteContent, storageModule);
-        if (plan.kind === "legacy") {
+        if (storageModule.getManagedSectionKind(noteContent) === "unsupported") {
             streamErr.write(
-                `Note still uses legacy flat SideNote2 comments: ${notePath}\n`
-                + "Open the vault once in SideNote2 2.0.1+ so startup can auto-migrate it, "
-                + "or use `sidenote2 comment:migrate-legacy` only for out-of-band maintenance.\n",
+                `Found a SideNote2 comments block in ${notePath}, but it is not a supported threaded entries[] payload.\n`,
             );
             return 1;
         }
@@ -1105,24 +772,15 @@ async function runCommentAppend(argv, streamOut, streamErr) {
     });
 
     if (typeof updated !== "string") {
-        const plan = buildLegacyMigrationPlan(notePath, noteContent, storageModule);
-        if (plan.kind === "legacy") {
+        const managedSectionKind = storageModule.getManagedSectionKind(noteContent);
+        if (managedSectionKind === "unsupported") {
             streamErr.write(
-                `Note still uses legacy flat SideNote2 comments: ${notePath}\n`
-                + "Open the vault once in SideNote2 2.0.1+ so startup can auto-migrate it, "
-                + "or use `sidenote2 comment:migrate-legacy` only for out-of-band maintenance.\n",
+                `Found a SideNote2 comments block in ${notePath}, but it is not a supported threaded entries[] payload.\n`,
             );
             return 1;
         }
 
-        if (plan.kind === "unsupported") {
-            streamErr.write(
-                `Found a SideNote2 comments block in ${notePath}, but it is not a supported threaded payload.\n`,
-            );
-            return 1;
-        }
-
-        if (plan.kind === "no-managed-block") {
+        if (managedSectionKind === "none") {
             streamErr.write(`No SideNote2 comments block found in ${notePath}\n`);
             return 1;
         }
@@ -1177,24 +835,15 @@ async function runCommentResolve(argv, streamOut, streamErr) {
     const updated = storageModule.resolveNoteCommentById(noteContent, notePath, commentId);
 
     if (typeof updated !== "string") {
-        const plan = buildLegacyMigrationPlan(notePath, noteContent, storageModule);
-        if (plan.kind === "legacy") {
+        const managedSectionKind = storageModule.getManagedSectionKind(noteContent);
+        if (managedSectionKind === "unsupported") {
             streamErr.write(
-                `Note still uses legacy flat SideNote2 comments: ${notePath}\n`
-                + "Open the vault once in SideNote2 2.0.1+ so startup can auto-migrate it, "
-                + "or use `sidenote2 comment:migrate-legacy` only for out-of-band maintenance.\n",
+                `Found a SideNote2 comments block in ${notePath}, but it is not a supported threaded entries[] payload.\n`,
             );
             return 1;
         }
 
-        if (plan.kind === "unsupported") {
-            streamErr.write(
-                `Found a SideNote2 comments block in ${notePath}, but it is not a supported threaded payload.\n`,
-            );
-            return 1;
-        }
-
-        if (plan.kind === "no-managed-block") {
+        if (managedSectionKind === "none") {
             streamErr.write(`No SideNote2 comments block found in ${notePath}\n`);
             return 1;
         }
@@ -1216,145 +865,6 @@ async function runCommentResolve(argv, streamOut, streamErr) {
 
     streamOut.write(`Resolved comment ${commentId} in ${notePath}\n`);
     return 0;
-}
-
-async function runCommentMigrateLegacy(argv, streamOut, streamErr) {
-    let options;
-    try {
-        options = parseCommentMigrateLegacyArgs(argv);
-    } catch (error) {
-        streamErr.write(`${error instanceof Error ? error.message : String(error)}\n`);
-        printCommentMigrateLegacyUsage(streamErr);
-        return 1;
-    }
-
-    if (options === null) {
-        printCommentMigrateLegacyUsage(streamOut);
-        return 0;
-    }
-
-    const repoRoot = getRepoRoot(import.meta.url);
-    const storageModule = await loadStorageModule(repoRoot);
-    if (options.file) {
-        const notePath = path.resolve(process.cwd(), options.file);
-        const noteContent = await readFile(notePath, "utf8");
-        const plan = buildLegacyMigrationPlan(notePath, noteContent, storageModule);
-
-        if (plan.kind === "no-managed-block") {
-            streamOut.write(`No legacy SideNote2 comments block found in ${notePath}\n`);
-            return 0;
-        }
-
-        if (plan.kind === "threaded") {
-            streamOut.write(`Note already uses threaded SideNote2 comments: ${notePath}\n`);
-            return 0;
-        }
-
-        if (plan.kind === "unsupported") {
-            streamErr.write(
-                `Found a SideNote2 comments block in ${notePath}, but it is not a supported legacy flat-comment payload.\n`,
-            );
-            return 1;
-        }
-
-        if (options.dryRun) {
-            streamOut.write(`Dry run: would migrate ${plan.threadCount} legacy comments to threaded storage in ${notePath}\n`);
-            return 0;
-        }
-
-        const writeResult = await writeObservedNoteSafely(notePath, plan.sourceFingerprint, plan.nextContent, {
-            settleMs: options.settleMs,
-        });
-        if (writeResult.kind === "changed") {
-            streamErr.write(
-                `Skipped migrating ${notePath} because ${writeResult.reason}. `
-                + "Rerun after Obsidian Sync or other local edits settle.\n",
-            );
-            return 1;
-        }
-
-        streamOut.write(`Migrated ${plan.threadCount} legacy comments to threaded storage in ${notePath}\n`);
-        return 0;
-    }
-
-    const rootPath = path.resolve(process.cwd(), options.root);
-    const markdownFiles = await collectMarkdownFiles(rootPath);
-    const legacyPlans = [];
-    const threadedPaths = [];
-    const unsupportedPaths = [];
-
-    for (const notePath of markdownFiles) {
-        const noteContent = await readFile(notePath, "utf8");
-        const plan = buildLegacyMigrationPlan(notePath, noteContent, storageModule);
-        if (plan.kind === "legacy") {
-            legacyPlans.push(plan);
-            continue;
-        }
-
-        if (plan.kind === "threaded") {
-            threadedPaths.push(notePath);
-            continue;
-        }
-
-        if (plan.kind === "unsupported") {
-            unsupportedPaths.push(notePath);
-        }
-    }
-
-    if (unsupportedPaths.length > 0) {
-        streamErr.write(`Found ${unsupportedPaths.length} unsupported SideNote2 comment block(s) under ${rootPath}:\n`);
-        for (const notePath of unsupportedPaths) {
-            streamErr.write(`${formatPathRelativeToRoot(rootPath, notePath)}\n`);
-        }
-        return 1;
-    }
-
-    if (legacyPlans.length === 0) {
-        streamOut.write(
-            `No legacy SideNote2 comment notes found under ${rootPath}. `
-            + `${threadedPaths.length} threaded note(s) already use the current format.\n`,
-        );
-        return 0;
-    }
-
-    if (options.dryRun) {
-        streamOut.write(`Dry run: found ${legacyPlans.length} legacy note(s) under ${rootPath}:\n`);
-        for (const plan of legacyPlans) {
-            streamOut.write(`${formatPathRelativeToRoot(rootPath, plan.notePath)}\n`);
-        }
-        return 0;
-    }
-
-    const changedPaths = [];
-    let migratedCount = 0;
-    for (const plan of legacyPlans) {
-        const writeResult = await writeObservedNoteSafely(plan.notePath, plan.sourceFingerprint, plan.nextContent, {
-            settleMs: options.settleMs,
-        });
-        if (writeResult.kind === "changed") {
-            changedPaths.push({
-                notePath: plan.notePath,
-                reason: writeResult.reason,
-            });
-            continue;
-        }
-
-        migratedCount += 1;
-    }
-
-    streamOut.write(`Migrated ${migratedCount} legacy note(s) under ${rootPath}\n`);
-    if (changedPaths.length === 0) {
-        return 0;
-    }
-
-    streamErr.write(
-        `Skipped ${changedPaths.length} note(s) that changed during the run. `
-        + "Rerun after Obsidian Sync or other local edits settle:\n",
-    );
-    for (const skipped of changedPaths) {
-        streamErr.write(`${formatPathRelativeToRoot(rootPath, skipped.notePath)} (${skipped.reason})\n`);
-    }
-    return 1;
 }
 
 async function runInstallSkill(argv, streamOut, streamErr) {
@@ -1461,8 +971,6 @@ export {
 export async function runCli(argv, io = { stdout: process.stdout, stderr: process.stderr }) {
     const [command, ...rest] = argv;
     switch (command) {
-        case "comment:migrate-legacy":
-            return runCommentMigrateLegacy(rest, io.stdout, io.stderr);
         case "comment:append":
             return runCommentAppend(rest, io.stdout, io.stderr);
         case "comment:update":

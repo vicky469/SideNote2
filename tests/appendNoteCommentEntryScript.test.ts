@@ -43,6 +43,32 @@ function createComment(overrides: Partial<Comment> = {}): Comment {
     };
 }
 
+function buildLegacyNote(overrides: Partial<Comment> = {}): string {
+    const comment = createComment(overrides);
+    return [
+        "# Title",
+        "",
+        "Body text.",
+        "",
+        "<!-- SideNote2 comments",
+        "[",
+        "  {",
+        `    "id": ${JSON.stringify(comment.id)},`,
+        `    "startLine": ${comment.startLine},`,
+        `    "startChar": ${comment.startChar},`,
+        `    "endLine": ${comment.endLine},`,
+        `    "endChar": ${comment.endChar},`,
+        `    "selectedText": ${JSON.stringify(comment.selectedText)},`,
+        `    "selectedTextHash": ${JSON.stringify(comment.selectedTextHash)},`,
+        `    "comment": ${JSON.stringify(comment.comment)},`,
+        `    "timestamp": ${comment.timestamp}`,
+        "  }",
+        "]",
+        "-->",
+        "",
+    ].join("\n");
+}
+
 test("append-note-comment-entry script appends a new entry to the targeted thread", async () => {
     const tempDir = await mkdtemp(path.join(tmpdir(), "sidenote2-comment-append-script-"));
     const notePath = path.join(tempDir, "note.md");
@@ -114,4 +140,32 @@ test("append-note-comment-entry script can target a thread by obsidian side-note
     const parsed = parseNoteComments(updated, notePath);
     assert.equal(parsed.threads[0].entries.length, 2);
     assert.equal(parsed.threads[0].entries[1].body, "Reply from URI\nSecond line");
+});
+
+test("append-note-comment-entry script rejects unsupported legacy flat payloads", async () => {
+    const tempDir = await mkdtemp(path.join(tmpdir(), "sidenote2-comment-append-legacy-"));
+    const notePath = path.join(tempDir, "note.md");
+    const scriptPath = path.resolve(process.cwd(), "scripts/append-note-comment-entry.mjs");
+
+    await writeFile(notePath, buildLegacyNote(), "utf8");
+
+    let failure: { stderr: string } | null = null;
+    try {
+        await execFile("node", [
+            scriptPath,
+            "--file",
+            notePath,
+            "--id",
+            "comment-1",
+            "--comment",
+            "Reply body",
+        ], {
+            cwd: process.cwd(),
+        });
+    } catch (error) {
+        failure = error as { stderr: string };
+    }
+
+    assert.ok(failure);
+    assert.match(failure.stderr, /not a supported threaded entries\[\] payload/);
 });

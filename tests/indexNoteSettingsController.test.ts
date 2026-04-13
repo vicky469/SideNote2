@@ -44,7 +44,6 @@ function createSettings(overrides: Partial<SideNote2Settings> = {}): SideNote2Se
         indexNotePath: overrides.indexNotePath ?? "SideNote2 index.md",
         indexHeaderImageUrl: overrides.indexHeaderImageUrl ?? "https://example.com/default.webp",
         indexHeaderImageCaption: overrides.indexHeaderImageCaption ?? "Default caption",
-        lastMigratedNoteCommentStorageVersion: overrides.lastMigratedNoteCommentStorageVersion ?? null,
     };
 }
 
@@ -153,7 +152,6 @@ test("loaded settings resolution normalizes persisted values and marks legacy co
         indexNotePath: " notes/index ",
         indexHeaderImageUrl: " https://example.com/header.webp ",
         indexHeaderImageCaption: " Custom caption ",
-        lastMigratedNoteCommentStorageVersion: "2.0.1",
         confirmDelete: true,
     }, createSettings());
 
@@ -162,7 +160,6 @@ test("loaded settings resolution normalizes persisted values and marks legacy co
         indexNotePath: "notes/index.md",
         indexHeaderImageUrl: "https://example.com/header.webp",
         indexHeaderImageCaption: "Custom caption",
-        lastMigratedNoteCommentStorageVersion: "2.0.1",
     });
     assert.equal(resolved.shouldRewriteLegacyConfirmDelete, true);
 });
@@ -273,7 +270,6 @@ test("index note settings controller loads attachment comments and rewrites lega
         indexNotePath: "docs/index.md",
         indexHeaderImageUrl: "https://example.com/header.webp",
         indexHeaderImageCaption: "Header",
-        lastMigratedNoteCommentStorageVersion: null,
     });
     assert.deepEqual(
         harness.commentManager.getCommentsForFile("docs/file.pdf").map((comment) => comment.id),

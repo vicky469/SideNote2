@@ -10,7 +10,6 @@
 		"dev": "node esbuild.config.mjs",
 		"build": "tsc -noEmit -skipLibCheck && node esbuild.config.mjs production",
 		"comment:append": "node bin/sidenote2.mjs comment:append",
-		"comment:migrate-legacy": "node bin/sidenote2.mjs comment:migrate-legacy",
 		"comment:resolve": "node bin/sidenote2.mjs comment:resolve",
 		"comment:update": "node bin/sidenote2.mjs comment:update",
 		"fixture:graph-1000": "node scripts/generate-large-graph-fixture.mjs",

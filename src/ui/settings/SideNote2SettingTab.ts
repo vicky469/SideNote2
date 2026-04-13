@@ -12,7 +12,6 @@ export interface SideNote2Settings {
     indexNotePath: string;
     indexHeaderImageUrl: string;
     indexHeaderImageCaption: string;
-    lastMigratedNoteCommentStorageVersion: string | null;
 }
 
 export const DEFAULT_SETTINGS: SideNote2Settings = {
@@ -20,7 +19,6 @@ export const DEFAULT_SETTINGS: SideNote2Settings = {
     indexNotePath: normalizeAllCommentsNotePath(""),
     indexHeaderImageUrl: normalizeAllCommentsNoteImageUrl(""),
     indexHeaderImageCaption: normalizeAllCommentsNoteImageCaption(null),
-    lastMigratedNoteCommentStorageVersion: null,
 };
 
 export default class SideNote2SettingTab extends PluginSettingTab {

@@ -26,21 +26,6 @@ interface StoredNoteCommentThread {
     updatedAt: number;
 }
 
-interface StoredLegacyNoteComment {
-    id: string;
-    startLine: number;
-    startChar: number;
-    endLine: number;
-    endChar: number;
-    selectedText: string;
-    selectedTextHash: string;
-    anchorKind?: "selection" | "page";
-    orphaned?: boolean;
-    resolved?: boolean;
-    comment: string;
-    timestamp: number;
-}
-
 export interface ParsedNoteComments {
     mainContent: string;
     comments: Comment[];
@@ -72,25 +57,16 @@ interface SplitManagedSectionResult {
     hasVisibleContentAfterSection: boolean;
 }
 
-interface JsonManagedSectionResult {
+interface FoundManagedSection {
+    normalizedContent: string;
     mainContent: string;
-    items: unknown[];
+    sectionContent: string;
+    sectionFromOffset: number;
+    sectionToOffset: number;
+    hasVisibleContentAfterSection: boolean;
 }
 
-type ManagedSectionItemKind = "legacy" | "threaded" | "unsupported";
-
-export type LegacyNoteCommentMigrationPlan =
-    | { kind: "no-managed-block"; filePath: string }
-    | { kind: "threaded"; filePath: string }
-    | { kind: "unsupported"; filePath: string }
-    | {
-        kind: "legacy";
-        filePath: string;
-        mainContent: string;
-        nextContent: string;
-        threadCount: number;
-        threads: CommentThread[];
-    };
+export type ManagedSectionKind = "none" | "threaded" | "unsupported";
 
 function normalizeCommentBody(body: string): string {
     return body.replace(/\r\n/g, "\n").replace(/\n+$/, "");
@@ -306,15 +282,20 @@ function parseJsonSection(sectionContent: string, filePath: string): CommentThre
         return null;
     }
 
-    const threads = parsed
-        .map((item) => fromStoredThread(item, filePath))
-        .filter((thread): thread is CommentThread => thread !== null);
+    const threads: CommentThread[] = [];
+    for (const item of parsed) {
+        const thread = fromStoredThread(item, filePath);
+        if (!thread) {
+            return null;
+        }
+
+        threads.push(thread);
+    }
 
     return cloneCommentThreads(threads);
 }
 
-function findJsonManagedSection(noteContent: string): JsonManagedSectionResult | null {
-    const normalized = noteContent.replace(/\r\n/g, "\n");
+function findLastManagedSection(normalized: string): FoundManagedSection | null {
     const matches = Array.from(normalized.matchAll(/<!-- SideNote2 comments(?=$|[\s\[{])/g));
     for (let index = matches.length - 1; index >= 0; index -= 1) {
         const match = matches[index];
@@ -330,45 +311,6 @@ function findJsonManagedSection(noteContent: string): JsonManagedSectionResult |
 
         const blockEnd = closeIndex + `\n${HIDDEN_SECTION_CLOSE}`.length;
         const sectionContent = normalized.slice(sectionStart, blockEnd).trim();
-        const items = parseManagedSectionJson(sectionContent);
-        if (items === null) {
-            continue;
-        }
-
-        const mainPrefix = normalized.slice(0, sectionStart).trimEnd();
-        const trailingContent = normalized.slice(blockEnd);
-        const hasVisibleContentAfterSection = trailingContent.trim().length > 0;
-        const mainContent = `${mainPrefix}${hasVisibleContentAfterSection ? trailingContent : ""}`.trimEnd();
-
-        return {
-            mainContent,
-            items,
-        };
-    }
-
-    return null;
-}
-
-function findManagedSection(normalized: string): SplitManagedSectionResult | null {
-    const matches = Array.from(normalized.matchAll(/<!-- SideNote2 comments(?=$|[\s\[{])/g));
-    for (let index = matches.length - 1; index >= 0; index -= 1) {
-        const match = matches[index];
-        if (typeof match.index !== "number") {
-            continue;
-        }
-
-        const sectionStart = match.index;
-        const closeIndex = normalized.indexOf(`\n${HIDDEN_SECTION_CLOSE}`, sectionStart);
-        if (closeIndex === -1) {
-            continue;
-        }
-
-        const blockEnd = closeIndex + `\n${HIDDEN_SECTION_CLOSE}`.length;
-        const sectionContent = normalized.slice(sectionStart, blockEnd).trim();
-        if (parseJsonSection(sectionContent, "__probe__") === null) {
-            continue;
-        }
-
         const mainPrefix = normalized.slice(0, sectionStart).trimEnd();
         const trailingContent = normalized.slice(blockEnd);
         const hasVisibleContentAfterSection = trailingContent.trim().length > 0;
@@ -387,156 +329,17 @@ function findManagedSection(normalized: string): SplitManagedSectionResult | nul
     return null;
 }
 
-function fromLegacyStoredComment(candidate: unknown, filePath: string): CommentThread | null {
-    if (!candidate || typeof candidate !== "object") {
+function findManagedSection(normalized: string): SplitManagedSectionResult | null {
+    const section = findLastManagedSection(normalized);
+    if (!section) {
         return null;
     }
 
-    const item = candidate as Partial<StoredLegacyNoteComment> & {
-        entries?: unknown;
-        createdAt?: unknown;
-        updatedAt?: unknown;
-    };
-    if (
-        typeof item.id !== "string"
-        || typeof item.startLine !== "number"
-        || typeof item.startChar !== "number"
-        || typeof item.endLine !== "number"
-        || typeof item.endChar !== "number"
-        || typeof item.selectedText !== "string"
-        || typeof item.selectedTextHash !== "string"
-        || typeof item.comment !== "string"
-        || typeof item.timestamp !== "number"
-    ) {
+    if (parseJsonSection(section.sectionContent, "__probe__") === null) {
         return null;
     }
 
-    if (
-        item.entries !== undefined
-        || item.createdAt !== undefined
-        || item.updatedAt !== undefined
-    ) {
-        return null;
-    }
-
-    if (
-        (item.anchorKind !== undefined && item.anchorKind !== "selection" && item.anchorKind !== "page")
-        || (item.orphaned !== undefined && typeof item.orphaned !== "boolean")
-        || (item.resolved !== undefined && typeof item.resolved !== "boolean")
-    ) {
-        return null;
-    }
-
-    return normalizeThread({
-        id: item.id,
-        filePath,
-        startLine: item.startLine,
-        startChar: item.startChar,
-        endLine: item.endLine,
-        endChar: item.endChar,
-        selectedText: item.selectedText,
-        selectedTextHash: item.selectedTextHash,
-        anchorKind: item.anchorKind === "page" ? "page" : "selection",
-        orphaned: item.anchorKind === "page" ? false : item.orphaned === true,
-        resolved: item.resolved === true,
-        entries: [{
-            id: item.id,
-            body: normalizeCommentBody(item.comment),
-            timestamp: item.timestamp,
-        }],
-        createdAt: item.timestamp,
-        updatedAt: item.timestamp,
-    });
-}
-
-function isStoredThreadEntryCandidate(candidate: unknown): boolean {
-    if (!candidate || typeof candidate !== "object") {
-        return false;
-    }
-
-    const item = candidate as Partial<StoredNoteCommentThreadEntry>;
-    return (
-        typeof item.id === "string"
-        && typeof item.body === "string"
-        && typeof item.timestamp === "number"
-    );
-}
-
-function isThreadedStoredThreadCandidate(candidate: unknown): boolean {
-    if (!candidate || typeof candidate !== "object") {
-        return false;
-    }
-
-    const item = candidate as Partial<StoredNoteCommentThread>;
-    if (
-        typeof item.id !== "string"
-        || typeof item.startLine !== "number"
-        || typeof item.startChar !== "number"
-        || typeof item.endLine !== "number"
-        || typeof item.endChar !== "number"
-        || typeof item.selectedText !== "string"
-        || typeof item.selectedTextHash !== "string"
-        || !Array.isArray(item.entries)
-        || item.entries.length === 0
-        || typeof item.createdAt !== "number"
-        || typeof item.updatedAt !== "number"
-    ) {
-        return false;
-    }
-
-    if (
-        (item.anchorKind !== undefined && item.anchorKind !== "selection" && item.anchorKind !== "page")
-        || (item.orphaned !== undefined && typeof item.orphaned !== "boolean")
-        || (item.resolved !== undefined && typeof item.resolved !== "boolean")
-    ) {
-        return false;
-    }
-
-    return item.entries.every((entry) => isStoredThreadEntryCandidate(entry));
-}
-
-function classifyManagedSectionItems(items: unknown[]): ManagedSectionItemKind {
-    if (items.length === 0) {
-        return "threaded";
-    }
-
-    if (items.every((item) => fromLegacyStoredComment(item, "__probe__") !== null)) {
-        return "legacy";
-    }
-
-    if (items.every((item) => isThreadedStoredThreadCandidate(item))) {
-        return "threaded";
-    }
-
-    return "unsupported";
-}
-
-export function countManagedSections(noteContent: string): number {
-    return (noteContent.match(/<!-- SideNote2 comments/g) || []).length;
-}
-
-function verifyMigratedNote(
-    noteContent: string,
-    filePath: string,
-    expectedThreadCount: number,
-    expectedMainContent: string,
-): void {
-    if (countManagedSections(noteContent) !== 1) {
-        throw new Error("Migration would produce multiple managed comment blocks.");
-    }
-
-    if (getManagedSectionRange(noteContent) === null) {
-        throw new Error("Migration output does not contain a valid threaded managed block.");
-    }
-
-    const parsed = parseNoteComments(noteContent, filePath);
-    if (parsed.threads.length !== expectedThreadCount) {
-        throw new Error(`Migration output parsed ${parsed.threads.length} threads, expected ${expectedThreadCount}.`);
-    }
-
-    if (parsed.mainContent !== expectedMainContent) {
-        throw new Error("Migration output changed the visible note body unexpectedly.");
-    }
+    return section;
 }
 
 export function parseNoteComments(noteContent: string, filePath: string): ParsedNoteComments {
@@ -552,47 +355,28 @@ export function parseNoteComments(noteContent: string, filePath: string): Parsed
     };
 }
 
-export function buildLegacyNoteCommentMigrationPlan(
-    noteContent: string,
-    filePath: string,
-): LegacyNoteCommentMigrationPlan {
-    const section = findJsonManagedSection(noteContent);
+export function getManagedSectionKind(noteContent: string): ManagedSectionKind {
+    const normalized = noteContent.replace(/\r\n/g, "\n");
+    const section = findLastManagedSection(normalized);
     if (!section) {
-        return {
-            kind: "no-managed-block",
-            filePath,
-        };
+        return "none";
     }
 
-    const sectionKind = classifyManagedSectionItems(section.items);
-    if (sectionKind === "threaded") {
-        return {
-            kind: "threaded",
-            filePath,
-        };
+    return parseJsonSection(section.sectionContent, "__probe__") === null
+        ? "unsupported"
+        : "threaded";
+}
+
+function assertWritableManagedSection(noteContent: string, threadCount: number): void {
+    if (threadCount === 0) {
+        return;
     }
 
-    if (sectionKind === "unsupported") {
-        return {
-            kind: "unsupported",
-            filePath,
-        };
+    if (getManagedSectionKind(noteContent) === "unsupported") {
+        throw new Error(
+            "Found an unsupported SideNote2 comments block. Rewrite the note to the threaded `entries[]` format before saving comments.",
+        );
     }
-
-    const threads = section.items
-        .map((item) => fromLegacyStoredComment(item, filePath))
-        .filter((thread): thread is CommentThread => thread !== null);
-    const nextContent = serializeNoteCommentThreads(section.mainContent, threads);
-    verifyMigratedNote(nextContent, filePath, threads.length, section.mainContent);
-
-    return {
-        kind: "legacy",
-        filePath,
-        mainContent: section.mainContent,
-        nextContent,
-        threadCount: threads.length,
-        threads,
-    };
 }
 
 export function getManagedSectionRange(noteContent: string): ManagedSectionRange | null {
@@ -643,6 +427,7 @@ export function getManagedSectionLineRange(noteContent: string): ManagedSectionL
 }
 
 export function serializeNoteCommentThreads(noteContent: string, threads: CommentThread[]): string {
+    assertWritableManagedSection(noteContent, threads.length);
     const { mainContent } = splitManagedSection(noteContent);
     const normalizedMain = mainContent.trimEnd();
 
@@ -680,6 +465,7 @@ export function serializeNoteComments(noteContent: string, comments: Comment[]):
 }
 
 export function getManagedSectionEditForThreads(noteContent: string, threads: CommentThread[]): ManagedSectionEdit {
+    assertWritableManagedSection(noteContent, threads.length);
     const {
         normalizedContent,
         sectionContent,
