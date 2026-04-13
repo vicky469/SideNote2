@@ -1,5 +1,9 @@
 # TODO: Split Private Source Repo From Public Release Repo
 
+Related spec:
+
+- [../prd/private-source-public-release-split-spec.md](../prd/private-source-public-release-split-spec.md)
+
 Context:
 - GitHub visibility is repository-wide. A public repo cannot hide `src/`, `tests/`, or any other tracked path inside that same repo.
 - A private submodule inside a public repo is not a good fit here. The public repo still exposes that the submodule exists, and public clones cannot fetch it without access.

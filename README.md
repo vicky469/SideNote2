@@ -1,18 +1,18 @@
 # SideNote2
 <p align="center">
-  <img src="./logo-readme.svg" alt="SideNote2 logo" width="72">
+  <img src="./assets/logo-readme.svg" alt="SideNote2 logo" width="72">
 </p>
 <p align="center">
   <a href="https://github.com/vicky469/SideNote2/releases/tag/2.0.10">
     <img src="https://img.shields.io/badge/beta-2.0.10-f97316?style=flat-square" alt="Current beta">
   </a>
-  <a href="./docs/README-dev.md">
+  <a href="./src/docs/README-dev.md">
     <img src="https://img.shields.io/badge/docs-dev%20notes-0f766e?style=flat-square" alt="Dev docs">
   </a>
-  <a href="./docs/README-dev.md">
+  <a href="./src/docs/README-dev.md">
     <img src="https://img.shields.io/badge/built-mostly%20in--repo-2563eb?style=flat-square" alt="Built mostly in repo">
   </a>
-  <a href="./docs/README-dev.md#dependencies">
+  <a href="./src/docs/README-dev.md#dependencies">
     <img src="https://img.shields.io/badge/runtime-no%20bundled%20deps-16a34a?style=flat-square" alt="No bundled runtime dependencies">
   </a>
 </p>
@@ -55,7 +55,7 @@ It is built for a minimal workflow: humans work in the sidebar, while agents can
 2. Install the SideNote2 beta
    Open BRAT, enable Auto update if you want, then add the plugin as shown below.
    <p align="center">
-     <img src="./image.png" alt="Install SideNote2 with BRAT" width="420">
+     <img src="./assets/image.png" alt="Install SideNote2 with BRAT" width="420">
    </p>
 3. Optional: install the `sidenote2` skill for agent workflows.
 
@@ -130,7 +130,7 @@ The JSON block is stored in plugin data.
 
 ## Development
 
-Setup, local vault install, debugging, and architecture notes live in [README-dev.md](./docs/README-dev.md).
+Setup, local vault install, debugging, and architecture notes live in [README-dev.md](./src/docs/README-dev.md).
 
 ## Changelog
 

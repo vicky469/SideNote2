@@ -1,6 +1,6 @@
 {
 	"nodes":[
-		{"id":"guide","type":"text","text":"# Comment Route Map\nRead left to right.\nTop flow persists and derives; lower flow retargets and highlights.","x":0,"y":-150,"width":760,"height":100,"color":"6"},
+		{"id":"guide","type":"text","text":"# Comment Route Map\nRead left to right.\nTop flow persists and derives; lower flow retargets, highlights, and drives current index-sidebar behavior.","x":0,"y":-150,"width":860,"height":100,"color":"6"},
 		{"id":"user","type":"text","text":"## User action\nSelect text\nCommand or editor menu","x":0,"y":170,"width":210,"height":100,"color":"6"},
 		{"id":"group-capture","type":"group","x":240,"y":100,"width":840,"height":210,"color":"5","label":"Capture + draft"},
 		{"id":"group-save","type":"group","x":1110,"y":100,"width":860,"height":340,"color":"3","label":"Mutation + persistence"},
@@ -20,13 +20,13 @@
 		{"id":"all-comments","type":"file","file":"SideNote2/src/core/derived/allCommentsNote.ts","x":2540,"y":170,"width":230,"height":90,"color":"2"},
 		{"id":"derived-metadata","type":"file","file":"SideNote2/src/core/derived/derivedCommentMetadata.ts","x":2030,"y":310,"width":280,"height":90,"color":"2"},
 		{"id":"index-note","type":"text","text":"## SideNote2 index.md\nDerived aggregate note","x":2600,"y":300,"width":230,"height":100,"color":"2"},
-		{"id":"index-sidebar","type":"text","text":"## Index sidebar\nSectioned comment list","x":2600,"y":430,"width":230,"height":90,"color":"2"},
+		{"id":"index-sidebar","type":"text","text":"## Index sidebar\nList + thought trail\nfile-filter aware","x":2600,"y":430,"width":230,"height":100,"color":"2"},
 		{"id":"highlight","type":"file","file":"SideNote2/src/control/commentHighlightController.ts","x":1140,"y":580,"width":240,"height":90,"color":"4"},
 		{"id":"anchor","type":"file","file":"SideNote2/src/core/anchors/anchorResolver.ts","x":1410,"y":580,"width":250,"height":90,"color":"4"},
 		{"id":"ranges","type":"file","file":"SideNote2/src/core/derived/editorHighlightRanges.ts","x":1690,"y":580,"width":260,"height":90,"color":"4"},
 		{"id":"decorations","type":"text","text":"## Editor + preview\nHighlights","x":1980,"y":580,"width":150,"height":90,"color":"4"},
 		{"id":"plugin-registration","type":"file","file":"SideNote2/src/control/pluginRegistrationController.ts","x":2220,"y":580,"width":280,"height":90,"color":"3"},
-		{"id":"index-click-note","type":"text","text":"## Index click\nHighlight sidebar first.\nSidebar card then navigates.","x":2530,"y":570,"width":290,"height":100,"color":"6"}
+		{"id":"index-click-note","type":"text","text":"## Index click\nHighlight sidebar first.\nSidebar card then navigates.\nLocal log inspector is separate.","x":2510,"y":560,"width":320,"height":120,"color":"6"}
 	],
 	"edges":[
 		{"id":"edge-user-entry","fromNode":"user","fromSide":"right","toNode":"entry","toSide":"left"},

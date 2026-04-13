@@ -26,7 +26,7 @@ function getNextPatchVersion(version) {
 function syncBetaDocs(version) {
     const nextPatchVersion = getNextPatchVersion(version);
 
-	const betaReleasePath = "docs/README-beta-release.md";
+	const betaReleasePath = "src/docs/README-beta-release.md";
 	if (existsSync(betaReleasePath)) {
 		const betaReleaseContent = readFileSync(betaReleasePath, "utf8");
 		const nextBetaReleaseContent = replaceRequired(
