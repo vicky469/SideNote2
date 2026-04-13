@@ -1,6 +1,6 @@
 # SideNote2 Development
 
-Development notes for `SideNote2`. The main [README.md](../../README.md) stays product-level; this file is for setup, internals, and testing.
+Development notes for `SideNote2`. The main [README.md](../README.md) stays product-level; this file is for setup, internals, and testing.
 
 ## Docs Layout
 
@@ -8,19 +8,17 @@ Use `src/docs/` for material we expect to keep current as the repo evolves.
 
 Examples:
 
-- `README-dev.md`
-- `architecture.md`
-- `architecture.canvas`
-- `feature-map.canvas`
-- `comment-route-map.canvas`
-- `comment-lifecycle.canvas`
-
-Use `src/docs/thoughts/` for working notes, refactor logs, and naming or design thoughts that reflect the current thinking but are not treated as maintained reference docs.
+- `src/README-dev.md`
+- `src/docs/architecture.md`
+- `src/docs/architecture.canvas`
+- `src/docs/feature-map.canvas`
+- `src/docs/comment-route-map.canvas`
+- `src/docs/comment-lifecycle.canvas`
 
 ## Architecture
 
-See [architecture.md](./architecture.md) for the visual module map, comment route map, and lifecycle state machine.
-See [feature-map.canvas](./feature-map.canvas) for the feature-first overview.
+See [architecture.md](./docs/architecture.md) for the visual module map, comment route map, and lifecycle state machine.
+See [feature-map.canvas](./docs/feature-map.canvas) for the feature-first overview.
 
 
 ## Storage
@@ -97,6 +95,9 @@ SIDENOTE2_HOT_RELOAD=0 npm run dev
 
 - `npm test` runs the Node test suite.
 - `npm run build` creates the production bundle and fails if release artifacts leak source-map markers.
+- `npm run public-release:check` validates the explicit public release allowlist in a temporary export.
+- `npm run public-release:export` writes a release-only snapshot to `.public-release/`.
+- `npm run public-release:publish` exports the allowlisted public tree, commits it to the `public` remote snapshot, and pushes it.
 
 ## Release
 
@@ -108,6 +109,8 @@ git push origin main --follow-tags
 
 - `npm version patch|minor|major` updates `package.json`, `manifest.json`, `versions.json`, and the README release badge.
 - `npm run release:check` runs the tests and the production build.
+- `npm run release:check` also validates the explicit public release tree.
+- `npm run public-release:publish` updates the public `SideNote2` release repo from this private source repo.
 - Before pushing a release tag, inspect the shipped files: `main.js`, `manifest.json`, and `styles.css`.
 - Releases should not ship `main.js.map`, `sourceMappingURL`, or `sourcesContent`.
 - GitHub releases upload only `main.js`, `manifest.json`, and `styles.css`.

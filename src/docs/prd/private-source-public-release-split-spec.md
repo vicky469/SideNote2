@@ -11,7 +11,7 @@ Draft implementation spec based on:
 Split SideNote2 into:
 
 1. a private source repo that contains development code and full history
-2. a public release repo that contains only shipped plugin artifacts and public-facing docs
+2. a public release repo that contains only shipped plugin artifacts and public-facing folders like skills, scripts, and assets.
 
 The result should make the release boundary explicit:
 
@@ -117,16 +117,23 @@ Required shipped files:
 - `styles.css`
 - `versions.json`
 - `README.md`
+- `LICENSE`
 
 Allowed public release assets/docs:
 
 - `assets/` only for assets intentionally referenced by the public README or release materials
+- `skills/sidenote2/`
+- public helper scripts:
+  - `scripts/append-note-comment-entry.mjs`
+  - `scripts/update-note-comment.mjs`
+  - `scripts/resolve-note-comment.mjs`
 - release notes or narrowly scoped public docs, if explicitly chosen
 
 Must not be present in the public repo:
 
 - `src/`
 - `tests/`
+- internal skills such as `skills/dev/`
 - internal planning docs
 - internal todo notes
 - internal architecture notes
@@ -199,6 +206,13 @@ This can be done by:
 - a CI job in the private repo
 - a release bot with scoped access
 
+Current private-repo implementation:
+
+- `npm run public-release:export` writes the exact allowlisted public snapshot
+- `npm run public-release:publish` pushes that snapshot to the `public` git remote
+- the private source repo keeps `origin` pointed at `SideNote2-source`
+- the public release repo is tracked as the `public` remote
+
 ### Step 4: Tag And Release
 
 The public release repo remains the user-facing release surface:
@@ -226,6 +240,15 @@ If release metadata is updated, the private publish step must carry that update 
 4. Add a publish path from private source to public release.
 5. Verify that release installs still read and write runtime files under `{{vault}}/.obsidian/plugins/side-note2/`.
 6. Decide separately whether historical public source exposure should be rewritten or left as legacy history.
+
+## Current Implementation Notes
+
+The private source repo should enforce this boundary with:
+
+- an explicit export/check script
+- a release check that runs the public release guard after production build
+
+That guard should validate the exact public tree rather than inferring it from gitignore rules.
 
 ## Acceptance Criteria
 

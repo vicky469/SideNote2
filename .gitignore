@@ -31,3 +31,6 @@ data.json
 
 # Generated plugin logs
 /logs
+
+# Exported public release snapshot
+/.public-release

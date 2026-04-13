@@ -6,15 +6,6 @@
   <a href="https://github.com/vicky469/SideNote2/releases/tag/2.0.10">
     <img src="https://img.shields.io/badge/beta-2.0.10-f97316?style=flat-square" alt="Current beta">
   </a>
-  <a href="./src/docs/README-dev.md">
-    <img src="https://img.shields.io/badge/docs-dev%20notes-0f766e?style=flat-square" alt="Dev docs">
-  </a>
-  <a href="./src/docs/README-dev.md">
-    <img src="https://img.shields.io/badge/built-mostly%20in--repo-2563eb?style=flat-square" alt="Built mostly in repo">
-  </a>
-  <a href="./src/docs/README-dev.md#dependencies">
-    <img src="https://img.shields.io/badge/runtime-no%20bundled%20deps-16a34a?style=flat-square" alt="No bundled runtime dependencies">
-  </a>
 </p>
 <p align="center">
   <a href="https://obsidian.md">
@@ -57,14 +48,14 @@ It is built for a minimal workflow: humans work in the sidebar, while agents can
    <p align="center">
      <img src="./assets/image.png" alt="Install SideNote2 with BRAT" width="420">
    </p>
-3. Optional: install the `sidenote2` skill for agent workflows.
-
+3. Optional: install the `sidenote2` skill for agent workflows. The Agent Skills specification is an [open standard](https://github.com/agentskills/agentskills), used by a range of different AI systems.
+   For example, in codex: 
 ```text
 Use the skill-installer skill and install:
 https://github.com/vicky469/SideNote2/tree/main/skills/sidenote2
 ```
 
-Or copy the instructions from [`skills/sidenote2/SKILL.md`](./skills/sidenote2/SKILL.md) into your tool's project instructions.
+Or store [`skills/sidenote2/SKILL.md`](./skills/sidenote2/SKILL.md)  in your home directory (`~/.claude/skills`, or `~/.agents/skills`).
 
 4. Restart Codex, then run `/skills`.
    You should see `sidenote2`.
@@ -100,7 +91,7 @@ Or copy the instructions from [`skills/sidenote2/SKILL.md`](./skills/sidenote2/S
    - `update this side note to: ...`
    - `resolve this side note`
 
-The `sidenote2` skill/instructions tell the agent to use the real markdown note as source of truth and to safely append, update, or resolve the stored thread.
+The `sidenote2` skill tell the agent to use the real markdown note as source of truth and to safely append, update, or resolve the stored comment/thread.
 
 ## Settings
 
@@ -127,10 +118,6 @@ The JSON block is stored in plugin data.
 - The index sidebar `Files` filter only scopes the sidebar view. Selecting one file there does not rewrite `SideNote2 index.md` down to that single file section.
 - In the index sidebar list view, the nested-comments toggle is hidden when the filter scope resolves to exactly one file.
 - The generated index note only shows a visibility banner in resolved-only mode.
-
-## Development
-
-Setup, local vault install, debugging, and architecture notes live in [README-dev.md](./src/docs/README-dev.md).
 
 ## Changelog
 
