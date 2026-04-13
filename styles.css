@@ -1,0 +1,1683 @@
+:root {
+    --sidenote2-highlight-bg-alpha: 0.16;
+    --sidenote2-highlight-hover-alpha: 0.24;
+    --sidenote2-highlight-line-alpha: 0.38;
+    --sidenote2-index-header-max-width: 40rem;
+}
+
+.theme-dark {
+    --sidenote2-highlight-bg-alpha: 0.22;
+    --sidenote2-highlight-hover-alpha: 0.3;
+    --sidenote2-highlight-line-alpha: 0.52;
+}
+
+.theme-light {
+    --sidenote2-highlight-bg-alpha: 0.13;
+    --sidenote2-highlight-hover-alpha: 0.2;
+    --sidenote2-highlight-line-alpha: 0.34;
+}
+
+.sidenote2-index-note-view .markdown-preview-view,
+.sidenote2-index-note-view .markdown-source-view.mod-cm6 .markdown-rendered {
+    font-size: 0.92em;
+}
+
+.sidenote2-index-kind-dot {
+    display: inline-block;
+    width: 0.38em;
+    height: 0.38em;
+    margin-right: 0.56em;
+    border-radius: 999px;
+    vertical-align: 0.05em;
+    opacity: 0.92;
+}
+
+.sidenote2-index-kind-page {
+    background: var(--interactive-accent);
+}
+
+.sidenote2-index-kind-anchored {
+    background: var(--color-orange, var(--text-warning, var(--text-accent)));
+}
+
+.sidenote2-index-note-view .markdown-preview-view p:has(.sidenote2-index-kind-dot),
+.sidenote2-index-note-view .markdown-source-view.mod-cm6 .markdown-rendered p:has(.sidenote2-index-kind-dot) {
+    margin-block: 0.42rem;
+    line-height: 1.28;
+}
+
+.sidenote2-index-note-view .markdown-preview-view h3,
+.sidenote2-index-note-view .markdown-source-view.mod-cm6 .markdown-rendered h3 {
+    color: var(--text-muted);
+    font-size: 1em;
+    font-weight: 400;
+    line-height: 1.3;
+    margin-top: 1rem;
+    margin-bottom: 0.08rem;
+}
+
+.sidenote2-index-note-view .markdown-preview-view p:has(.sidenote2-index-heading-label),
+.sidenote2-index-note-view .markdown-source-view.mod-cm6 .markdown-rendered p:has(.sidenote2-index-heading-label) {
+    margin-top: 0.12rem;
+    margin-bottom: 0.18rem;
+}
+
+.markdown-preview-view p:has(> img[alt="SideNote2 index header image"]),
+.markdown-source-view.mod-cm6 .markdown-rendered p:has(> img[alt="SideNote2 index header image"]) {
+    margin-bottom: 0.2rem;
+}
+
+.sidenote2-index-note-view .markdown-preview-view .sidenote2-index-comment-link,
+.sidenote2-index-note-view .markdown-source-view.mod-cm6 .markdown-rendered .sidenote2-index-comment-link {
+    background-image: none;
+    padding-right: 0;
+    text-decoration: none;
+    cursor: pointer;
+}
+
+.sidenote2-index-note-view .markdown-preview-view p.sidenote2-index-active-row,
+.sidenote2-index-note-view .markdown-preview-view li.sidenote2-index-active-row,
+.sidenote2-index-note-view .markdown-source-view.mod-cm6 .markdown-rendered p.sidenote2-index-active-row,
+.sidenote2-index-note-view .markdown-source-view.mod-cm6 .markdown-rendered li.sidenote2-index-active-row {
+    background: hsla(var(--interactive-accent-hsl), calc(var(--sidenote2-highlight-bg-alpha) + 0.06));
+    border-radius: 6px;
+    box-shadow: inset 3px 0 0 hsla(var(--interactive-accent-hsl), calc(var(--sidenote2-highlight-line-alpha) + 0.16));
+    margin-inline: -0.3rem;
+    padding-inline: 0.3rem;
+}
+
+.sidenote2-index-heading-label {
+    color: var(--text-normal);
+    font-weight: 500;
+}
+
+.markdown-preview-view img[alt="SideNote2 index header image"],
+.markdown-source-view.mod-cm6 .markdown-rendered img[alt="SideNote2 index header image"] {
+    display: block;
+    width: min(100%, var(--sidenote2-index-header-max-width));
+    max-width: var(--sidenote2-index-header-max-width);
+    height: auto;
+    margin: 0 auto;
+}
+
+.sidenote2-index-header-caption {
+    display: block;
+    width: min(100%, var(--sidenote2-index-header-max-width));
+    max-width: var(--sidenote2-index-header-max-width);
+    margin: 0 auto 0.75rem;
+    text-align: center !important;
+    color: var(--text-faint) !important;
+    font-size: var(--font-ui-smaller) !important;
+    line-height: 1.2 !important;
+}
+
+.sidenote2-confirm-modal h2 {
+    margin: 0 0 0.25rem;
+    text-align: center;
+}
+
+.sidenote2-modal-footer {
+    display: flex;
+    justify-content: flex-end;
+    gap: 8px;
+}
+
+.sidenote2-file-filter-suggestion {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+}
+
+.sidenote2-file-filter-suggestion-main {
+    min-width: 0;
+    flex: 1 1 auto;
+}
+
+.sidenote2-file-filter-suggestion-title {
+    font-size: var(--font-ui-small);
+    font-weight: 500;
+    color: var(--text-normal);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.sidenote2-file-filter-suggestion.is-selected .sidenote2-file-filter-suggestion-title {
+    font-weight: 600;
+}
+
+.sidenote2-file-filter-suggestion-status {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 14px;
+    height: 14px;
+    flex: 0 0 14px;
+    color: var(--interactive-accent);
+}
+
+.sidenote2-file-filter-suggestion-status svg {
+    width: 14px;
+    height: 14px;
+}
+
+.sidenote2-file-filter-selection-summary {
+    margin: 8px 0 10px;
+    padding: 10px 12px;
+    border: 1px solid var(--background-modifier-border);
+    border-radius: 12px;
+    background: var(--background-secondary);
+}
+
+.sidenote2-file-filter-selection-note {
+    margin: 0;
+    font-size: var(--font-ui-small);
+    color: var(--text-normal);
+    font-weight: 500;
+}
+
+.sidenote2-file-filter-selection-chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    max-height: 168px;
+    margin-top: 10px;
+    padding: 2px;
+    overflow: auto;
+    align-content: flex-start;
+}
+
+.sidenote2-file-filter-selection-chip {
+    display: inline-flex;
+    align-items: center;
+    min-height: 22px;
+    padding: 3px 8px;
+    border: 1px solid var(--background-modifier-border);
+    border-radius: 999px;
+    background: var(--background-primary);
+    color: var(--text-muted);
+    font-size: var(--font-ui-small);
+    line-height: 1.2;
+}
+
+.sidenote2-file-filter-selection-chip.is-root {
+    border-color: hsla(var(--interactive-accent-hsl), 0.38);
+    background: hsla(var(--interactive-accent-hsl), 0.12);
+    color: var(--text-normal);
+}
+
+.sidenote2-view-container {
+    position: relative;
+    height: 100%;
+    overflow-y: auto;
+}
+
+.sidenote2-comments-container {
+    padding: 8px 8px 72px;
+}
+
+.sidenote2-sidebar-toolbar {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-bottom: 8px;
+}
+
+.sidenote2-sidebar-toolbar.is-index-toolbar {
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 6px;
+}
+
+.sidenote2-sidebar-toolbar-row {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 8px;
+}
+
+.sidenote2-sidebar-toolbar-row.is-index-primary-row {
+    justify-content: flex-start;
+}
+
+.sidenote2-sidebar-toolbar-row.is-index-primary-row .sidenote2-sidebar-toolbar-group {
+    width: 100%;
+}
+
+.sidenote2-sidebar-toolbar-row.is-index-secondary-row {
+    justify-content: flex-start;
+}
+
+.sidenote2-sidebar-toolbar-group {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 8px;
+    --sidenote2-toolbar-control-height: 22px;
+    --sidenote2-toolbar-control-font-size: var(--font-ui-smaller);
+}
+
+.sidenote2-tablist {
+    display: flex;
+    align-items: center;
+    width: 100%;
+    gap: 4px;
+    padding: 4px;
+    border: none;
+    border-radius: 999px;
+    background: color-mix(in srgb, var(--background-primary) 92%, var(--background-secondary) 8%);
+    box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--background-modifier-border) 52%, transparent);
+}
+
+.sidenote2-tab-button {
+    all: unset;
+    box-sizing: border-box;
+    display: inline-flex;
+    flex: 1 1 0;
+    align-items: center;
+    justify-content: center;
+    min-width: 0;
+    min-height: 28px;
+    padding: 5px 12px;
+    border: none;
+    border-radius: 999px;
+    background: transparent;
+    color: var(--text-faint, var(--text-muted)) !important;
+    font-size: var(--font-ui-small);
+    font-family: inherit;
+    line-height: 1.2;
+    font-weight: 400;
+    user-select: none;
+    cursor: pointer;
+    appearance: none;
+    -webkit-appearance: none;
+    outline: none;
+    text-decoration: none;
+    box-shadow: none !important;
+    transition: background-color 0.15s ease, color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.sidenote2-tab-button:hover {
+    color: var(--text-normal) !important;
+}
+
+.sidenote2-tab-button:focus-visible {
+    color: var(--text-normal) !important;
+    box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--interactive-accent) 18%, transparent) !important;
+}
+
+.sidenote2-tab-button.is-active {
+    background: var(--background-primary);
+    color: var(--text-normal) !important;
+    font-weight: 500;
+    box-shadow:
+        0 1px 2px color-mix(in srgb, var(--background-modifier-box-shadow) 18%, transparent),
+        inset 0 0 0 1px color-mix(in srgb, var(--background-modifier-border) 60%, transparent) !important;
+}
+
+.sidenote2-filter-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    height: var(--sidenote2-toolbar-control-height);
+    min-height: var(--sidenote2-toolbar-control-height);
+    margin: 0;
+    padding: 2px 7px 2px 6px;
+    border: 1px solid var(--background-modifier-border);
+    border-radius: 999px;
+    background: var(--background-primary);
+    color: var(--text-muted);
+    font-size: var(--sidenote2-toolbar-control-font-size);
+    font-family: inherit;
+    line-height: 1.2;
+    user-select: none;
+    cursor: pointer;
+    appearance: none;
+    -webkit-appearance: none;
+    outline: none;
+    text-decoration: none;
+    box-shadow: none !important;
+    transition: border-color 0.15s ease, background-color 0.15s ease, color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.sidenote2-filter-chip:hover {
+    border-color: var(--background-modifier-border-hover, var(--interactive-accent-hover));
+    background: var(--background-modifier-hover);
+    color: var(--text-normal);
+}
+
+.sidenote2-filter-chip:focus-visible {
+    outline: none;
+    border-color: var(--interactive-accent);
+    box-shadow: 0 0 0 1px color-mix(in srgb, var(--interactive-accent) 20%, transparent);
+}
+
+.sidenote2-filter-chip:disabled {
+    opacity: 0.55;
+    cursor: not-allowed;
+}
+
+.sidenote2-filter-chip.is-active {
+    border-color: color-mix(in srgb, var(--background-modifier-border) 76%, var(--text-muted) 24%);
+    background: color-mix(in srgb, var(--background-secondary) 84%, var(--background-primary) 16%);
+    color: var(--text-normal);
+    box-shadow:
+        inset 0 0 0 1px color-mix(in srgb, var(--background-modifier-border) 58%, transparent),
+        0 1px 2px color-mix(in srgb, var(--background-modifier-box-shadow) 12%, transparent) !important;
+}
+
+.sidenote2-filter-chip-indicator {
+    width: 7px;
+    height: 7px;
+    border-radius: 999px;
+    background: var(--text-faint, var(--text-muted));
+    box-shadow: inset 0 0 0 1px var(--background-modifier-border);
+    transition: background-color 0.15s ease, transform 0.15s ease;
+}
+
+.sidenote2-filter-chip.is-active .sidenote2-filter-chip-indicator {
+    background: var(--text-normal);
+    transform: scale(1.05);
+}
+
+.sidenote2-filter-chip-label {
+    white-space: nowrap;
+}
+
+.sidenote2-filter-chip-icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--text-faint, var(--text-muted));
+    flex: 0 0 auto;
+}
+
+.sidenote2-filter-chip-icon svg {
+    width: 12px;
+    height: 12px;
+    stroke-width: 1.9;
+}
+
+.sidenote2-filter-chip:hover .sidenote2-filter-chip-icon,
+.sidenote2-filter-chip:focus-visible .sidenote2-filter-chip-icon {
+    color: var(--text-muted);
+}
+
+.sidenote2-filter-chip.is-active .sidenote2-filter-chip-icon {
+    color: var(--text-normal);
+}
+
+.sidenote2-filter-chip-count {
+    min-width: 16px;
+    padding: 1px 5px;
+    border-radius: 999px;
+    background: var(--background-secondary);
+    color: var(--text-faint, var(--text-muted));
+    font-size: var(--font-ui-smaller);
+    line-height: 1.1;
+    text-align: center;
+}
+
+.sidenote2-filter-chip.is-active .sidenote2-filter-chip-count {
+    background: color-mix(in srgb, var(--background-primary) 54%, var(--background-secondary) 46%);
+    color: var(--text-normal);
+}
+
+.sidenote2-active-file-filters {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin: 0 0 8px;
+}
+
+.sidenote2-active-file-filter {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    min-height: var(--sidenote2-toolbar-control-height, 22px);
+    position: relative;
+    padding: 2px 22px 2px 6px;
+    border: 1px solid var(--background-modifier-border);
+    border-radius: 999px;
+    background: var(--background-primary);
+    color: var(--text-muted);
+    font-size: var(--font-ui-smaller);
+    line-height: 1.2;
+    transition: border-color 0.15s ease, background-color 0.15s ease, color 0.15s ease;
+}
+
+.sidenote2-active-file-filter.is-root {
+    border-color: hsla(var(--interactive-accent-hsl), 0.38);
+    background: hsla(var(--interactive-accent-hsl), 0.12);
+    color: var(--text-normal);
+}
+
+.sidenote2-active-file-filter-label {
+    max-width: 190px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.sidenote2-active-file-filter-clear {
+    position: absolute;
+    top: 50%;
+    right: 4px;
+    transform: translateY(-50%);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 14px;
+    height: 14px;
+    padding: 0;
+    color: var(--text-faint, var(--text-muted));
+    opacity: 0.9;
+}
+
+.sidenote2-active-file-filter-clear svg {
+    width: 10px;
+    height: 10px;
+}
+
+.sidenote2-active-file-filter-clear:hover,
+.sidenote2-active-file-filter-clear:focus-visible {
+    color: var(--text-normal);
+    opacity: 1;
+}
+
+.sidenote2-active-file-filter-summary {
+    color: var(--text-faint, var(--text-muted));
+    font-size: var(--font-ui-small);
+}
+
+.sidenote2-file-filter-note {
+    color: var(--text-faint, var(--text-muted));
+    font-size: var(--font-ui-small);
+}
+
+.sidenote2-thought-trail {
+    padding: 2px 4px 4px;
+    font-size: var(--font-ui-smaller);
+}
+
+.sidenote2-thought-trail ul {
+    margin: 0;
+    padding-left: 1.1rem;
+}
+
+.sidenote2-thought-trail li {
+    margin: 0.2rem 0;
+}
+
+.sidenote2-thought-trail p {
+    margin: 0;
+}
+
+.sidenote2-thought-trail .mermaid {
+    overflow: auto;
+    margin-top: 0.5rem;
+    padding-bottom: 2px;
+}
+
+.sidenote2-thought-trail .mermaid svg {
+    display: block;
+    width: auto !important;
+    max-width: none !important;
+    height: auto;
+    margin: 0 auto;
+}
+
+.sidenote2-thought-trail [data-sidenote2-thought-trail-node-link="true"] {
+    cursor: pointer;
+}
+
+.sidenote2-thought-trail a.external-link[href^="obsidian://side-note2-comment"] {
+    background-image: none;
+    padding-right: 0;
+}
+
+.sidenote2-comment-section-add-button {
+    color: var(--icon-color, var(--text-faint, var(--text-muted)));
+    opacity: 0.8;
+}
+
+.sidenote2-toolbar-icon-button {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.sidenote2-toolbar-icon-button.is-active {
+    color: var(--icon-color-hover, var(--text-normal));
+    opacity: 1;
+}
+
+.sidenote2-support-button-slot {
+    position: sticky;
+    bottom: 32px;
+    z-index: 3;
+    display: flex;
+    justify-content: flex-end;
+    padding: 0 10px;
+    pointer-events: none;
+}
+
+.sidenote2-support-button {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 34px;
+    height: 34px;
+    border: 1px solid color-mix(in srgb, var(--background-modifier-border) 68%, transparent);
+    border-radius: 999px;
+    background: color-mix(in srgb, var(--background-primary) 88%, var(--background-secondary) 12%);
+    color: var(--icon-color, var(--text-muted));
+    box-shadow: 0 8px 24px color-mix(in srgb, var(--background-modifier-box-shadow) 18%, transparent);
+    pointer-events: auto;
+}
+
+.sidenote2-support-button svg {
+    width: 15px;
+    height: 15px;
+}
+
+.sidenote2-support-button:hover,
+.sidenote2-support-button:focus-visible {
+    color: var(--icon-color-hover, var(--text-normal));
+    border-color: color-mix(in srgb, var(--interactive-accent) 32%, var(--background-modifier-border) 68%);
+    background: color-mix(in srgb, var(--background-primary) 80%, var(--interactive-accent) 20%);
+}
+
+.sidenote2-comment-section-add-button svg {
+    width: 13px;
+    height: 13px;
+}
+
+.sidenote2-comment-section-add-button:hover,
+.sidenote2-comment-section-add-button:focus-visible {
+    color: var(--icon-color-hover, var(--text-normal));
+    opacity: 1;
+}
+
+.sidenote2-comments-list .sidenote2-comment-item:last-child {
+    margin-bottom: 0;
+}
+
+.sidenote2-thread-stack {
+    --sidenote2-thread-indent: 22px;
+    margin-bottom: 8px;
+}
+
+.sidenote2-comments-list > .sidenote2-thread-stack:last-child {
+    margin-bottom: 0;
+}
+
+.sidenote2-thread-stack > .sidenote2-comment-item,
+.sidenote2-thread-replies > .sidenote2-comment-item {
+    margin-bottom: 0;
+}
+
+.sidenote2-thread-replies {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    margin-top: 4px;
+    margin-left: var(--sidenote2-thread-indent);
+    padding-left: 0;
+}
+
+.sidenote2-list-limit-notice {
+    margin-top: 8px;
+    color: var(--text-faint, var(--text-muted));
+    font-size: var(--font-ui-small);
+    line-height: 1.35;
+}
+
+.sidenote2-list-limit-notice p {
+    margin: 0;
+}
+
+.sidenote2-list-limit-notice p + p {
+    margin-top: 2px;
+}
+
+.sidenote2-comment-item {
+    margin-bottom: 8px;
+    padding: 8px 10px;
+    border: 1px solid var(--background-modifier-border);
+    border-radius: 10px;
+    background: var(--background-secondary);
+    cursor: pointer;
+    transition: background-color 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease, opacity 0.15s ease;
+}
+
+.sidenote2-comment-item:hover {
+    background: var(--background-modifier-hover);
+    border-color: var(--background-modifier-border-hover, var(--interactive-accent-hover));
+}
+
+.sidenote2-comment-item.active {
+    background: var(--background-modifier-active-hover);
+    border-color: var(--interactive-accent);
+    box-shadow: 0 0 0 1px var(--interactive-accent-translucent);
+}
+
+.sidenote2-comment-item.orphaned {
+    border-style: dashed;
+    border-color: var(--color-orange, var(--text-warning, var(--text-accent)));
+}
+
+.sidenote2-comment-item.resolved {
+    opacity: 0.7;
+    background: var(--background-primary-alt, var(--background-secondary));
+}
+
+.sidenote2-comment-item.resolved .sidenote2-timestamp,
+.sidenote2-comment-item.resolved .sidenote2-comment-content {
+    text-decoration: line-through;
+    text-decoration-thickness: 0.08em;
+    text-decoration-color: var(--text-faint, var(--text-muted));
+}
+
+.sidenote2-comment-draft {
+    cursor: default;
+    border-color: var(--interactive-accent);
+    background: var(--background-primary-alt, var(--background-secondary));
+}
+
+.sidenote2-comment-draft:hover {
+    background: var(--background-primary-alt, var(--background-secondary));
+    border-color: var(--interactive-accent);
+}
+
+.sidenote2-comment-draft.is-append {
+    margin-left: var(--sidenote2-thread-indent);
+    border-color: var(--background-modifier-border);
+    background: var(--background-secondary);
+}
+
+.sidenote2-thread-replies > .sidenote2-comment-draft.is-append {
+    margin-left: 0;
+}
+
+.sidenote2-comment-draft.is-append:hover {
+    background: var(--background-modifier-hover);
+    border-color: var(--background-modifier-border-hover, var(--interactive-accent-hover));
+}
+
+.sidenote2-comment-draft.is-append.active {
+    background: var(--background-modifier-active-hover);
+    border-color: var(--interactive-accent);
+    box-shadow: 0 0 0 1px var(--interactive-accent-translucent);
+}
+
+.sidenote2-comment-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    margin-bottom: 6px;
+}
+
+.sidenote2-comment-header-main {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    min-width: 0;
+    flex: 1 1 auto;
+}
+
+.sidenote2-timestamp {
+    font-size: var(--font-ui-small);
+    line-height: 1.2;
+    color: var(--text-faint, var(--text-muted));
+    letter-spacing: 0.02em;
+}
+
+.sidenote2-comment-meta {
+    display: inline-flex;
+    align-items: center;
+    flex: 1 1 auto;
+    gap: 4px;
+    min-width: 0;
+    max-width: 100%;
+    white-space: nowrap;
+}
+
+.sidenote2-comment-source-label {
+    flex: 1 1 auto;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.sidenote2-comment-meta-separator {
+    color: var(--text-faint, var(--text-muted));
+    flex: 0 0 auto;
+}
+
+.sidenote2-comment-meta-value {
+    flex: 0 0 auto;
+    font-size: 0.9em;
+    white-space: nowrap;
+}
+
+.sidenote2-comment-drag-handle {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 18px;
+    height: 18px;
+    color: var(--icon-color, var(--text-faint, var(--text-muted)));
+    cursor: grab;
+    opacity: 0.75;
+}
+
+.sidenote2-comment-drag-handle:active {
+    cursor: grabbing;
+}
+
+.sidenote2-comment-drag-handle .svg-icon {
+    width: 14px;
+    height: 14px;
+}
+
+.sidenote2-comment-content {
+    color: var(--text-normal);
+    font-size: var(--font-ui-small);
+    line-height: 1.45;
+    word-break: break-word;
+    user-select: text;
+    cursor: text;
+}
+
+
+.sidenote2-comment-content:focus {
+    outline: none;
+}
+
+.sidenote2-comment-content > :first-child {
+    margin-top: 0;
+}
+
+.sidenote2-comment-content > :last-child {
+    margin-bottom: 0;
+}
+
+.sidenote2-comment-content :is(p, ul, ol, blockquote, pre) {
+    margin-block: 0.35rem;
+}
+
+.sidenote2-comment-content :is(ul, ol) {
+    margin-inline: 0;
+    padding-inline-start: 2ch;
+}
+
+.sidenote2-comment-content li {
+    margin: 0.12rem 0;
+}
+
+.sidenote2-comment-content li > p {
+    margin-block: 0.12rem;
+}
+
+.sidenote2-comment-content pre {
+    padding: 0.5rem;
+    border-radius: 6px;
+    background: var(--background-primary-alt, var(--background-primary));
+}
+
+.sidenote2-comment-content code {
+    font-size: 0.92em;
+}
+
+.sidenote2-comment-content hr {
+    margin: 0.75rem 0;
+    border: 0;
+    border-top: 1px solid var(--background-modifier-border);
+}
+
+.sidenote2-thread-entry-item {
+    position: relative;
+    margin-left: 0;
+    padding: 7px 9px;
+    border-radius: 9px;
+    background: var(--background-primary-alt, var(--background-primary, var(--background-secondary)));
+}
+
+.sidenote2-thread-entry-item .sidenote2-comment-header {
+    margin-bottom: 5px;
+}
+
+.sidenote2-thread-entry-item .sidenote2-thread-footer {
+    margin-top: 6px;
+}
+
+.sidenote2-comment-item.is-drag-source {
+    opacity: 0.6;
+}
+
+.sidenote2-comment-item.is-drop-before {
+    box-shadow: inset 0 2px 0 0 var(--interactive-accent);
+}
+
+.sidenote2-comment-item.is-drop-after {
+    box-shadow: inset 0 -2px 0 0 var(--interactive-accent);
+}
+
+.sidenote2-thread-footer {
+    display: flex;
+    align-items: center;
+    width: 100%;
+    justify-content: flex-end;
+    gap: 8px;
+    margin-top: 8px;
+}
+
+.sidenote2-thread-reanchor {
+    display: flex;
+    width: 100%;
+    margin-top: 8px;
+}
+
+.sidenote2-thread-reanchor-button {
+    width: 100%;
+    min-height: 28px;
+    padding: 5px 10px;
+    border: 1px dashed var(--color-orange, var(--text-warning, var(--text-accent)));
+    border-radius: 8px;
+    background: transparent;
+    color: var(--color-orange, var(--text-warning, var(--text-accent)));
+    font-size: var(--font-ui-small);
+    line-height: 1.3;
+}
+
+.sidenote2-thread-reanchor-button:hover,
+.sidenote2-thread-reanchor-button:focus-visible {
+    border-color: var(--color-orange, var(--text-warning, var(--text-accent)));
+    background: var(--background-modifier-hover);
+    color: var(--text-normal);
+}
+
+.sidenote2-thread-footer-actions {
+    display: flex;
+    align-items: center;
+    gap: 2px;
+    flex: 0 0 auto;
+    margin-left: auto;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.14s ease;
+}
+
+.sidenote2-comment-action-button {
+    color: var(--icon-color, var(--text-faint, var(--text-muted)));
+    opacity: 0.8;
+}
+
+.sidenote2-comment-action-button svg {
+    width: 13px;
+    height: 13px;
+}
+
+.sidenote2-comment-action-button:hover {
+    color: var(--icon-color-hover, var(--text-normal));
+    opacity: 1;
+}
+
+.sidenote2-comment-action-button:focus-visible {
+    color: var(--icon-color-hover, var(--text-normal));
+    opacity: 1;
+}
+
+.sidenote2-comment-actions {
+    display: flex;
+    align-items: center;
+    gap: 2px;
+    flex: 0 0 auto;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.14s ease;
+}
+
+.sidenote2-comment-item:hover .sidenote2-comment-actions,
+.sidenote2-comment-item:hover .sidenote2-thread-footer-actions,
+.sidenote2-comment-item:focus-within .sidenote2-comment-actions,
+.sidenote2-comment-item:focus-within .sidenote2-thread-footer-actions,
+.sidenote2-comment-item.active .sidenote2-comment-actions,
+.sidenote2-comment-item.active .sidenote2-thread-footer-actions {
+    opacity: 1;
+    pointer-events: auto;
+}
+
+.sidenote2-inline-editor {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.sidenote2-inline-editor-toolbar {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.sidenote2-inline-format-button {
+    min-width: 28px;
+    min-height: 28px;
+    padding: 0 8px;
+    border: 1px solid var(--background-modifier-border);
+    border-radius: 6px;
+    background: var(--background-primary);
+    color: var(--text-normal);
+    font-size: var(--font-ui-small);
+    font-weight: 600;
+    box-shadow: none;
+}
+
+.sidenote2-inline-format-button:hover,
+.sidenote2-inline-format-button:focus-visible {
+    border-color: var(--background-modifier-border-hover, var(--interactive-accent-hover));
+    background: var(--background-modifier-hover);
+}
+
+.sidenote2-inline-format-button:disabled {
+    opacity: 0.55;
+}
+
+.sidenote2-inline-editor-shell {
+    display: grid;
+    position: relative;
+    border: 1px solid var(--background-modifier-border);
+    border-radius: 8px;
+    background: var(--background-secondary);
+    transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.sidenote2-comment-draft.is-edit .sidenote2-inline-editor-shell {
+    min-height: 0;
+}
+
+.sidenote2-inline-editor-shell:focus-within {
+    border-color: var(--background-modifier-border-focus, var(--interactive-accent));
+    box-shadow: 0 0 0 1px var(--interactive-accent-translucent);
+}
+
+.sidenote2-inline-editor-preview,
+.sidenote2-inline-textarea {
+    grid-area: 1 / 1;
+    position: relative;
+    width: 100%;
+    min-height: 72px;
+    padding: 9px 10px;
+    font-size: var(--font-ui-small);
+    font-family: var(--font-text);
+    line-height: 1.45;
+    box-sizing: border-box;
+}
+
+.sidenote2-inline-editor-preview {
+    z-index: 0;
+    overflow: hidden;
+    color: var(--text-normal);
+    white-space: pre-wrap;
+    word-break: break-word;
+    pointer-events: none;
+}
+
+.sidenote2-inline-editor-preview.is-empty {
+    color: var(--text-faint, var(--text-muted));
+}
+
+.sidenote2-inline-textarea {
+    z-index: 1;
+    border: none;
+    border-radius: 8px;
+    background: transparent !important;
+    color: transparent !important;
+    -webkit-text-fill-color: transparent;
+    caret-color: var(--text-normal);
+    resize: vertical;
+}
+
+.sidenote2-comment-draft.is-edit .sidenote2-inline-textarea {
+    min-height: 0;
+}
+
+.sidenote2-inline-textarea:focus {
+    outline: none;
+    background: transparent !important;
+    color: transparent !important;
+    -webkit-text-fill-color: transparent;
+}
+
+.sidenote2-inline-textarea::selection {
+    color: transparent;
+}
+
+.sidenote2-editor-token-bold {
+    font-weight: inherit;
+    text-shadow:
+        0.012em 0 currentColor,
+        -0.012em 0 currentColor;
+}
+
+.sidenote2-editor-token-mention,
+.sidenote2-comment-mention {
+    color: var(--color-blue, #4f8cff);
+    font-weight: 600;
+}
+
+.sidenote2-link-suggest-note,
+.sidenote2-tag-suggest-note {
+    margin-top: 2px;
+    color: var(--text-muted);
+    font-size: var(--font-ui-smaller);
+    line-height: 1.3;
+}
+
+.sidenote2-inline-editor-actions {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 8px;
+}
+
+.sidenote2-inline-word-count {
+    margin-left: 0.75ch;
+    margin-right: auto;
+    color: var(--text-faint, var(--text-muted));
+    font-size: var(--font-ui-smaller);
+    line-height: 1.2;
+    white-space: nowrap;
+    font-variant-numeric: tabular-nums;
+}
+
+.sidenote2-inline-editor-actions button {
+    min-height: 28px;
+}
+
+.sidenote2-comment-action-resolve {
+    color: var(--icon-color, var(--text-faint, var(--text-muted)));
+}
+
+.sidenote2-comment-action-resolve:hover {
+    color: var(--icon-color-hover, var(--text-normal));
+}
+
+.sidenote2-comment-action-edit {
+    color: var(--icon-color, var(--text-faint, var(--text-muted)));
+}
+
+.sidenote2-comment-action-edit:hover {
+    color: var(--icon-color-hover, var(--text-normal));
+}
+
+.sidenote2-comment-action-delete {
+    color: var(--icon-color, var(--text-faint, var(--text-muted)));
+}
+
+.sidenote2-comment-action-delete:hover {
+    color: var(--icon-color-hover, var(--text-normal));
+}
+
+.sidenote2-empty-state {
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    height: 100%;
+    padding: 20px;
+    color: var(--text-muted);
+    text-align: center;
+    font-size: var(--font-ui-small);
+}
+
+.sidenote2-empty-state p {
+    margin: 4px 0;
+}
+
+.sidenote2-empty-state.sidenote2-section-empty-state {
+    align-items: flex-start;
+    height: auto;
+    padding: 2px 0 0;
+    text-align: left;
+}
+
+.sidenote2-support-report-modal {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.sidenote2-support-log-preview-modal {
+    display: flex;
+    flex: 1 1 auto;
+    flex-direction: column;
+    gap: 10px;
+    height: 100%;
+    min-height: 0;
+}
+
+.sidenote2-support-log-modal {
+    display: flex;
+    flex-direction: column;
+    width: min(96vw, 1680px);
+    max-width: 96vw;
+    height: min(92vh, 1200px);
+    max-height: 92vh;
+}
+
+.sidenote2-support-intro,
+.sidenote2-support-preview-note {
+    margin: 0;
+    color: var(--text-muted);
+    font-size: var(--font-ui-small);
+    line-height: 1.35;
+}
+
+.sidenote2-support-field,
+.sidenote2-support-textarea {
+    width: 100%;
+    border: 1px solid var(--background-modifier-border);
+    border-radius: 10px;
+    background: var(--background-primary);
+    color: var(--text-normal);
+    font-family: inherit;
+    font-size: var(--font-ui-small);
+}
+
+.sidenote2-support-field {
+    min-height: 36px;
+    padding: 8px 10px;
+}
+
+.sidenote2-support-textarea {
+    min-height: 132px;
+    padding: 10px 12px;
+    line-height: 1.45;
+    resize: vertical;
+}
+
+.sidenote2-support-attachments-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    margin-top: 4px;
+}
+
+.sidenote2-support-attachments-header h3 {
+    margin: 0;
+    font-size: var(--font-ui-small);
+}
+
+.sidenote2-support-attachments {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.sidenote2-support-attachment {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    padding: 10px 12px;
+    border: 1px solid var(--background-modifier-border);
+    border-radius: 12px;
+    background: var(--background-secondary);
+}
+
+.sidenote2-support-attachment-empty {
+    justify-content: flex-start;
+    color: var(--text-muted);
+    font-size: var(--font-ui-small);
+}
+
+.sidenote2-support-attachment-meta {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+    min-width: 0;
+}
+
+.sidenote2-support-attachment-meta strong,
+.sidenote2-support-attachment-meta span {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.sidenote2-support-attachment-meta span {
+    color: var(--text-muted);
+    font-size: var(--font-ui-small);
+}
+
+.sidenote2-support-attachment-actions {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.sidenote2-support-log-preview-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 8px;
+}
+
+.sidenote2-support-log-dev-panel {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    padding: 12px 14px;
+    border: 1px solid var(--background-modifier-border);
+    border-radius: 12px;
+    background: color-mix(in srgb, var(--background-secondary) 90%, var(--background-primary) 10%);
+}
+
+.sidenote2-support-log-dev-panel-header {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.sidenote2-support-log-dev-panel-header strong {
+    font-size: var(--font-ui-small);
+}
+
+.sidenote2-support-log-dev-panel-header span {
+    color: var(--text-muted);
+    font-size: var(--font-ui-small);
+    line-height: 1.35;
+}
+
+.sidenote2-support-log-dev-dropzone {
+    border: 1px dashed color-mix(in srgb, var(--background-modifier-border) 82%, transparent);
+    border-radius: 12px;
+    background: color-mix(in srgb, var(--background-primary) 86%, var(--background-secondary) 14%);
+    transition: border-color 120ms ease, background 120ms ease;
+}
+
+.sidenote2-support-log-dev-dropzone.is-active {
+    border-color: color-mix(in srgb, var(--interactive-accent) 42%, var(--background-modifier-border) 58%);
+    background: color-mix(in srgb, var(--interactive-accent) 10%, var(--background-primary) 90%);
+}
+
+.sidenote2-support-log-dev-input {
+    width: 100%;
+    min-height: 132px;
+    padding: 12px;
+    border: 0;
+    background: transparent;
+    color: var(--text-normal);
+    font-family: var(--font-monospace);
+    font-size: 12px;
+    line-height: 1.45;
+    resize: vertical;
+}
+
+.sidenote2-support-log-dev-input:focus {
+    outline: none;
+}
+
+.sidenote2-support-log-filter-bar {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
+}
+
+.sidenote2-support-log-filter-label {
+    color: var(--text-muted);
+    font-size: var(--font-ui-small);
+    font-weight: 600;
+}
+
+.sidenote2-support-log-filter-button {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 28px;
+    padding: 0 10px;
+    border: 1px solid var(--background-modifier-border);
+    border-radius: 999px;
+    background: var(--background-secondary);
+    color: var(--text-muted);
+    font-size: 12px;
+    font-weight: 600;
+}
+
+.sidenote2-support-log-filter-button:hover,
+.sidenote2-support-log-filter-button:focus-visible {
+    color: var(--text-normal);
+    border-color: color-mix(in srgb, var(--interactive-accent) 28%, var(--background-modifier-border) 72%);
+}
+
+.sidenote2-support-log-filter-button.is-active {
+    background: color-mix(in srgb, var(--interactive-accent) 18%, var(--background-primary) 82%);
+    color: var(--text-normal);
+    border-color: color-mix(in srgb, var(--interactive-accent) 38%, var(--background-modifier-border) 62%);
+}
+
+.sidenote2-support-log-summary {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 12px 14px;
+    border: 1px solid var(--background-modifier-border);
+    border-radius: 12px;
+    background:
+        linear-gradient(180deg,
+            color-mix(in srgb, var(--background-secondary) 92%, var(--interactive-accent) 8%) 0%,
+            var(--background-secondary) 100%);
+}
+
+.sidenote2-support-log-summary-meta {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    min-width: 0;
+}
+
+.sidenote2-support-log-summary-meta strong {
+    font-size: var(--font-ui-medium);
+}
+
+.sidenote2-support-log-summary-meta span {
+    color: var(--text-muted);
+    font-size: var(--font-ui-small);
+    line-height: 1.35;
+}
+
+.sidenote2-support-log-summary-badges {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    gap: 8px;
+}
+
+.sidenote2-support-log-summary-badge,
+.sidenote2-support-log-row-level,
+.sidenote2-support-log-row-kind {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 24px;
+    padding: 0 10px;
+    border: 1px solid transparent;
+    border-radius: 999px;
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.02em;
+    text-transform: uppercase;
+    user-select: text;
+    -webkit-user-select: text;
+}
+
+.sidenote2-support-log-summary-badge.is-info,
+.sidenote2-support-log-row-level.is-info {
+    border-color: color-mix(in srgb, #2e8bff 38%, var(--background-modifier-border) 62%);
+    background: color-mix(in srgb, #2e8bff 16%, var(--background-primary) 84%);
+    color: color-mix(in srgb, #2e8bff 72%, var(--text-normal) 28%);
+}
+
+.sidenote2-support-log-summary-badge.is-warn,
+.sidenote2-support-log-row-level.is-warn {
+    border-color: color-mix(in srgb, #f0a000 42%, var(--background-modifier-border) 58%);
+    background: color-mix(in srgb, #f0a000 18%, var(--background-primary) 82%);
+    color: color-mix(in srgb, #f0a000 82%, var(--text-normal) 18%);
+}
+
+.sidenote2-support-log-summary-badge.is-error,
+.sidenote2-support-log-row-level.is-error {
+    border-color: color-mix(in srgb, #d94b4b 42%, var(--background-modifier-border) 58%);
+    background: color-mix(in srgb, #d94b4b 18%, var(--background-primary) 82%);
+    color: color-mix(in srgb, #d94b4b 78%, var(--text-normal) 22%);
+}
+
+.sidenote2-support-log-summary-badge.is-user,
+.sidenote2-support-log-row-kind.is-user {
+    border-color: color-mix(in srgb, #0e8f6f 42%, var(--background-modifier-border) 58%);
+    background: color-mix(in srgb, #0e8f6f 16%, var(--background-primary) 84%);
+    color: color-mix(in srgb, #0e8f6f 78%, var(--text-normal) 22%);
+}
+
+.sidenote2-support-log-summary-badge.is-system,
+.sidenote2-support-log-row-kind.is-system {
+    border-color: color-mix(in srgb, #7b61ff 38%, var(--background-modifier-border) 62%);
+    background: color-mix(in srgb, #7b61ff 14%, var(--background-primary) 86%);
+    color: color-mix(in srgb, #7b61ff 74%, var(--text-normal) 26%);
+}
+
+.sidenote2-support-log-table-wrap {
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow: auto;
+    border: 1px solid var(--background-modifier-border);
+    border-radius: 12px;
+    background: var(--background-primary);
+}
+
+.sidenote2-support-log-table {
+    width: 100%;
+    border-collapse: separate;
+    border-spacing: 0;
+}
+
+.sidenote2-support-log-table thead th {
+    position: sticky;
+    top: 0;
+    z-index: 1;
+    padding: 10px 12px;
+    border-bottom: 1px solid var(--background-modifier-border);
+    background: color-mix(in srgb, var(--background-primary) 92%, var(--background-secondary) 8%);
+    color: var(--text-muted);
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    text-align: left;
+    text-transform: uppercase;
+}
+
+.sidenote2-support-log-table tbody td {
+    padding: 10px 12px;
+    border-bottom: 1px solid color-mix(in srgb, var(--background-modifier-border) 62%, transparent);
+    vertical-align: top;
+}
+
+.sidenote2-support-log-table tbody tr:last-child td {
+    border-bottom: none;
+}
+
+.sidenote2-support-log-table tbody tr.is-info {
+    background: color-mix(in srgb, #2e8bff 4%, var(--background-primary) 96%);
+}
+
+.sidenote2-support-log-table tbody tr.is-warn {
+    background: color-mix(in srgb, #f0a000 5%, var(--background-primary) 95%);
+}
+
+.sidenote2-support-log-table tbody tr.is-error {
+    background: color-mix(in srgb, #d94b4b 6%, var(--background-primary) 94%);
+}
+
+.sidenote2-support-log-row-time {
+    display: inline-block;
+    min-width: 86px;
+    color: var(--text-muted);
+    font-family: var(--font-monospace);
+    font-size: 12px;
+}
+
+.sidenote2-support-log-row-area {
+    display: inline-block;
+    color: var(--text-muted);
+    font-size: 12px;
+    font-weight: 600;
+    letter-spacing: 0.01em;
+    text-transform: uppercase;
+}
+
+.sidenote2-support-log-row-event {
+    display: inline-block;
+    color: var(--text-normal);
+    font-family: var(--font-monospace);
+    font-size: 12px;
+    font-weight: 600;
+    overflow-wrap: anywhere;
+}
+
+.sidenote2-support-log-row-details {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+}
+
+.sidenote2-support-log-row-token {
+    display: inline-flex;
+    align-items: center;
+    max-width: 100%;
+    padding: 5px 8px;
+    border: 1px solid color-mix(in srgb, var(--background-modifier-border) 78%, transparent);
+    border-radius: 10px;
+    background: color-mix(in srgb, var(--background-secondary) 88%, var(--background-primary) 12%);
+    color: var(--text-muted);
+    font-family: var(--font-monospace);
+    font-size: 11px;
+    line-height: 1.35;
+    overflow-wrap: anywhere;
+}
+
+.sidenote2-support-log-row-token.is-empty {
+    color: var(--text-faint);
+}
+
+.sidenote2-support-empty-log-state {
+    padding: 16px;
+    border: 1px dashed var(--background-modifier-border);
+    border-radius: 12px;
+    color: var(--text-muted);
+    font-size: var(--font-ui-small);
+    text-align: center;
+}
+
+.sidenote2-support-log-preview {
+    width: 100%;
+    flex: 1 1 auto;
+    min-height: 0;
+    padding: 12px;
+    overflow: auto;
+    border: 1px solid var(--background-modifier-border);
+    border-radius: 12px;
+    background: var(--background-primary);
+    color: var(--text-normal);
+    font-family: var(--font-monospace);
+    font-size: 12px;
+    line-height: 1.45;
+    resize: vertical;
+    cursor: text;
+    user-select: text;
+    -webkit-user-select: text;
+}
+
+.sidenote2-support-log-preview-raw {
+    white-space: pre;
+}
+
+.sidenote2-support-image-preview {
+    display: block;
+    max-width: 100%;
+    height: auto;
+    margin: 0 auto;
+    border-radius: 12px;
+}
+
+.sidenote2-highlight {
+    background: hsla(var(--interactive-accent-hsl), var(--sidenote2-highlight-bg-alpha));
+    box-decoration-break: clone;
+    box-shadow: inset 0 -1.5px 0 hsla(var(--interactive-accent-hsl), var(--sidenote2-highlight-line-alpha));
+    cursor: pointer;
+    user-select: text;
+    transition: background-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.sidenote2-highlight:hover {
+    background: hsla(var(--interactive-accent-hsl), var(--sidenote2-highlight-hover-alpha));
+}
+
+.sidenote2-highlight-active {
+    background: hsla(var(--interactive-accent-hsl), var(--sidenote2-highlight-hover-alpha));
+    box-shadow:
+        inset 0 -2px 0 hsla(var(--interactive-accent-hsl), calc(var(--sidenote2-highlight-line-alpha) + 0.18)),
+        0 0 0 1px hsla(var(--interactive-accent-hsl), 0.18);
+}
+
+.sidenote2-highlight-resolved {
+    background: hsla(var(--interactive-accent-hsl), calc(var(--sidenote2-highlight-bg-alpha) * 0.72));
+    box-shadow: inset 0 -1.5px 0 hsla(var(--interactive-accent-hsl), calc(var(--sidenote2-highlight-line-alpha) * 0.8));
+}
+
+.sidenote2-highlight-resolved.sidenote2-highlight-active {
+    box-shadow:
+        inset 0 -2px 0 hsla(var(--interactive-accent-hsl), calc(var(--sidenote2-highlight-line-alpha) * 0.92)),
+        0 0 0 1px hsla(var(--interactive-accent-hsl), 0.14);
+}
+
+.markdown-preview-view .sidenote2-highlight,
+.markdown-source-view.mod-cm6 .markdown-rendered .sidenote2-highlight {
+    position: relative;
+    z-index: 1;
+}
+
+.sidenote2-highlight-preview {
+    border-radius: 2px;
+}
+
+@media (max-width: 768px) {
+    .sidenote2-modal-footer {
+        flex-direction: column-reverse;
+    }
+
+    .sidenote2-modal-submit-btn,
+    .sidenote2-modal-cancel-btn {
+        width: 100%;
+        min-height: 44px;
+        padding: 12px 16px;
+    }
+
+    .sidenote2-comment-item {
+        padding: 9px 10px;
+    }
+
+    .sidenote2-thread-stack {
+        --sidenote2-thread-indent: 18px;
+    }
+
+    .sidenote2-thread-replies {
+        margin-left: var(--sidenote2-thread-indent);
+    }
+
+    .sidenote2-inline-textarea {
+        min-height: 104px;
+        font-size: 16px;
+    }
+
+    .sidenote2-comment-actions button {
+        width: 28px;
+        height: 28px;
+    }
+}
+
+@media (max-width: 480px) {
+    .sidenote2-inline-textarea {
+        min-height: 96px;
+    }
+}
