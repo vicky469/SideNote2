@@ -27,7 +27,28 @@ See [feature-map.canvas](./feature-map.canvas) for the feature-first overview.
 
 Each note stores comments in a trailing hidden `<!-- SideNote2 comments -->` block:
 
-``` 
+```
+<!-- SideNote2 comments
+[
+  {
+    "id": "thread-1",
+    "startLine": 12,
+    "startChar": 4,
+    "endLine": 12,
+    "endChar": 19,
+    "selectedText": "selected words",
+    "selectedTextHash": "hash-selected-words",
+    "entries": [
+      {
+        "id": "entry-1",
+      {
+        "id": "entry-2",
+        "body": "Follow-up reply.",
+        "timestamp": 1710000005000
+    "updatedAt": 1710000005000
+  }
+]
+-->
 ```
 
 The stored payload includes coordinates and a text hash so anchors can be re-matched after edits. The block is hidden in Reading view, but still present in raw markdown for source-mode workflows and LLM ingestion.
@@ -61,180 +82,56 @@ The stored payload includes coordinates and a text hash so anchors can be re-mat
 ## Run
 
 ```bash
-cd "/path/to/SideNote2"
 npm install
 npm run dev
 ```
 
-- Keep `npm run dev` running while testing.
-- `npm run dev` now does two things in development:
-  - watches and rebuilds `main.js`
-  - reloads the `side-note2` plugin through the Obsidian CLI after each successful rebuild
-- Open Obsidian on the target vault before starting `npm run dev`. Hot reload can only reload a plugin inside a running vault.
-- This matters because Obsidian runs `main.js`, not `src/*.ts`. A source edit is not live until the bundle is rebuilt and the plugin instance is reloaded.
-- If you want watch mode without automatic plugin reload, run:
+- Keep `npm run dev` running while testing in Obsidian.
+- Dev mode rebuilds `main.js` and reloads the `side-note2` plugin after a successful build.
+- Open the target vault in Obsidian before starting dev mode.
+- If you want watch mode without automatic plugin reload, use:
 
 ```bash
 SIDENOTE2_HOT_RELOAD=0 npm run dev
 ```
 
-- `npm run build` creates a production bundle.
 - `npm test` runs the Node test suite.
-- `npm run skill:install` copies the packaged SideNote2 Codex skills into the default Codex skills directory. By default it installs every bundled top-level skill under `skills/`; pass `-- --name sidenote2` if you only want the user-facing SideNote2 skill. This is manual global Codex setup, separate from the vault `AGENTS.md` flow inside Obsidian.
-- `npm run comment:append -- --file "/abs/path/note.md" --id "<comment-id>" --comment-file "/abs/path/reply.md"` appends one new entry to an existing SideNote2 thread using the same managed block format as the plugin.
-- `npm run comment:append -- --uri "obsidian://side-note2-comment?..." --comment-file "/abs/path/reply.md"` does the same when you already have a SideNote2 comment URI instead of a note path and comment id.
-- `npm run comment:resolve -- --file "/abs/path/note.md" --id "<comment-id>"` marks one stored SideNote2 thread resolved using the same managed block format as the plugin.
-- `npm run comment:resolve -- --uri "obsidian://side-note2-comment?..."` resolves a stored SideNote2 thread directly from a SideNote2 comment URI.
-- `npm run comment:update -- --file "/abs/path/note.md" --id "<comment-id>" --comment-file "/abs/path/comment.md"` updates one stored comment body using the same managed block format as the plugin.
-- `npm run comment:update -- --uri "obsidian://side-note2-comment?..." --comment-file "/abs/path/comment.md"` updates a stored comment body directly from a SideNote2 comment URI.
-- Current SideNote2 note storage only supports threaded `entries[]` payloads inside the managed comment block. Older flat `comment` payloads are intentionally no longer auto-migrated.
-- On startup, the plugin now ensures the vault root has SideNote2 agent instructions by creating `AGENTS.md` when missing, or inserting/updating a SideNote2-managed block inside an existing `AGENTS.md`. Existing user instructions stay intact outside that managed block.
-- That vault `AGENTS.md` routing does not install Codex skills. Users who want `/skills` to show `sidenote2` still need to install the skill separately and then restart Codex.
-- Obsidian exposes normal plugin unload, but not a distinct uninstall callback for community plugins. SideNote2 therefore keeps uninstall cleanup explicit through the settings tab, the `SideNote2: Remove SideNote2 agent support from vault` command, and the repo CLI.
-- The plugin command `SideNote2: Sync AGENTS.md in vault root` creates, inserts, or updates the SideNote2-managed instructions in the active Obsidian vault root using the vault name and, on desktop, the vault base path from the Obsidian runtime API.
-- The plugin command `SideNote2: Remove SideNote2 agent support from vault` removes the SideNote2-managed block from the active vault `AGENTS.md`, and deletes the file if that managed block was the only content.
-- `npm run agent:uninstall -- --vault-root "/abs/path/to/vault"` removes the SideNote2-managed vault `AGENTS.md` block and uninstalls bundled SideNote2 Codex skills from the default skills root if you previously installed them with the repo CLI. Use `--skills-root` to target a different Codex skills directory, or `--vault "<vault-name>"` to resolve the vault through Obsidian config instead of an explicit path.
-- `comment:append`, `comment:resolve`, and `comment:update` write atomically and refuse to overwrite a note if it changed after the script first read it. If Obsidian Sync or another editor is active, pass `-- --settle-ms 2000` to require a short quiet window before each write, then rerun any skipped notes after Sync settles. Treat skipped-note runs as partial success and retry them instead of hand-editing the managed JSON.
-- `npm version patch|minor|major` updates `package.json`, `manifest.json`, `versions.json`, and the README beta badge together for a release bump.
-- The test suite covers the note-backed comment lifecycle, comment retargeting and pruning, JSON storage updates, aggregate note generation, and the parsed-note cache plus aggregate index behavior.
+- `npm run build` creates the production bundle and fails if release artifacts leak source-map markers.
 
-## Linux Sandbox Troubleshooting
-
-On Ubuntu 24.04 and similar Linux hosts, Codex may fail to start sandboxed commands with a message like:
-
-```text
-Reason: command failed; retry without sandbox?
-```
-
-For this repo, that failure was not caused by SideNote2 vault permissions. The actual problem was host AppArmor policy blocking the Codex Linux sandbox from creating unprivileged user namespaces.
-
-Quick checks:
+## Release
 
 ```bash
-unshare -Ur true
-unshare -Urn true
+npm version patch
+npm run release:check
+git push origin main --follow-tags
 ```
 
-If either command fails with `Operation not permitted`, check these host prerequisites:
-
-- `uidmap` is installed so `newuidmap` and `newgidmap` exist
-- AppArmor is not blocking unprivileged user namespaces for the Codex sandbox binary
-
-Install the namespace mapping helpers:
-
-```bash
-sudo apt update
-sudo apt install -y uidmap
-```
-
-Temporary diagnostic workaround:
-
-```bash
-sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
-```
-
-Preferred long-term fix: add a targeted AppArmor profile for the current Codex sandbox binary and then restore:
-
-```bash
-sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=1
-```
-
-Profile shape used by Ubuntu 24.04:
-
-```text
-abi <abi/4.0>,
-include <tunables/global>
-
-profile codex-linux-san /absolute/path/to/codex flags=(unconfined) {
-  userns,
-  include if exists <local/codex-linux-san>
-}
-```
-
-On the DGX Spark setup used during development, the active Codex binary path was:
-
-```text
-/home/bun/.nvm/versions/node/v24.13.1/lib/node_modules/@openai/codex/node_modules/@openai/codex-linux-arm64/vendor/aarch64-unknown-linux-musl/codex/codex
-```
-
-After loading the profile, restart the Codex session and re-run the `unshare` checks above.
+- `npm version patch|minor|major` updates `package.json`, `manifest.json`, `versions.json`, and the README release badge.
+- `npm run release:check` runs the tests and the production build.
+- Before pushing a release tag, inspect the shipped files: `main.js`, `manifest.json`, and `styles.css`.
+- Releases should not ship `main.js.map`, `sourceMappingURL`, or `sourcesContent`.
+- GitHub releases upload only `main.js`, `manifest.json`, and `styles.css`.
 
 ## Local Install
 
-On a fresh machine, identify the actual vault you want to run against before linking the plugin.
-The vault is often not the repo root.
-
 ```bash
-obsidian vaults verbose
-obsidian vault info=path
-```
-
-If the repo lives inside a larger Obsidian vault, use that outer vault path for `VAULT`.
-
-Install the plugin into your vault with:
-
-```bash
-VAULT="/path/to/your/vault"
-REPO="/path/to/SideNote2"
-PLUGIN_ID="side-note2"
-PLUGIN_DIR="$VAULT/.obsidian/plugins/$PLUGIN_ID"
-
+VAULT="/path/to/vault"
 mkdir -p "$VAULT/.obsidian/plugins"
-if [ -L "$PLUGIN_DIR" ]; then rm "$PLUGIN_DIR"; fi
-if [ -e "$PLUGIN_DIR" ] && [ ! -L "$PLUGIN_DIR" ]; then mv "$PLUGIN_DIR" "$PLUGIN_DIR.backup.$(date +%Y%m%d-%H%M%S)"; fi
-ln -s "$REPO" "$PLUGIN_DIR"
+ln -sfn "$(pwd)" "$VAULT/.obsidian/plugins/side-note2"
 ```
 
-Then open that vault in Obsidian and enable `SideNote2` under community plugins.
-If you prefer the CLI:
-
-```bash
-obsidian plugin:enable id=side-note2 vault="<vault-name>"
-```
-
-The plugin installs as a symlink on purpose. `npm run dev` rebuilds `main.js` in the repo root, and Obsidian should load that same checkout rather than a copied plugin folder.
-
-## Open The View
-
-After enabling the plugin, click the SideNote2 ribbon icon labeled `Open SideNote2 index`.
-That opens the index note and ensures the right-sidebar SideNote2 view exists.
-
-If you want a console fallback in DevTools:
-
-```js
-await app.plugins.plugins["side-note2"].activateView(false);
-```
-
-## Reload
-
-`npm run dev` should normally handle plugin reloads automatically after a successful rebuild.
-
-If Obsidian still feels stale during development, reload the plugin manually.
-
-- Preferred CLI path:
+- Then enable `SideNote2` in Obsidian.
+- Open the ribbon action `Open SideNote2 index` to show the index note and sidebar view.
+- If auto reload misses a change, reload the plugin manually:
 
 ```bash
 obsidian plugin:reload id=side-note2 vault="<vault-name>"
 ```
 
-- DevTools fallback:
-
-- For Mac, use `Command + option + i` to inspect, then switch to the `Console` tab and run:
-
-```js
-await app.plugins.disablePlugin("side-note2");
-await app.plugins.enablePlugin("side-note2");
-```
-
 ## Debugging
 
-Debug logging is opt-in and lives in `src/debug.ts`.
+Persistent local logs are always on.
 
-Enable or disable it in `Settings > SideNote2 > Debug mode`.
-
-Inspect:
-
-```js
-window.__SIDENOTE2_DEBUG__;
-window.__SIDENOTE2_DEBUG_STORE__;
-```
+- Logs are written under `.obsidian/plugins/side-note2/logs/`
+- Files rotate daily and retain 3 days
+- Use the sidebar support button to review the attached log and submit a report

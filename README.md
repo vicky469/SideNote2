@@ -95,13 +95,13 @@ Agents can read, add, update, resolve the side notes from markdown.
 In Codex CLI, Claude Code, or another assistant, you can ask:
 
 ```text
-Show me the side comment for "selected text" in "/Users/path/to/note.md".
+Show me the side comment for "selected text" in "/path/to/note.md".
 ```
 
 Or update it:
 
 ```text
-Update the side comment for "selected text" in "/Users/path/to/note.md" to:
+Update the side comment for "selected text" in "/path/to/note.md" to:
 Your new side comment text here.
 ```
 
@@ -111,8 +111,6 @@ If multiple side comments in the same note use the same selected text, include a
 
 - `Index header image URL`
 - `Index header image caption`
-- `Debug mode`
-  This is not implemented yet.
 
 ## Command
 
@@ -141,6 +139,13 @@ For PDF files:
 The JSON block is stored in plugin data.
 
 `SideNote2 index.md` is just a generated index, not separate storage.
+
+## Index Surfaces
+
+- `SideNote2 index.md` stays a derived vault-wide aggregate note.
+- The index sidebar `Files` filter only scopes the sidebar view. Selecting one file there does not rewrite `SideNote2 index.md` down to that single file section.
+- In the index sidebar list view, the nested-comments toggle is hidden when the filter scope resolves to exactly one file.
+- The generated index note only shows a visibility banner in resolved-only mode.
 
 ## Development
 
