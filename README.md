@@ -148,37 +148,6 @@ Setup, local vault install, debugging, and architecture notes live in [README-de
 
 ## Changelog
 
-### 2.0.5 - 2026-04-07
-
-- Added a settings shortcut to sync or remove SideNote2's managed vault `AGENTS.md` block so uninstall cleanup is easier to discover before removing the plugin.
-- Clarified the README and dev docs so the `sidenote2` Codex skill and the vault `AGENTS.md` routing are documented as separate pieces of the agent workflow.
-
-### 2.0.3 - 2026-04-07
-
-- SideNote2 now manages a vault-root `AGENTS.md` block automatically so Codex and other assistants can route `obsidian://side-note2-comment?...` links, replies, updates, and resolves back to the note-backed source of truth.
-- Added manual `Sync AGENTS.md in vault root` and `Remove SideNote2 agent support from vault` commands, plus bundled CLI support for uninstalling the managed vault instructions and resolving stored comment threads.
-- Refined the index sidebar list and thought-trail tabs so the toolbar state is clearer and targeted reply reveals keep the thread expansion state users expect.
-- Updated the architecture examples and workflow docs to match the current threaded note model and the built-in agent-routing flow.
-
-### 2.0.2 - 2026-04-07
-
-- Threaded replies in the index sidebar now render as their own nested comment cards instead of being flattened into the parent card body.
-- Added a top-level index toggle to show or hide child replies, while still auto-showing them when a targeted reply is opened for reveal or edit.
-- Improved sidebar thread actions and metadata presentation so parent and child cards behave more consistently in index view.
-- Fixed bundled `sidenote2` CLI command output so agent and automation workflows can reliably capture success and error messages.
-
-### 2.0.1 - 2026-04-06
-
-- SideNote2 introduced a temporary startup migration bridge for older flat note comments into threaded `entries[]` storage.
-- That temporary upgrade bridge has since been removed. Current versions expect threaded `entries[]` note comment storage.
-
-### 2.0.0 - 2026-04-06
-
-- Breaking: SideNote2 introduced threaded note-backed comments with `entries[]` instead of the older flat `comment` payload.
-- Current versions no longer support the older flat note-comment payload. Notes must already use threaded `entries[]` storage.
-- Added append-to-thread comment helpers for agents and repo automation via `npm run comment:append` and `scripts/append-note-comment-entry.mjs`.
-- Improved note comment rendering and index workflows, including safer CLI writes, better index sidebar behavior, and page-note previews in the generated index note.
-
 ## License
 
 MIT
