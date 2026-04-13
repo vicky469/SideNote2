@@ -12,7 +12,6 @@ export const ALL_COMMENTS_NOTE_IMAGE_CAPTION = "Relativity (Credit: 2015 The M.C
 export const ALL_COMMENTS_NOTE_IMAGE_ALT = "SideNote2 index header image";
 const MAX_PREVIEW_LENGTH = 80;
 const PAGE_NOTE_LABEL_WORD_LIMIT = 10;
-const ACTIVE_COMMENTS_MODE_LABEL = "Showing: Active comments only";
 const RESOLVED_COMMENTS_MODE_LABEL = "Showing: Resolved comments only";
 
 export interface CommentLocationTarget {
@@ -388,9 +387,9 @@ export function buildAllCommentsNoteContent(
     if (headerImageCaption) {
         lines.push(`<div class="sidenote2-index-header-caption">${headerImageCaption}</div>`);
     }
-    if (options.showResolved !== undefined) {
+    if (options.showResolved) {
         lines.push(
-            `<div class="sidenote2-index-visibility-label">${showResolved ? RESOLVED_COMMENTS_MODE_LABEL : ACTIVE_COMMENTS_MODE_LABEL}</div>`,
+            `<div class="sidenote2-index-visibility-label">${RESOLVED_COMMENTS_MODE_LABEL}</div>`,
         );
     }
     lines.push("");

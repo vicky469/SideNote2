@@ -202,7 +202,7 @@ test("buildAllCommentsNoteContent groups comments by file and shows selected tex
     assert.doesNotMatch(content, /sidenote2-index-heading-link/);
 });
 
-test("buildAllCommentsNoteContent active mode hides resolved comments and labels the note", () => {
+test("buildAllCommentsNoteContent active mode hides resolved comments without adding a mode label", () => {
     const content = buildAllCommentsNoteContent("dev", [
         createComment({
             filePath: "B.md",
@@ -220,7 +220,7 @@ test("buildAllCommentsNoteContent active mode hides resolved comments and labels
         showResolved: false,
     });
 
-    assert.match(content, /<div class="sidenote2-index-visibility-label">Showing: Active comments only<\/div>/);
+    assert.doesNotMatch(content, /<div class="sidenote2-index-visibility-label">/);
     assert.match(content, /<strong class="sidenote2-index-heading-label" title="B\.md">B\.md<\/strong>[\s\S]*commentId=comment-1/);
     assert.doesNotMatch(content, /commentId=comment-2/);
 });
