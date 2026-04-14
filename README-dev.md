@@ -1,19 +1,19 @@
 # SideNote2 Development
 
-Development notes for `SideNote2`. The main [README.md](../README.md) stays product-level; this file is for setup, internals, and testing.
+Development notes for `SideNote2`. The main [README.md](./README.md) stays product-level; this file is for setup, internals, and testing.
 
 ## Docs Layout
 
-Use `src/docs/` for material we expect to keep current as the repo evolves.
+Use `docs/` for material we expect to keep current as the repo evolves.
 
 Examples:
 
-- `src/README-dev.md`
-- `src/docs/architecture.md`
-- `src/docs/architecture.canvas`
-- `src/docs/feature-map.canvas`
-- `src/docs/comment-route-map.canvas`
-- `src/docs/comment-lifecycle.canvas`
+- `README-dev.md`
+- `docs/architecture.md`
+- `docs/architecture.canvas`
+- `docs/feature-map.canvas`
+- `docs/comment-route-map.canvas`
+- `docs/comment-lifecycle.canvas`
 
 ## Architecture
 
@@ -99,11 +99,14 @@ SIDENOTE2_HOT_RELOAD=0 npm run dev
 ## Release
 
 ```bash
+VERSION=<next-version>
+cp docs/releases/_template.md "docs/releases/${VERSION}.md"
 npm version patch
 npm run release:check
 git push origin main --follow-tags
 ```
 
+- Required: create `docs/releases/<version>.md` before tagging. `npm run release:check` and the GitHub release workflow both fail if the exact versioned notes file is missing or still contains template placeholders.
 - `npm version patch|minor|major` updates `package.json`, `manifest.json`, `versions.json`, and the README release badge.
 - `npm run release:check` runs the tests and the production build.
 - `origin` should point to the canonical public source repo: `SideNote2`.

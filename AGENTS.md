@@ -1,13 +1,10 @@
 ## Release Artifact Security
 
 - Before any publish, release, or artifact upload, inspect the exact artifact that will ship.
-- Treat shipped artifacts as public. Do not publish original source code, embedded source maps, secrets, test fixtures, or local-only files unless the user explicitly wants them public.
-- For JavaScript and TypeScript package publishes, run the global release artifact guard before publishing and refuse to publish if it reports:
-  - source maps with embedded `sourcesContent`
-  - raw TypeScript or JSX-family source files in the package, excluding declaration files
-  - obvious secret-bearing files such as `.env*`, `.npmrc`, private keys, or certificates
-- Prefer explicit package allowlists such as `package.json.files` over ignore-based packaging.
-- If the guard blocks a publish, fix packaging first. Do not bypass the guard unless the user explicitly instructs you to make that artifact public and the reason is documented in the response.
+- Treat shipped artifacts as public. Do not publish source maps, embedded sources, secrets, test fixtures, or local-only files unless the user explicitly wants them public.
+- For SideNote2 releases, inspect the shipped assets: `main.js`, `manifest.json`, and `styles.css`.
+- Refuse a release if the shipped output includes `main.js.map`, `sourceMappingURL`, `sourcesContent`, raw TypeScript/JSX-family source files, or obvious secret-bearing files such as `.env*`, `.npmrc`, private keys, or certificates.
+- If the release is blocked, fix packaging first. Do not bypass the check unless the user explicitly instructs you to make that artifact public and the reason is documented in the response.
 - When a release passes, state what artifact inspection was run and what source-exposure checks were performed.
 
 # SideNote2 Agent Routing
@@ -56,8 +53,8 @@ If the user already supplied an `obsidian://side-note2-comment?...` URI, prefer 
 
 Do not overwrite an existing SideNote2 thread when the user clearly asked to reply.
 
-## Repo Workflow
+## Release Notes Requirement
 
-- This checkout should be treated as the canonical public source repo: `SideNote2`.
-- Normal plugin development and releases should happen here.
-- If SideNote2 later needs billing, auth, or entitlement services, keep that backend in a separate private repo.
+- Every release must include `docs/releases/<version>.md`.
+- Do not cut or push a release tag unless the matching versioned release-notes file exists and is filled in.
+- Treat `docs/releases/_template.md` as the starting point for new release notes, not as shippable content.

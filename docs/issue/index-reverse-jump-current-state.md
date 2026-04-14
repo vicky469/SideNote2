@@ -17,7 +17,7 @@ So this is **not** a graph-search problem and it does **not** need multi-hopping
 The generated index is now grouped like:
 
 ```md
-### SideNote2/src/docs/thoughts
+### SideNote2/docs/thoughts
 
   **refactored.md**
 

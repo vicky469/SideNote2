@@ -41,7 +41,7 @@ Use this skill when the user:
      replace the targeted stored comment body
    - `resolve`, `mark resolved`, `archive this side note`
      mark the targeted thread resolved
-4. Prefer helper scripts over hand-editing JSON.
+4. Prefer the installed `sidenote2` CLI over hand-editing JSON.
 5. Preserve all existing thread entries unless the user explicitly asked to replace one.
 6. Keep each SideNote2 comment body at or under 120 words.
 7. If the best response would exceed 120 words:
@@ -51,40 +51,44 @@ Use this skill when the user:
 
 ## Preferred CLI Shapes
 
+Use the installed `sidenote2` command when available.
+
+If `sidenote2` is not on `PATH` but the agent is working inside the SideNote2 repo, fall back to `node bin/sidenote2.mjs ...`.
+
 Append:
 
 ```bash
-node scripts/append-note-comment-entry.mjs --uri "obsidian://side-note2-comment?..." --comment-file /abs/path/reply.md
+sidenote2 comment:append --uri "obsidian://side-note2-comment?..." --comment-file /abs/path/reply.md
 ```
 
 Or with an explicit file and comment id:
 
 ```bash
-node scripts/append-note-comment-entry.mjs --file /abs/path/note.md --id "<comment-id>" --comment-file /abs/path/reply.md
+sidenote2 comment:append --file /abs/path/note.md --id "<comment-id>" --comment-file /abs/path/reply.md
 ```
 
 Update:
 
 ```bash
-node scripts/update-note-comment.mjs --uri "obsidian://side-note2-comment?..." --comment-file /abs/path/comment.md
+sidenote2 comment:update --uri "obsidian://side-note2-comment?..." --comment-file /abs/path/comment.md
 ```
 
 Or with an explicit file and comment id:
 
 ```bash
-node scripts/update-note-comment.mjs --file /abs/path/note.md --id "<comment-id>" --comment-file /abs/path/comment.md
+sidenote2 comment:update --file /abs/path/note.md --id "<comment-id>" --comment-file /abs/path/comment.md
 ```
 
 Resolve:
 
 ```bash
-node scripts/resolve-note-comment.mjs --uri "obsidian://side-note2-comment?..."
+sidenote2 comment:resolve --uri "obsidian://side-note2-comment?..."
 ```
 
 Or with an explicit file and comment id:
 
 ```bash
-node scripts/resolve-note-comment.mjs --file /abs/path/note.md --id "<comment-id>"
+sidenote2 comment:resolve --file /abs/path/note.md --id "<comment-id>"
 ```
 
 ## Matching Rules
@@ -97,4 +101,4 @@ node scripts/resolve-note-comment.mjs --file /abs/path/note.md --id "<comment-id
 
 - Do not overwrite a thread when the user asked to reply.
 - Do not hand-migrate legacy flat `comment` payloads during normal agent work.
-- If the helper script refuses a note because it changed after read, treat it as a retry case instead of editing the JSON manually.
+- If the CLI refuses a note because it changed after read, treat it as a retry case instead of editing the JSON manually.

@@ -35,7 +35,7 @@
 		{"id":"capture-entry","type":"file","file":"SideNote2/src/control/commentEntryController.ts","x":440,"y":392,"width":500,"height":72,"color":"5"},
 		{"id":"draft-tools-editor","type":"file","file":"SideNote2/src/ui/views/sidebarDraftEditor.ts","x":1700,"y":392,"width":500,"height":72,"color":"5"},
 		{"id":"draft-tools-card","type":"file","file":"SideNote2/src/ui/views/sidebarDraftComment.ts","x":1700,"y":482,"width":500,"height":72,"color":"5"},
-		{"id":"guide-architecture","type":"file","file":"SideNote2/src/docs/architecture.canvas","x":760,"y":-118,"width":280,"height":86,"color":"6"},
+		{"id":"guide-architecture","type":"file","file":"SideNote2/docs/architecture.canvas","x":760,"y":-118,"width":280,"height":86,"color":"6"},
 		{"id":"workspace-context","type":"file","file":"SideNote2/src/control/workspaceContextController.ts","x":440,"y":1512,"width":500,"height":72,"color":"3"},
 		{"id":"workspace-view","type":"file","file":"SideNote2/src/control/workspaceViewController.ts","x":440,"y":1602,"width":500,"height":72,"color":"3"},
 		{"id":"workspace-main","type":"file","file":"SideNote2/src/main.ts","x":440,"y":1692,"width":500,"height":72,"color":"3"},

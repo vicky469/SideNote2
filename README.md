@@ -32,6 +32,8 @@ SideNote2 is an [Obsidian](https://obsidian.md) plugin for side comments that st
 
 It is built for a minimal workflow: humans work in the sidebar, while agents can read the same comments directly from the markdown file. Inspired by [mofukuru/SideNote](https://github.com/mofukuru/SideNote).
 
+For development, setup, testing, and release workflow, see [README-dev.md](./README-dev.md).
+
 ## Features
 
 - Uses a dedicated sidebar for drafting, editing, resolving, reopening, and deleting comments.
@@ -51,8 +53,16 @@ It is built for a minimal workflow: humans work in the sidebar, while agents can
    <p align="center">
      <img src="./assets/image.png" alt="Install SideNote2 with BRAT" width="420">
    </p>
-3. Optional: install the `sidenote2` skill for agent workflows. The Agent Skills specification is an [open standard](https://github.com/agentskills/agentskills), used by a range of different AI systems.
-   For example, in codex: 
+3. Optional but recommended for agent workflows: install the `sidenote2` CLI once.
+```bash
+npm install -g github:vicky469/SideNote2
+```
+   Then confirm it is available:
+```bash
+sidenote2 --help
+```
+4. Optional: install the `sidenote2` skill for agent workflows. The Agent Skills specification is an [open standard](https://github.com/agentskills/agentskills), used by a range of different AI systems.
+   For example, in Codex:
 ```text
 Use the skill-installer skill and install:
 https://github.com/vicky469/SideNote2/tree/main/skills/sidenote2
@@ -60,7 +70,7 @@ https://github.com/vicky469/SideNote2/tree/main/skills/sidenote2
 
 Or store [`skills/sidenote2/SKILL.md`](./skills/sidenote2/SKILL.md)  in your home directory (`~/.claude/skills`, or `~/.agents/skills`).
 
-4. Restart Codex, then run `/skills`.
+5. Restart Codex, then run `/skills`.
    You should see `sidenote2`.
 
 ## Workflow
@@ -89,12 +99,13 @@ Or store [`skills/sidenote2/SKILL.md`](./skills/sidenote2/SKILL.md)  in your hom
 1. In SideNote2, click <img src="./assets/share-side-note-icon.svg" alt="Share side note icon" width="16" height="16"> on the comment you want to send to an agent.
    This copies an `obsidian://side-note2-comment?...` link.
 2. Paste that link into Codex, Claude Code, Kimi Code, or another assistant with the `sidenote2` instructions installed.
+   For write actions, the agent should also have the `sidenote2` CLI available on the machine.
 3. Ask one of these:
    - `reply to this`
    - `update this side note to: ...`
    - `resolve this side note`
 
-The `sidenote2` skill tell the agent to use the real markdown note as source of truth and to safely append, update, or resolve the stored comment/thread.
+The `sidenote2` skill tells the agent to use the real markdown note as source of truth and to safely append, update, or resolve the stored comment/thread through the `sidenote2` CLI.
 
 ## Settings
 
