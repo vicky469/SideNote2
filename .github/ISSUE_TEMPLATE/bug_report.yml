@@ -1,0 +1,84 @@
+name: Bug report
+description: Report a reproducible bug in SideNote2.
+title: "[Bug]: "
+labels:
+  - bug
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Use this form for reproducible bugs and regressions.
+
+        For suspected vulnerabilities or other sensitive security issues, do not file a public issue. Email vickyli.dev@gmail.com instead.
+  - type: textarea
+    id: problem_summary
+    attributes:
+      label: Problem Summary
+      placeholder: Describe the bug in one or two paragraphs.
+    validations:
+      required: true
+  - type: markdown
+    attributes:
+      value: "### Detail"
+  - type: input
+    id: plugin_version
+    attributes:
+      label: SideNote2 Version
+      placeholder: 2.0.12
+    validations:
+      required: true
+  - type: input
+    id: obsidian_version
+    attributes:
+      label: Obsidian Version
+      placeholder: 1.12.7
+    validations:
+      required: true
+  - type: input
+    id: os
+    attributes:
+      label: Operating System
+      placeholder: macOS / Windows / Linux
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to Reproduce
+      placeholder: |
+        1. Open...
+        2. Click...
+        3. Observe...
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected Behavior
+      placeholder: I expected...
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual Behavior
+      placeholder: What actually happened?
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Screenshots or sanitized logs
+      description: Paste screenshots, error messages, or sanitized log excerpts here.
+      placeholder: Add screenshots or sanitized logs if they help explain the problem.
+  - type: checkboxes
+    id: confirmations
+    attributes:
+      label: Before submitting
+      options:
+        - label: I searched existing issues first.
+          required: true
+        - label: I am reporting a bug, not a sensitive security issue.
+          required: true
+        - label: I removed private vault content and secrets from this report.
+          required: true

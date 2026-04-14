@@ -136,6 +136,11 @@ The JSON block is stored in plugin data.
 - In the index sidebar list view, the nested-comments toggle is hidden when the filter scope resolves to exactly one file.
 - The generated index note only shows a visibility banner in resolved-only mode.
 
+## Reporting Bugs
+
+Open a GitHub issue using the bug report template:
+
+https://github.com/vicky469/SideNote2/issues/new?template=bug_report.yml
 
 ## License
 
