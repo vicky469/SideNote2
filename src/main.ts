@@ -98,6 +98,7 @@ export default class SideNote2 extends Plugin {
         activateViewAndHighlightComment: (commentId) => this.activateViewAndHighlightComment(commentId),
         activateIndexComment: (commentId, indexFilePath, sourceFilePath) =>
             this.activateIndexComment(commentId, indexFilePath, sourceFilePath),
+        log: (level, area, event, payload) => this.logEvent(level, area, event, payload),
     });
     private readonly commentMutationController = new CommentMutationController({
         getAllCommentsNotePath: () => this.getAllCommentsNotePath(),
@@ -296,9 +297,6 @@ export default class SideNote2 extends Plugin {
                 : null,
         });
         await this.logService.initialize();
-        console.info(`[SideNote2] runtime=${this.runtime}`, {
-            pluginVersion: this.manifest.version,
-        });
         await this.logEvent("info", "startup", "startup.load.begin", {
             runtime: this.runtime,
             pluginVersion: this.manifest.version,
@@ -472,7 +470,6 @@ export default class SideNote2 extends Plugin {
         area: string,
         event: string,
     ): void {
-        console.warn(message, error);
         void this.logEvent("warn", area, event, {
             message,
             error,

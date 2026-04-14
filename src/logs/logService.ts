@@ -157,9 +157,7 @@ export class SideNote2LogService {
             this.recentBuffer.splice(0, this.recentBuffer.length - 200);
         }
 
-        if (level === "warn") {
-            console.warn("[SideNote2]", event, entry.payload ?? {});
-        } else if (level === "error") {
+        if (level === "error") {
             console.error("[SideNote2]", event, entry.payload ?? {});
         }
 
@@ -209,7 +207,7 @@ export class SideNote2LogService {
             .catch((error) => {
                 if (!this.warnedAboutWriteFailure) {
                     this.warnedAboutWriteFailure = true;
-                    console.warn("[SideNote2] Failed to write persistent logs.", sanitizeErrorForLog(error, this.sanitizerContext));
+                    console.error("[SideNote2] Failed to write persistent logs.", sanitizeErrorForLog(error, this.sanitizerContext));
                 }
             });
         await this.writeQueue;

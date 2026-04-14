@@ -114,6 +114,7 @@ export interface CommentHighlightHost {
     getRevealedCommentId(filePath: string): string | null;
     activateViewAndHighlightComment(commentId: string): Promise<void>;
     activateIndexComment(commentId: string, indexFilePath: string, sourceFilePath?: string): Promise<void>;
+    log?(level: "info" | "warn" | "error", area: string, event: string, payload?: Record<string, unknown>): Promise<void>;
 }
 
 export class CommentHighlightController {
@@ -882,7 +883,10 @@ export class CommentHighlightController {
 
                 range.surroundContents(span);
             } catch (error) {
-                console.warn("Failed to wrap preview highlight", error);
+                void this.host.log?.("warn", "highlight", "highlight.preview.wrap.error", {
+                    commentId: wrap.comment.id,
+                    error,
+                });
             }
         }
     }
