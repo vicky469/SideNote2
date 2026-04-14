@@ -137,3 +137,17 @@ The JSON block is stored in plugin data.
 ## License
 
 MIT
+
+<p align="center">
+  <a href="https://buymeacoffee.com/vickyli">
+    <img src="./assets/logo-readme.svg" alt="SideNote2 logo" width="84">
+  </a>
+</p>
+<p align="center">
+  <strong>Keep SideNote2 brewing.</strong>
+</p>
+<p align="center">
+  <a href="https://buymeacoffee.com/vickyli">
+    <img src="https://img.shields.io/badge/Buy%20me%20a%20coffee-support-FFDD00?style=for-the-badge&logo=buymeacoffee&logoColor=000000" alt="Buy Me a Coffee">
+  </a>
+</p>
