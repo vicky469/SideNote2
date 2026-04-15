@@ -8,7 +8,6 @@ body:
     id: problem_summary
     attributes:
       label: Problem Summary
-      description: Describe the bug in one or two paragraphs. You can also paste screenshots here.
       placeholder: Describe the bug in one or two paragraphs. Paste screenshots here if they help.
     validations:
       required: true
