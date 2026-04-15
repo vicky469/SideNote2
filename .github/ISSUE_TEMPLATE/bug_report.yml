@@ -23,9 +23,6 @@ body:
         Paste screenshots here if they help.
     validations:
       required: true
-  - type: markdown
-    attributes:
-      value: "### Detail"
   - type: input
     id: plugin_version
     attributes:
@@ -44,7 +41,14 @@ body:
     id: os
     attributes:
       label: Operating System
-      placeholder: macOS / Windows / Linux
+      placeholder: macOS / Windows / Linux / iOS / iPadOS / Android
+    validations:
+      required: true
+  - type: input
+    id: device
+    attributes:
+      label: Device
+      placeholder: MacBook Pro / iPhone 15 / iPad Air / Pixel 8
     validations:
       required: true
   - type: textarea
