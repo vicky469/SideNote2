@@ -34,3 +34,6 @@ data.json
 
 # Temporary local artifact exports
 /.public-release
+
+# Dev-only Obsidian skill references stay on the dedicated skills-dev branch
+/skills/dev
