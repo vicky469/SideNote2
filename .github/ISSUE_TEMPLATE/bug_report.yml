@@ -5,10 +5,22 @@ labels:
   - bug
 body:
   - type: textarea
-    id: problem_summary
+    id: problem
     attributes:
-      label: Problem Summary
-      placeholder: Describe the bug in one or two paragraphs. Paste screenshots here if they help.
+      label: Problem
+      placeholder: |
+        Problem summary:
+
+        Steps to reproduce:
+        1.
+        2.
+        3.
+
+        Expected behavior:
+
+        Actual behavior:
+
+        Paste screenshots here if they help.
     validations:
       required: true
   - type: markdown
@@ -36,29 +48,19 @@ body:
     validations:
       required: true
   - type: textarea
-    id: steps
+    id: potential_root_causes
     attributes:
-      label: Steps to Reproduce
-      placeholder: |
-        1. Open...
-        2. Click...
-        3. Observe...
+      label: Potential Root Cause(s)
+      placeholder: If you have a technical guess, add it here.
     validations:
-      required: true
+      required: false
   - type: textarea
-    id: expected
+    id: proposed_solution
     attributes:
-      label: Expected Behavior
-      placeholder: I expected...
+      label: Proposed Solution
+      placeholder: If you already know the likely fix, add it here.
     validations:
-      required: true
-  - type: textarea
-    id: actual
-    attributes:
-      label: Actual Behavior
-      placeholder: What actually happened?
-    validations:
-      required: true
+      required: false
   - type: checkboxes
     id: confirmations
     attributes:
