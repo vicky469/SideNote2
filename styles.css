@@ -210,6 +210,8 @@
 .sidenote2-view-container {
     position: relative;
     height: 100%;
+    display: flex;
+    flex-direction: column;
     overflow-y: auto;
 }
 
@@ -563,6 +565,7 @@
     z-index: 3;
     display: flex;
     justify-content: flex-end;
+    margin-top: auto;
     padding: 0 10px;
     pointer-events: none;
 }
