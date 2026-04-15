@@ -139,6 +139,7 @@ test("comment entry controller starts page drafts for commentable files", async 
     assert.deepEqual(host.loadedFiles, [file.path]);
     assert.deepEqual(host.markedFiles, [file.path]);
     assert.equal(host.draftCalls.length, 1);
+    assert.deepEqual(host.highlightedCommentIds, ["comment-1"]);
 
     const draft = host.draftCalls[0].draft;
     assert.ok(draft);

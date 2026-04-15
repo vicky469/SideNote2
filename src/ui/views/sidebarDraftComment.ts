@@ -95,7 +95,6 @@ export function renderDraftCommentCard(
     });
     textarea.value = comment.comment;
     textarea.setAttribute("placeholder", presentation.placeholder);
-    textarea.setAttribute("aria-label", "Side note draft");
     textarea.rows = estimateDraftTextareaRows(comment.comment, comment.mode === "edit");
 
     const syncPreview = () => {

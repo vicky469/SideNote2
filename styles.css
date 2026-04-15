@@ -1007,9 +1007,20 @@
     min-height: 0;
 }
 
+.sidenote2-comment-draft.is-new .sidenote2-inline-editor-preview,
+.sidenote2-comment-draft.is-new .sidenote2-inline-textarea,
+.sidenote2-comment-draft.is-append .sidenote2-inline-editor-preview,
+.sidenote2-comment-draft.is-append .sidenote2-inline-textarea {
+    min-height: 0;
+}
+
 .sidenote2-inline-editor-shell:focus-within {
     border-color: var(--background-modifier-border-focus, var(--interactive-accent));
     box-shadow: 0 0 0 1px var(--interactive-accent-translucent);
+}
+
+.sidenote2-inline-editor-shell:focus-within .sidenote2-inline-editor-preview {
+    visibility: hidden;
 }
 
 .sidenote2-inline-editor-preview,
@@ -1053,15 +1064,20 @@
     min-height: 0;
 }
 
+.sidenote2-inline-textarea::placeholder {
+    color: var(--text-faint, var(--text-muted));
+    -webkit-text-fill-color: var(--text-faint, var(--text-muted));
+}
+
 .sidenote2-inline-textarea:focus {
     outline: none;
     background: transparent !important;
-    color: transparent !important;
-    -webkit-text-fill-color: transparent;
+    color: var(--text-normal) !important;
+    -webkit-text-fill-color: var(--text-normal);
 }
 
 .sidenote2-inline-textarea::selection {
-    color: transparent;
+    background: var(--text-selection);
 }
 
 .sidenote2-editor-token-bold {
@@ -1668,19 +1684,8 @@
         margin-left: var(--sidenote2-thread-indent);
     }
 
-    .sidenote2-inline-textarea {
-        min-height: 104px;
-        font-size: 16px;
-    }
-
     .sidenote2-comment-actions button {
         width: 28px;
         height: 28px;
-    }
-}
-
-@media (max-width: 480px) {
-    .sidenote2-inline-textarea {
-        min-height: 96px;
     }
 }
