@@ -108,10 +108,10 @@ git push origin main --follow-tags
 
 - Required: create `docs/releases/<version>.md` before tagging. `npm run release:check` and the GitHub release workflow both fail if the exact versioned notes file is missing or still contains template placeholders.
 - `npm version patch|minor|major` updates `package.json`, `manifest.json`, `versions.json`, and the README release badge.
-- `npm run release:check` runs the tests and the production build.
+- `npm run release:check` runs the tests, the production build, the shipped-artifact inspection, and the required release-notes check.
 - `origin` should point to the canonical public source repo: `SideNote2`.
-- Before pushing a release tag, inspect the shipped files: `main.js`, `manifest.json`, and `styles.css`.
-- Releases should not ship `main.js.map`, `sourceMappingURL`, or `sourcesContent`.
+- The shipped-artifact inspection checks exactly `main.js`, `manifest.json`, and `styles.css`.
+- Releases should not ship `main.js.map`, `sourceMappingURL`, `sourcesContent`, private keys, certificates, tokens, or obvious local absolute paths.
 - GitHub releases upload only `main.js`, `manifest.json`, and `styles.css`.
 
 ## Local Install

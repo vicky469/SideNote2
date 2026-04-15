@@ -47,7 +47,7 @@ Checked against the official Obsidian docs and local repo guidance on 2026-04-14
 - [x] GitHub release `2.0.12` exists and ships `main.js`, `manifest.json`, and `styles.css`.
 - [x] The production build already blocks `main.js.map`, `sourceMappingURL`, and `sourcesContent`.
 - [x] Release policy already requires inspecting the shipped artifacts `main.js`, `manifest.json`, and `styles.css`.
-- [ ] Before each public release, inspect the exact shipped artifacts and confirm they do not expose raw TypeScript, embedded source maps, secrets, test fixtures, or local-only files.
+- [x] Before each public release, `npm run release:artifacts:check` now inspects the exact shipped artifacts and fails on missing assets, `main.js.map`, source-map markers, embedded sources, obvious secrets, or local absolute paths.
 
 ## Submission Workflow
 
