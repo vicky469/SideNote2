@@ -65,23 +65,30 @@ export function formatSidebarCommentSourceFileLabel(filePath: string): string {
 }
 
 function renderObsidianExternalLinkIcon(container: HTMLElement): void {
-    container.innerHTML = `
-        <svg
-            xmlns="http://www.w3.org/2000/svg"
-            class="svg-icon sidenote2-obsidian-external-link-icon"
-            viewBox="0 0 32 32"
-            fill="none"
-            stroke="currentColor"
-            stroke-width="3"
-            stroke-linecap="round"
-            stroke-linejoin="round"
-            aria-hidden="true"
-        >
-            <path d="M14 9H3v20h20V18"></path>
-            <path d="M18 4h10v10"></path>
-            <path d="M28 4 14 18"></path>
-        </svg>
-    `;
+    const svgNamespace = "http://www.w3.org/2000/svg";
+    const svgEl = document.createElementNS(svgNamespace, "svg");
+    svgEl.setAttribute("xmlns", svgNamespace);
+    svgEl.setAttribute("class", "svg-icon sidenote2-obsidian-external-link-icon");
+    svgEl.setAttribute("viewBox", "0 0 32 32");
+    svgEl.setAttribute("fill", "none");
+    svgEl.setAttribute("stroke", "currentColor");
+    svgEl.setAttribute("stroke-width", "3");
+    svgEl.setAttribute("stroke-linecap", "round");
+    svgEl.setAttribute("stroke-linejoin", "round");
+    svgEl.setAttribute("aria-hidden", "true");
+
+    const paths = [
+        "M14 9H3v20h20V18",
+        "M18 4h10v10",
+        "M28 4 14 18",
+    ];
+    for (const d of paths) {
+        const pathEl = document.createElementNS(svgNamespace, "path");
+        pathEl.setAttribute("d", d);
+        svgEl.appendChild(pathEl);
+    }
+
+    container.replaceChildren(svgEl);
 }
 
 export function buildPersistedCommentPresentation(

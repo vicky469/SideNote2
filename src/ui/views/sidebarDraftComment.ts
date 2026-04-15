@@ -105,6 +105,7 @@ export function renderDraftCommentCard(
             preview.setText(presentation.placeholder);
         } else {
             preview.removeClass("is-empty");
+            // Draft preview HTML is generated only from escaped user text plus fixed token spans.
             preview.innerHTML = renderStyledDraftCommentHtml(textarea.value);
         }
 

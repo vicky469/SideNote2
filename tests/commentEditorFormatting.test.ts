@@ -174,3 +174,13 @@ test("renderStyledDraftCommentHtml does not treat emails as mentions", () => {
         "ping foo@example.com and <span class=\"sidenote2-editor-token-mention\">@teammate</span>",
     );
 });
+
+test("renderStyledDraftCommentHtml keeps html-like input inert", () => {
+    const html = renderStyledDraftCommentHtml("<script>alert(1)</script> <img src=x onerror=alert(1)> @safe");
+
+    assert.match(html, /&lt;script&gt;alert\(1\)&lt;\/script&gt;/);
+    assert.match(html, /&lt;img src=x onerror=alert\(1\)&gt;/);
+    assert.match(html, /<span class=\"sidenote2-editor-token-mention\">@safe<\/span>/);
+    assert.ok(!html.includes("<script>"));
+    assert.ok(!html.includes("<img "));
+});

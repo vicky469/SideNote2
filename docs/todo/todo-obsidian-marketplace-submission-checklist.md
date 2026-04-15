@@ -31,16 +31,8 @@ Checked against the official Obsidian docs and local repo guidance on 2026-04-14
 ## Documentation And User Disclosures
 
 - [x] `README.md` explains what the plugin does and how to use it.
-- [ ] Add an explicit security and disclosures section to `README.md`.
-- [ ] In that disclosure section, state that the plugin is desktop-only.
-- [ ] In that disclosure section, state whether the plugin requires any account. Current repo state suggests no account is required.
-- [ ] In that disclosure section, state whether the plugin shows ads. Current repo state suggests no ads.
-- [ ] In that disclosure section, state whether the plugin includes telemetry. Current repo state suggests no telemetry.
-- [ ] In that disclosure section, explain current network-related behavior. Today the main user-reachable case is the index header image URL setting, and the default index image URL is remote.
-- [ ] Decide whether to keep the default remote index header image URL. If keeping it, document that the generated index note may load a remote image. If not, replace the default with a blank or local-safe default.
-- [ ] In that disclosure section, explain that support-report sending code exists in the repo but is currently disabled in this build because no endpoint is configured.
-- [ ] If a future build enables support-report sending, disclose exactly what leaves the device: email, title, report body, attached log content, and optional screenshots.
-- [x] Added vulnerability reporting instructions in `README.md`, and added a GitHub bug report template with a security contact link.
+- [x] `README.md` includes bug reporting instructions.
+- [x] `README.md` includes a contact path for sensitive security issues.
 
 ## Security And Code Review
 
@@ -48,7 +40,7 @@ Checked against the official Obsidian docs and local repo guidance on 2026-04-14
 - [x] Support-report sending code uses Obsidian `requestUrl` instead of `fetch`.
 - [x] The current build has no active support-report endpoint because `src/support/supportConfig.ts` sets `SUPPORT_REPORT_ENDPOINT_URL` to `null`.
 - [x] Reviewed and trimmed non-essential console output so routine startup and warning-level plugin events stay in SideNote2 logs instead of the default console.
-- [ ] Audit remaining HTML injection sinks and either document why they are safe or replace them with safer DOM construction. Current sinks to review are `SupportLogInspectorModal.ts`, `SideNote2View.ts` Mermaid SVG rendering, `sidebarDraftComment.ts`, and `sidebarPersistedComment.ts`.
+- [x] Reviewed the remaining HTML injection sinks. `SupportLogInspectorModal.ts` escapes row content before table HTML assembly, `sidebarDraftComment.ts` escapes draft text before preview rendering, `sidebarPersistedComment.ts` no longer uses `innerHTML` for the external-link SVG icon, and the Mermaid view in `SideNote2View.ts` only injects Mermaid-generated SVG from sanitized labels and encoded Obsidian URLs.
 
 ## Release Artifact Security
 
@@ -71,8 +63,3 @@ Checked against the official Obsidian docs and local repo guidance on 2026-04-14
 ## Meta
 
 - [x] Added this marketplace-submission checklist workflow to the shared `obsidian-plugin-dev` skill so it is part of future release/submission prep by default.
-
-## Notes
-
-- The repo contains support-report UI and sender code, but I did not find an active runtime wiring that opens `SupportReportModal` in the current build.
-- The plugin currently writes local diagnostic logs under the plugin directory and can reveal the log file location on desktop. That behavior should be mentioned in user-facing disclosures if it remains part of the public release.

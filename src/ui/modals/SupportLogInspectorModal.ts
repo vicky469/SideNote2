@@ -142,6 +142,7 @@ export default class SupportLogInspectorModal extends Modal {
         this.setSectionVisible(this.emptyStateEl, false);
         this.setSectionVisible(this.tableWrapEl, true);
         if (this.tableBodyEl) {
+            // Row content is escaped in getRenderedTableHtml(); only level/kind classes come from enums.
             this.tableBodyEl.innerHTML = this.getRenderedTableHtml(preview);
         }
     }

@@ -1173,6 +1173,8 @@ export default class SideNote2View extends ItemView {
 
             const mermaidEl = container.createDiv("mermaid");
             mermaidEl.setAttribute("data-sidenote2-thought-trail-renderer", "direct");
+            // Mermaid returns SVG markup here; the source graph is built from plugin-generated lines,
+            // sanitized labels, and encoded Obsidian URLs rather than raw user HTML.
             mermaidEl.innerHTML = svg;
             if (typeof renderResult?.bindFunctions === "function") {
                 renderResult.bindFunctions(mermaidEl);
