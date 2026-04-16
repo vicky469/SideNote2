@@ -32,13 +32,11 @@ import { renderDraftCommentCard } from "./sidebarDraftComment";
 import {
     buildIndexFileFilterOptionsFromCounts,
     deriveIndexSidebarScopedFilePaths,
-    filterCommentsByFilePaths,
     getIndexFileFilterLabel,
     shouldLimitIndexSidebarList,
     type IndexFileFilterOption,
 } from "./indexFileFilter";
 import { INDEX_SIDEBAR_LIST_LIMIT, limitIndexSidebarListItems } from "./indexSidebarListLimit";
-import { filterCommentsByResolvedVisibility } from "../../core/rules/resolvedCommentVisibility";
 import { SidebarInteractionController } from "./sidebarInteractionController";
 import { renderPersistedCommentCard } from "./sidebarPersistedComment";
 import {
@@ -277,14 +275,10 @@ export default class SideNote2View extends ItemView {
 
             this.containerEl.empty();
             this.containerEl.addClass("sidenote2-view-container");
-            const persistedComments = isAllCommentsView
-                ? this.plugin.getAllIndexedComments()
-                : this.plugin.commentManager.getCommentsForFile(file.path);
             const persistedThreads = isAllCommentsView
                 ? this.plugin.getAllIndexedThreads()
                 : this.plugin.getThreadsForFile(file.path);
             const showResolved = this.plugin.shouldShowResolvedComments();
-            const visiblePersistedComments = filterCommentsByResolvedVisibility(persistedComments, showResolved);
             const visiblePersistedThreads = persistedThreads.filter((thread) =>
                 matchesResolvedVisibility(thread.resolved, showResolved));
             const indexFileFilterGraph = isAllCommentsView
@@ -319,9 +313,6 @@ export default class SideNote2View extends ItemView {
             const indexFileFilterOptions = isAllCommentsView && indexFileFilterGraph
                 ? buildIndexFileFilterOptionsFromCounts(indexFileFilterGraph.fileCommentCounts)
                 : [];
-            const scopedVisibleComments = isAllCommentsView
-                ? filterCommentsByFilePaths(visiblePersistedComments, filteredIndexFilePaths)
-                : visiblePersistedComments;
             const {
                 scopedVisibleThreads,
                 scopedAllThreads,
