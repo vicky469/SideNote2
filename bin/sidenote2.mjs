@@ -670,6 +670,18 @@ async function loadStorageModule(repoRoot) {
     return import(moduleUrl);
 }
 
+function getManagedSectionErrorMessage(storageModule, noteContent, notePath) {
+    const problem = typeof storageModule.getManagedSectionProblem === "function"
+        ? storageModule.getManagedSectionProblem(noteContent)
+        : null;
+
+    if (problem === "multiple") {
+        return `Found multiple SideNote2 comments blocks in ${notePath}. Collapse them to exactly one managed block before writing.\n`;
+    }
+
+    return `Found a SideNote2 comments block in ${notePath}, but it is not a supported threaded entries[] payload.\n`;
+}
+
 async function runCommentUpdate(argv, streamOut, streamErr) {
     let options;
     try {
@@ -703,9 +715,7 @@ async function runCommentUpdate(argv, streamOut, streamErr) {
 
     if (typeof updated !== "string") {
         if (storageModule.getManagedSectionKind(noteContent) === "unsupported") {
-            streamErr.write(
-                `Found a SideNote2 comments block in ${notePath}, but it is not a supported threaded entries[] payload.\n`,
-            );
+            streamErr.write(getManagedSectionErrorMessage(storageModule, noteContent, notePath));
             return 1;
         }
 
@@ -750,9 +760,7 @@ async function runCommentCreate(argv, streamOut, streamErr) {
     const storageModule = await loadStorageModule(repoRoot);
     const managedSectionKind = storageModule.getManagedSectionKind(noteContent);
     if (managedSectionKind === "unsupported") {
-        streamErr.write(
-            `Found a SideNote2 comments block in ${notePath}, but it is not a supported threaded entries[] payload.\n`,
-        );
+        streamErr.write(getManagedSectionErrorMessage(storageModule, noteContent, notePath));
         return 1;
     }
 
@@ -838,9 +846,7 @@ async function runCommentAppend(argv, streamOut, streamErr) {
     if (typeof updated !== "string") {
         const managedSectionKind = storageModule.getManagedSectionKind(noteContent);
         if (managedSectionKind === "unsupported") {
-            streamErr.write(
-                `Found a SideNote2 comments block in ${notePath}, but it is not a supported threaded entries[] payload.\n`,
-            );
+            streamErr.write(getManagedSectionErrorMessage(storageModule, noteContent, notePath));
             return 1;
         }
 
@@ -901,9 +907,7 @@ async function runCommentResolve(argv, streamOut, streamErr) {
     if (typeof updated !== "string") {
         const managedSectionKind = storageModule.getManagedSectionKind(noteContent);
         if (managedSectionKind === "unsupported") {
-            streamErr.write(
-                `Found a SideNote2 comments block in ${notePath}, but it is not a supported threaded entries[] payload.\n`,
-            );
+            streamErr.write(getManagedSectionErrorMessage(storageModule, noteContent, notePath));
             return 1;
         }
 

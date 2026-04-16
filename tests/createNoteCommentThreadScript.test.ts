@@ -178,3 +178,47 @@ test("create-note-comment-thread script rejects unsupported legacy flat payloads
     assert.ok(failure);
     assert.match(failure.stderr, /not a supported threaded entries\[\] payload/);
 });
+
+test("create-note-comment-thread script rejects notes with two SideNote2 managed blocks", async () => {
+    const tempDir = await mkdtemp(path.join(tmpdir(), "sidenote2-comment-create-duplicate-"));
+    const notePath = path.join(tempDir, "note.md");
+    const scriptPath = path.resolve(process.cwd(), "scripts/create-note-comment-thread.mjs");
+    const first = serializeNoteCommentThreads("# Title\n\nBody text.\n", [createThread()]);
+    const second = serializeNoteCommentThreads("# Title\n\nBody text.\n", [createThread({
+        id: "thread-2",
+        selectedText: "next",
+        selectedTextHash: hashText("next"),
+        entries: [{
+            id: "entry-3",
+            body: "Different thread",
+            timestamp: 1710000002000,
+        }],
+        createdAt: 1710000002000,
+        updatedAt: 1710000002000,
+    })]);
+
+    await writeFile(
+        notePath,
+        `${first.trimEnd()}\n\n${second.slice(second.indexOf("<!-- SideNote2 comments"))}\n`,
+        "utf8",
+    );
+
+    let failure: { stderr: string } | null = null;
+    try {
+        await execFile("node", [
+            scriptPath,
+            "--file",
+            notePath,
+            "--page",
+            "--comment",
+            "New page note",
+        ], {
+            cwd: process.cwd(),
+        });
+    } catch (error) {
+        failure = error as { stderr: string };
+    }
+
+    assert.ok(failure);
+    assert.match(failure.stderr, /multiple SideNote2 comments blocks/);
+});

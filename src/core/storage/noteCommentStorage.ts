@@ -72,6 +72,14 @@ interface OffsetRange {
 }
 
 export type ManagedSectionKind = "none" | "threaded" | "unsupported";
+export type ManagedSectionProblem = "multiple" | "invalid";
+
+interface ManagedSectionAnalysis {
+    normalizedContent: string;
+    kind: ManagedSectionKind;
+    problem: ManagedSectionProblem | null;
+    section: FoundManagedSection | null;
+}
 
 function normalizeCommentBody(body: string): string {
     return body.replace(/\r\n/g, "\n").replace(/\n+$/, "");
@@ -102,20 +110,12 @@ function normalizeThread(thread: CommentThread): CommentThread {
 }
 
 function splitManagedSection(noteContent: string): SplitManagedSectionResult {
-    const normalized = noteContent.replace(/\r\n/g, "\n");
-    const section = findManagedSection(normalized);
-    if (section) {
-        return section;
+    const analysis = analyzeManagedSection(noteContent);
+    if (analysis.section) {
+        return analysis.section;
     }
 
-    return {
-        normalizedContent: normalized,
-        mainContent: normalized.trimEnd(),
-        sectionContent: null,
-        sectionFromOffset: normalized.trimEnd().length,
-        sectionToOffset: normalized.length,
-        hasVisibleContentAfterSection: false,
-    };
+    return buildEmptyManagedSectionResult(analysis.normalizedContent);
 }
 
 export function sortCommentsByPosition(comments: Comment[]): Comment[] {
@@ -340,11 +340,22 @@ function hasInlineCloseMarkerOnSameLine(normalized: string, sectionStart: number
     return openerLine.includes(HIDDEN_SECTION_CLOSE);
 }
 
-function findLastManagedSection(normalized: string): FoundManagedSection | null {
+function buildEmptyManagedSectionResult(normalizedContent: string): SplitManagedSectionResult {
+    return {
+        normalizedContent,
+        mainContent: normalizedContent.trimEnd(),
+        sectionContent: null,
+        sectionFromOffset: normalizedContent.trimEnd().length,
+        sectionToOffset: normalizedContent.length,
+        hasVisibleContentAfterSection: false,
+    };
+}
+
+function findManagedSectionStarts(normalized: string): number[] {
     const matches = Array.from(normalized.matchAll(/<!-- SideNote2 comments(?=$|[\s[{])/g));
     const fencedCodeBlockRanges = buildFencedCodeBlockRanges(normalized);
-    for (let index = matches.length - 1; index >= 0; index -= 1) {
-        const match = matches[index];
+    const starts: number[] = [];
+    for (const match of matches) {
         if (typeof match.index !== "number") {
             continue;
         }
@@ -356,6 +367,16 @@ function findLastManagedSection(normalized: string): FoundManagedSection | null 
         if (hasInlineCloseMarkerOnSameLine(normalized, sectionStart)) {
             continue;
         }
+
+        starts.push(sectionStart);
+    }
+
+    return starts;
+}
+
+function findLastManagedSection(normalized: string, sectionStarts: readonly number[]): FoundManagedSection | null {
+    for (let index = sectionStarts.length - 1; index >= 0; index -= 1) {
+        const sectionStart = sectionStarts[index];
         const closeIndex = normalized.indexOf(`\n${HIDDEN_SECTION_CLOSE}`, sectionStart);
         if (closeIndex === -1) {
             continue;
@@ -381,17 +402,99 @@ function findLastManagedSection(normalized: string): FoundManagedSection | null 
     return null;
 }
 
-function findManagedSection(normalized: string): SplitManagedSectionResult | null {
-    const section = findLastManagedSection(normalized);
+function analyzeNormalizedManagedSection(normalized: string): ManagedSectionAnalysis {
+    const sectionStarts = findManagedSectionStarts(normalized);
+    if (sectionStarts.length > 1) {
+        return {
+            normalizedContent: normalized,
+            kind: "unsupported",
+            problem: "multiple",
+            section: null,
+        };
+    }
+
+    const section = findLastManagedSection(normalized, sectionStarts);
+    if (!section) {
+        return {
+            normalizedContent: normalized,
+            kind: "none",
+            problem: null,
+            section: null,
+        };
+    }
+
+    if (parseJsonSection(section.sectionContent, "__probe__") === null) {
+        return {
+            normalizedContent: normalized,
+            kind: "unsupported",
+            problem: "invalid",
+            section: null,
+        };
+    }
+
+    return {
+        normalizedContent: normalized,
+        kind: "threaded",
+        problem: null,
+        section,
+    };
+}
+
+function analyzeManagedSection(noteContent: string): ManagedSectionAnalysis {
+    return analyzeNormalizedManagedSection(noteContent.replace(/\r\n/g, "\n"));
+}
+
+function getManagedSectionRangeFromAnalysis(analysis: ManagedSectionAnalysis): ManagedSectionRange | null {
+    const section = analysis.section;
     if (!section) {
         return null;
     }
 
-    if (parseJsonSection(section.sectionContent, "__probe__") === null) {
+    const sectionText = analysis.normalizedContent.slice(section.sectionFromOffset, section.sectionToOffset);
+    const leadingWhitespaceLength = sectionText.length - sectionText.trimStart().length;
+
+    return {
+        fromOffset: section.sectionFromOffset + leadingWhitespaceLength,
+        toOffset: section.sectionToOffset,
+    };
+}
+
+function getManagedSectionLineRangeFromAnalysis(analysis: ManagedSectionAnalysis): ManagedSectionLineRange | null {
+    const range = getManagedSectionRangeFromAnalysis(analysis);
+    if (!range) {
         return null;
     }
 
-    return section;
+    const beforeSection = analysis.normalizedContent.slice(0, range.fromOffset);
+    const sectionText = analysis.normalizedContent.slice(range.fromOffset, range.toOffset);
+    const startLine = beforeSection.match(/\n/g)?.length ?? 0;
+    const sectionLineCount = sectionText.match(/\n/g)?.length ?? 0;
+
+    return {
+        startLine,
+        endLine: startLine + sectionLineCount,
+    };
+}
+
+function getWritableManagedSectionAnalysis(noteContent: string, threadCount: number): ManagedSectionAnalysis {
+    const analysis = analyzeManagedSection(noteContent);
+    if (threadCount === 0) {
+        return analysis;
+    }
+
+    if (analysis.problem === "multiple") {
+        throw new Error(
+            "Found multiple SideNote2 comments blocks in one markdown note. Collapse them to exactly one managed block before saving comments.",
+        );
+    }
+
+    if (analysis.problem === "invalid") {
+        throw new Error(
+            "Found an unsupported SideNote2 comments block. Rewrite the note to the threaded `entries[]` format before saving comments.",
+        );
+    }
+
+    return analysis;
 }
 
 export function parseNoteComments(noteContent: string, filePath: string): ParsedNoteComments {
@@ -408,42 +511,15 @@ export function parseNoteComments(noteContent: string, filePath: string): Parsed
 }
 
 export function getManagedSectionKind(noteContent: string): ManagedSectionKind {
-    const normalized = noteContent.replace(/\r\n/g, "\n");
-    const section = findLastManagedSection(normalized);
-    if (!section) {
-        return "none";
-    }
-
-    return parseJsonSection(section.sectionContent, "__probe__") === null
-        ? "unsupported"
-        : "threaded";
+    return analyzeManagedSection(noteContent).kind;
 }
 
-function assertWritableManagedSection(noteContent: string, threadCount: number): void {
-    if (threadCount === 0) {
-        return;
-    }
-
-    if (getManagedSectionKind(noteContent) === "unsupported") {
-        throw new Error(
-            "Found an unsupported SideNote2 comments block. Rewrite the note to the threaded `entries[]` format before saving comments.",
-        );
-    }
+export function getManagedSectionProblem(noteContent: string): ManagedSectionProblem | null {
+    return analyzeManagedSection(noteContent).problem;
 }
 
 export function getManagedSectionRange(noteContent: string): ManagedSectionRange | null {
-    const { normalizedContent, sectionContent, sectionFromOffset, sectionToOffset } = splitManagedSection(noteContent);
-    if (!sectionContent) {
-        return null;
-    }
-
-    const sectionText = normalizedContent.slice(sectionFromOffset, sectionToOffset);
-    const leadingWhitespaceLength = sectionText.length - sectionText.trimStart().length;
-
-    return {
-        fromOffset: sectionFromOffset + leadingWhitespaceLength,
-        toOffset: sectionToOffset,
-    };
+    return getManagedSectionRangeFromAnalysis(analyzeManagedSection(noteContent));
 }
 
 export function getManagedSectionStartLine(noteContent: string): number | null {
@@ -451,37 +527,24 @@ export function getManagedSectionStartLine(noteContent: string): number | null {
 }
 
 export function getVisibleNoteContent(noteContent: string): string {
-    const normalized = noteContent.replace(/\r\n/g, "\n");
-    const range = getManagedSectionRange(normalized);
+    const analysis = analyzeManagedSection(noteContent);
+    const range = getManagedSectionRangeFromAnalysis(analysis);
     if (!range) {
-        return normalized;
+        return analysis.normalizedContent;
     }
 
-    return normalized.slice(0, range.fromOffset) + normalized.slice(range.toOffset);
+    return analysis.normalizedContent.slice(0, range.fromOffset) + analysis.normalizedContent.slice(range.toOffset);
 }
 
 export function getManagedSectionLineRange(noteContent: string): ManagedSectionLineRange | null {
-    const normalized = noteContent.replace(/\r\n/g, "\n");
-    const range = getManagedSectionRange(normalized);
-    if (!range) {
-        return null;
-    }
-
-    const beforeSection = normalized.slice(0, range.fromOffset);
-    const sectionText = normalized.slice(range.fromOffset, range.toOffset);
-    const startLine = beforeSection.match(/\n/g)?.length ?? 0;
-    const sectionLineCount = sectionText.match(/\n/g)?.length ?? 0;
-
-    return {
-        startLine,
-        endLine: startLine + sectionLineCount,
-    };
+    return getManagedSectionLineRangeFromAnalysis(analyzeManagedSection(noteContent));
 }
 
 export function serializeNoteCommentThreads(noteContent: string, threads: CommentThread[]): string {
-    assertWritableManagedSection(noteContent, threads.length);
-    const { mainContent } = splitManagedSection(noteContent);
-    const normalizedMain = mainContent.trimEnd();
+    const analysis = getWritableManagedSectionAnalysis(noteContent, threads.length);
+    const normalizedMain = analysis.section
+        ? analysis.section.mainContent.trimEnd()
+        : analysis.normalizedContent.trimEnd();
 
     if (!threads.length) {
         return normalizedMain.length ? `${normalizedMain}\n` : "";
@@ -517,14 +580,14 @@ export function serializeNoteComments(noteContent: string, comments: Comment[]):
 }
 
 export function getManagedSectionEditForThreads(noteContent: string, threads: CommentThread[]): ManagedSectionEdit {
-    assertWritableManagedSection(noteContent, threads.length);
+    const analysis = getWritableManagedSectionAnalysis(noteContent, threads.length);
     const {
         normalizedContent,
         sectionContent,
         sectionFromOffset,
         sectionToOffset,
         hasVisibleContentAfterSection,
-    } = splitManagedSection(noteContent);
+    } = analysis.section ?? buildEmptyManagedSectionResult(analysis.normalizedContent);
 
     if (sectionContent && hasVisibleContentAfterSection) {
         const nextContent = serializeNoteCommentThreads(noteContent, threads);

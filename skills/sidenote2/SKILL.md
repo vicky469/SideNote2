@@ -28,7 +28,7 @@ Use this skill when the user:
 ## Source Of Truth
 
 - The markdown note itself is canonical.
-- SideNote2 stores comments in the trailing `<!-- SideNote2 comments -->` block in that note.
+- SideNote2 stores comments in exactly one trailing `<!-- SideNote2 comments -->` block in that note.
 - `SideNote2 index.md` is derived output. Use it to discover a note path, not as canonical storage.
 - In this skill, a `page note` or `anchored note` normally means a simple SideNote2 note/thread inside the current markdown note.
 - Only create a separate wiki page when the user explicitly asks for one.
@@ -122,5 +122,7 @@ sidenote2 comment:resolve --file /abs/path/note.md --id "<comment-id>"
 - Do not append to an existing thread when the user clearly asked to create a new page note or anchored note.
 - Do not overwrite a thread when the user asked to reply.
 - Do not interpret `create a note` as `create a new markdown page` unless the user explicitly asks for a separate wiki page.
+- Do not create, preserve, or normalize a second `<!-- SideNote2 comments -->` block in the same markdown file.
+- If a note already has more than one `<!-- SideNote2 comments -->` block, stop and repair or escalate instead of writing.
 - Do not hand-migrate legacy flat `comment` payloads during normal agent work.
 - If the CLI refuses a note because it changed after read, treat it as a retry case instead of editing the JSON manually.

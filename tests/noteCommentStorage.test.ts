@@ -348,6 +348,38 @@ test("getManagedSectionKind distinguishes threaded, unsupported, and missing man
     assert.equal(getManagedSectionKind("Body\n"), "none");
 });
 
+test("getManagedSectionKind rejects notes with two valid SideNote2 managed blocks", () => {
+    const first = serializeNoteComments("Body\n", [createComment()]);
+    const second = serializeNoteComments("Body\n", [createComment({
+        id: "comment-2",
+        selectedText: "second",
+        selectedTextHash: "hash-2",
+        timestamp: 1710000001000,
+    })]);
+    const duplicateBlocks = `${first.trimEnd()}\n\n${second.slice(second.indexOf("<!-- SideNote2 comments"))}`;
+
+    assert.equal((duplicateBlocks.match(/<!-- SideNote2 comments/g) || []).length, 2);
+    assert.equal(getManagedSectionKind(duplicateBlocks), "unsupported");
+});
+
+test("duplicate SideNote2 managed blocks are not partially parsed or hidden", () => {
+    const first = serializeNoteComments("Body\n", [createComment()]);
+    const second = serializeNoteComments("Body\n", [createComment({
+        id: "comment-2",
+        selectedText: "second",
+        selectedTextHash: "hash-2",
+        timestamp: 1710000001000,
+    })]);
+    const duplicateBlocks = `${first.trimEnd()}\n\n${second.slice(second.indexOf("<!-- SideNote2 comments"))}`;
+    const parsed = parseNoteComments(duplicateBlocks, "note.md");
+
+    assert.equal(parsed.comments.length, 0);
+    assert.equal(parsed.threads.length, 0);
+    assert.equal(parsed.mainContent, duplicateBlocks.trimEnd());
+    assert.equal(getManagedSectionRange(duplicateBlocks), null);
+    assert.equal(getVisibleNoteContent(duplicateBlocks), duplicateBlocks);
+});
+
 test("parseNoteComments ignores SideNote2 comment markers inside fenced code blocks", () => {
     const note = [
         "# Title",
@@ -458,6 +490,35 @@ test("serializeNoteCommentThreads refuses to write threaded data into an unsuppo
         createdAt: 1710000001000,
         updatedAt: 1710000001000,
     }]), /unsupported SideNote2 comments block/);
+});
+
+test("serializeNoteCommentThreads refuses to write when a note contains two SideNote2 managed blocks", () => {
+    const first = serializeNoteComments("# Title\n\nVisible body.\n", [createComment()]);
+    const second = serializeNoteComments("# Title\n\nVisible body.\n", [createComment({
+        id: "comment-2",
+        selectedText: "second",
+        selectedTextHash: "hash-2",
+        timestamp: 1710000001000,
+    })]);
+    const duplicateBlocks = `${first.trimEnd()}\n\n${second.slice(second.indexOf("<!-- SideNote2 comments"))}\n`;
+
+    assert.throws(() => serializeNoteCommentThreads(duplicateBlocks, [{
+        id: "thread-1",
+        filePath: "note.md",
+        startLine: 1,
+        startChar: 0,
+        endLine: 1,
+        endChar: 6,
+        selectedText: "Visible",
+        selectedTextHash: "hash-visible",
+        entries: [{
+            id: "entry-1",
+            body: "Threaded body",
+            timestamp: 1710000001000,
+        }],
+        createdAt: 1710000001000,
+        updatedAt: 1710000001000,
+    }]), /multiple SideNote2 comments blocks/);
 });
 
 test("getManagedSectionEdit patches only the managed comments block", () => {
