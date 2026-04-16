@@ -5,7 +5,7 @@ import {
     extractThoughtTrailMermaidSource,
     getThoughtTrailMermaidRenderConfig,
 } from "../src/core/derived/thoughtTrail";
-import type { Comment } from "../src/commentManager";
+import type { Comment, CommentThread } from "../src/commentManager";
 
 const THOUGHT_TRAIL_INIT = "%%{init: {\"fontFamily\":\"var(--font-interface-theme)\",\"themeVariables\":{\"fontSize\":\"12px\"},\"flowchart\":{\"nodeSpacing\":3,\"rankSpacing\":5,\"padding\":3,\"diagramPadding\":0,\"useMaxWidth\":false,\"htmlLabels\":true}}}%%";
 
@@ -24,6 +24,25 @@ function createComment(overrides: Partial<Comment> = {}): Comment {
         resolved: overrides.resolved ?? false,
         anchorKind: overrides.anchorKind ?? "selection",
         orphaned: overrides.orphaned ?? false,
+    };
+}
+
+function createThread(overrides: Partial<CommentThread> = {}): CommentThread {
+    return {
+        id: overrides.id ?? "thread-1",
+        filePath: overrides.filePath ?? "file1.md",
+        startLine: overrides.startLine ?? 0,
+        startChar: overrides.startChar ?? 0,
+        endLine: overrides.endLine ?? 0,
+        endChar: overrides.endChar ?? 5,
+        selectedText: overrides.selectedText ?? "hello",
+        selectedTextHash: overrides.selectedTextHash ?? "hash-1",
+        anchorKind: overrides.anchorKind ?? "selection",
+        orphaned: overrides.orphaned ?? false,
+        resolved: overrides.resolved ?? false,
+        entries: overrides.entries ?? [],
+        createdAt: overrides.createdAt ?? 1710000000000,
+        updatedAt: overrides.updatedAt ?? 1710000001000,
     };
 }
 
@@ -194,6 +213,25 @@ test("buildThoughtTrailLines uses compact unique suffix labels instead of full f
     assert.equal(lines.includes("    n0[\"archive/alpha\"]"), true);
     assert.equal(lines.includes("    n2[\"notes/alpha\"]"), true);
     assert.equal(lines.includes("    click n2 href \"obsidian://open?vault=dev&file=notes%2Falpha.md\" \"Open notes/alpha.md\""), true);
+});
+
+test("buildThoughtTrailLines includes links from older child entries in a thread", () => {
+    const lines = buildThoughtTrailLines("dev", [
+        createThread({
+            id: "thread-a",
+            filePath: "file1.md",
+            selectedText: "setup",
+            entries: [
+                { id: "entry-a1", body: "Older child links [[file2]].", timestamp: 100 },
+                { id: "entry-a2", body: "Newest child is plain text.", timestamp: 200 },
+            ],
+        }),
+    ], {
+        resolveWikiLinkPath: (linkPath) => `${linkPath}.md`,
+    });
+
+    assert.equal(lines.includes("    n0 -->|setup| n1"), true);
+    assert.equal(lines.includes("    n1[\"file2\"]"), true);
 });
 
 test("extractThoughtTrailMermaidSource removes the init line and fences", () => {

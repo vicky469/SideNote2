@@ -1,4 +1,4 @@
-import type { Comment } from "../../commentManager";
+import type { Comment, CommentThread } from "../../commentManager";
 import { filterCommentsByResolvedVisibility } from "../rules/resolvedCommentVisibility";
 import { extractWikiLinks } from "../text/commentMentions";
 
@@ -18,6 +18,18 @@ export interface IndexFileFilterGraph {
     undirectedAdjacency: Map<string, Set<string>>;
     connectedComponentByFile: Map<string, string[]>;
     componentSizeByFile: Map<string, number>;
+}
+
+function isThreadLike(value: Comment | CommentThread): value is CommentThread {
+    return Array.isArray((value as CommentThread).entries);
+}
+
+function getCommentBodies(value: Comment | CommentThread): string[] {
+    if (isThreadLike(value)) {
+        return value.entries.map((entry) => entry.body ?? "");
+    }
+
+    return [value.comment ?? ""];
 }
 
 function normalizeNotePath(filePath: string): string {
@@ -114,7 +126,7 @@ function buildConnectedComponents(
 }
 
 export function buildIndexFileFilterGraph(
-    comments: Comment[],
+    comments: Array<Comment | CommentThread>,
     options: IndexFileFilterGraphBuildOptions = {},
 ): IndexFileFilterGraph {
     const visibleComments = filterCommentsByResolvedVisibility(
@@ -145,26 +157,28 @@ export function buildIndexFileFilterGraph(
             const sourceNeighbors = ensureAdjacencySet(undirectedAdjacency, sourceFilePath);
             const seenTargets = new Set<string>();
 
-            for (const match of extractWikiLinks(comment.comment ?? "")) {
-                const resolvedPath = options.resolveWikiLinkPath(match.linkPath, comment.filePath);
-                if (!resolvedPath) {
-                    continue;
-                }
+            for (const body of getCommentBodies(comment)) {
+                for (const match of extractWikiLinks(body)) {
+                    const resolvedPath = options.resolveWikiLinkPath(match.linkPath, comment.filePath);
+                    if (!resolvedPath) {
+                        continue;
+                    }
 
-                const normalizedTargetPath = normalizeNotePath(resolvedPath);
-                if (
-                    normalizedTargetPath === sourceFilePath
-                    || isAllCommentsNotePath(normalizedTargetPath, options.allCommentsNotePath)
-                    || !availableFileSet.has(normalizedTargetPath)
-                    || seenTargets.has(normalizedTargetPath)
-                ) {
-                    continue;
-                }
+                    const normalizedTargetPath = normalizeNotePath(resolvedPath);
+                    if (
+                        normalizedTargetPath === sourceFilePath
+                        || isAllCommentsNotePath(normalizedTargetPath, options.allCommentsNotePath)
+                        || !availableFileSet.has(normalizedTargetPath)
+                        || seenTargets.has(normalizedTargetPath)
+                    ) {
+                        continue;
+                    }
 
-                seenTargets.add(normalizedTargetPath);
-                outgoingTargets.add(normalizedTargetPath);
-                sourceNeighbors.add(normalizedTargetPath);
-                ensureAdjacencySet(undirectedAdjacency, normalizedTargetPath).add(sourceFilePath);
+                    seenTargets.add(normalizedTargetPath);
+                    outgoingTargets.add(normalizedTargetPath);
+                    sourceNeighbors.add(normalizedTargetPath);
+                    ensureAdjacencySet(undirectedAdjacency, normalizedTargetPath).add(sourceFilePath);
+                }
             }
         }
     }

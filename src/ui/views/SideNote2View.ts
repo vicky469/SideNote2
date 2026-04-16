@@ -288,7 +288,7 @@ export default class SideNote2View extends ItemView {
             const visiblePersistedThreads = persistedThreads.filter((thread) =>
                 matchesResolvedVisibility(thread.resolved, showResolved));
             const indexFileFilterGraph = isAllCommentsView
-                ? buildIndexFileFilterGraph(persistedComments, {
+                ? buildIndexFileFilterGraph(persistedThreads, {
                     allCommentsNotePath: this.plugin.getAllCommentsNotePath(),
                     resolveWikiLinkPath: (linkPath, sourceFilePath) => {
                         const linkedFile = this.app.metadataCache.getFirstLinkpathDest(linkPath, sourceFilePath);
@@ -409,7 +409,7 @@ export default class SideNote2View extends ItemView {
             }
 
             if (isAllCommentsView && this.indexSidebarMode === "thought-trail") {
-                const trailComments = scopedVisibleComments;
+                const trailComments = scopedVisibleThreads;
                 await this.renderThoughtTrail(commentsContainer, trailComments, file, {
                     hasFileFilter: filteredIndexFilePaths.length > 0,
                 });
@@ -1125,7 +1125,7 @@ export default class SideNote2View extends ItemView {
 
     private async renderThoughtTrail(
         commentsContainer: HTMLDivElement,
-        comments: Comment[],
+        comments: Array<Comment | CommentThread>,
         file: TFile,
         options: {
             hasFileFilter: boolean;

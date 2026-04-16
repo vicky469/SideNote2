@@ -1,6 +1,6 @@
 import * as assert from "node:assert/strict";
 import test from "node:test";
-import type { Comment } from "../src/commentManager";
+import type { Comment, CommentThread } from "../src/commentManager";
 import {
     buildIndexFileFilterGraph,
     getIndexFileFilterConnectedComponent,
@@ -21,6 +21,25 @@ function createComment(overrides: Partial<Comment> = {}): Comment {
         anchorKind: overrides.anchorKind ?? "selection",
         orphaned: overrides.orphaned ?? false,
         resolved: overrides.resolved ?? false,
+    };
+}
+
+function createThread(overrides: Partial<CommentThread> = {}): CommentThread {
+    return {
+        id: overrides.id ?? "thread-1",
+        filePath: overrides.filePath ?? "docs/a.md",
+        startLine: overrides.startLine ?? 0,
+        startChar: overrides.startChar ?? 0,
+        endLine: overrides.endLine ?? 0,
+        endChar: overrides.endChar ?? 0,
+        selectedText: overrides.selectedText ?? "comment",
+        selectedTextHash: overrides.selectedTextHash ?? "hash:comment",
+        anchorKind: overrides.anchorKind ?? "selection",
+        orphaned: overrides.orphaned ?? false,
+        resolved: overrides.resolved ?? false,
+        entries: overrides.entries ?? [],
+        createdAt: overrides.createdAt ?? 100,
+        updatedAt: overrides.updatedAt ?? 200,
     };
 }
 
@@ -190,4 +209,34 @@ test("getIndexFileFilterConnectedComponent returns empty for missing roots", () 
 
     assert.deepEqual(getIndexFileFilterConnectedComponent(graph, null), []);
     assert.deepEqual(getIndexFileFilterConnectedComponent(graph, "docs/missing.md"), []);
+});
+
+test("buildIndexFileFilterGraph keeps thread links from older child entries", () => {
+    const graph = buildIndexFileFilterGraph([
+        createThread({
+            id: "a-thread",
+            filePath: "docs/a.md",
+            entries: [
+                { id: "a-entry-1", body: "Older child links [[B]].", timestamp: 100 },
+                { id: "a-entry-2", body: "Latest child has no link.", timestamp: 200 },
+            ],
+        }),
+        createThread({
+            id: "b-thread",
+            filePath: "docs/b.md",
+            entries: [
+                { id: "b-entry-1", body: "No links", timestamp: 300 },
+            ],
+        }),
+    ], {
+        resolveWikiLinkPath: createResolver({
+            B: "docs/b.md",
+        }),
+    });
+
+    assert.deepEqual(sortedNeighbors(graph.outgoingAdjacency, "docs/a.md"), ["docs/b.md"]);
+    assert.deepEqual(getIndexFileFilterConnectedComponent(graph, "docs/a.md"), [
+        "docs/a.md",
+        "docs/b.md",
+    ]);
 });

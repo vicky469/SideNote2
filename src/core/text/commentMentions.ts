@@ -1,5 +1,5 @@
 import type { LinkCache, Pos } from "obsidian";
-import type { Comment } from "../../commentManager";
+import type { Comment, CommentThread } from "../../commentManager";
 
 export interface ExtractedWikiLink {
     linkPath: string;
@@ -11,6 +11,18 @@ export interface DerivedCommentLinks {
     links: LinkCache[];
     resolved: Record<string, number>;
     unresolved: Record<string, number>;
+}
+
+function isThreadLike(value: Comment | CommentThread): value is CommentThread {
+    return Array.isArray((value as CommentThread).entries);
+}
+
+function getCommentBodies(value: Comment | CommentThread): string[] {
+    if (isThreadLike(value)) {
+        return value.entries.map((entry) => entry.body ?? "");
+    }
+
+    return [value.comment ?? ""];
 }
 
 export function extractWikiLinks(value: string): ExtractedWikiLink[] {
@@ -54,7 +66,7 @@ export function extractWikiLinkPaths(value: string): string[] {
 }
 
 export function buildDerivedCommentLinks(
-    comments: Comment[],
+    comments: Array<Comment | CommentThread>,
     noteContent: string,
     resolveLinkPath: (linkPath: string, sourcePath: string) => string | null,
 ): DerivedCommentLinks {
@@ -70,24 +82,26 @@ export function buildDerivedCommentLinks(
         }
 
         const seenTargets = new Set<string>();
-        for (const match of extractWikiLinks(comment.comment ?? "")) {
-            const resolvedPath = resolveLinkPath(match.linkPath, comment.filePath);
-            if (resolvedPath === comment.filePath) {
-                continue;
-            }
+        for (const body of getCommentBodies(comment)) {
+            for (const match of extractWikiLinks(body)) {
+                const resolvedPath = resolveLinkPath(match.linkPath, comment.filePath);
+                if (resolvedPath === comment.filePath) {
+                    continue;
+                }
 
-            const dedupeKey = resolvedPath ?? `unresolved:${match.linkPath}`;
-            if (seenTargets.has(dedupeKey)) {
-                continue;
-            }
+                const dedupeKey = resolvedPath ?? `unresolved:${match.linkPath}`;
+                if (seenTargets.has(dedupeKey)) {
+                    continue;
+                }
 
-            seenTargets.add(dedupeKey);
-            links.push(createSyntheticLinkCache(comment, match, lineStartOffsets, lineLengths));
+                seenTargets.add(dedupeKey);
+                links.push(createSyntheticLinkCache(comment, match, lineStartOffsets, lineLengths));
 
-            if (resolvedPath) {
-                resolved[resolvedPath] = (resolved[resolvedPath] ?? 0) + 1;
-            } else {
-                unresolved[match.linkPath] = (unresolved[match.linkPath] ?? 0) + 1;
+                if (resolvedPath) {
+                    resolved[resolvedPath] = (resolved[resolvedPath] ?? 0) + 1;
+                } else {
+                    unresolved[match.linkPath] = (unresolved[match.linkPath] ?? 0) + 1;
+                }
             }
         }
     }
@@ -113,7 +127,7 @@ function getLineLengths(noteContent: string): number[] {
 }
 
 function createSyntheticLinkCache(
-    comment: Comment,
+    comment: Pick<Comment, "startLine" | "startChar">,
     match: ExtractedWikiLink,
     lineStartOffsets: number[],
     lineLengths: number[],
@@ -134,7 +148,7 @@ function createSyntheticLinkCache(
 }
 
 function buildSyntheticPosition(
-    comment: Comment,
+    comment: Pick<Comment, "startLine" | "startChar">,
     originalLength: number,
     lineStartOffsets: number[],
     lineLengths: number[],

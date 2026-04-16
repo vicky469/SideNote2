@@ -1,7 +1,7 @@
 import * as assert from "node:assert/strict";
 import test from "node:test";
 import { buildDerivedCommentLinks, extractWikiLinkPaths, extractWikiLinks } from "../src/core/text/commentMentions";
-import type { Comment } from "../src/commentManager";
+import type { Comment, CommentThread } from "../src/commentManager";
 
 function createComment(overrides: Partial<Comment> = {}): Comment {
     return {
@@ -17,6 +17,25 @@ function createComment(overrides: Partial<Comment> = {}): Comment {
         timestamp: 1710000000000,
         resolved: false,
         ...overrides,
+    };
+}
+
+function createThread(overrides: Partial<CommentThread> = {}): CommentThread {
+    return {
+        id: overrides.id ?? "thread-1",
+        filePath: overrides.filePath ?? "tmp.md",
+        startLine: overrides.startLine ?? 0,
+        startChar: overrides.startChar ?? 0,
+        endLine: overrides.endLine ?? 0,
+        endChar: overrides.endChar ?? 0,
+        selectedText: overrides.selectedText ?? "tmp",
+        selectedTextHash: overrides.selectedTextHash ?? "hash-1",
+        anchorKind: overrides.anchorKind ?? "selection",
+        orphaned: overrides.orphaned ?? false,
+        resolved: overrides.resolved ?? false,
+        entries: overrides.entries ?? [],
+        createdAt: overrides.createdAt ?? 1710000000000,
+        updatedAt: overrides.updatedAt ?? 1710000001000,
     };
 }
 
@@ -118,4 +137,31 @@ test("buildDerivedCommentLinks skips resolved comments and self-links", () => {
     assert.deepEqual(derivedLinks.unresolved, {});
     assert.equal(derivedLinks.links.length, 1);
     assert.equal(derivedLinks.links[0]?.link, "tmp5");
+});
+
+test("buildDerivedCommentLinks scans all thread entries, not just the latest one", () => {
+    const derivedLinks = buildDerivedCommentLinks(
+        [
+            createThread({
+                filePath: "docs/source.md",
+                startLine: 3,
+                startChar: 2,
+                entries: [
+                    { id: "entry-1", body: "Older reply links [[Target]].", timestamp: 100 },
+                    { id: "entry-2", body: "Newest reply has no wikilink.", timestamp: 200 },
+                ],
+            }),
+        ],
+        "line 0\nline 1\nline 2\nline 3",
+        (linkPath) => linkPath === "Target" ? "docs/target.md" : null,
+    );
+
+    assert.deepEqual(derivedLinks.resolved, {
+        "docs/target.md": 1,
+    });
+    assert.deepEqual(derivedLinks.unresolved, {});
+    assert.equal(derivedLinks.links.length, 1);
+    assert.equal(derivedLinks.links[0]?.link, "Target");
+    assert.equal(derivedLinks.links[0]?.position.start.line, 3);
+    assert.equal(derivedLinks.links[0]?.position.start.col, 2);
 });

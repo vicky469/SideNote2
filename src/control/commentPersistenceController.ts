@@ -53,7 +53,7 @@ export interface CommentPersistenceHost {
     getAggregateCommentIndex(): AggregateCommentIndex;
     createCommentId(): string;
     hashText(text: string): Promise<string>;
-    syncDerivedCommentLinksForFile(file: TFile, noteContent: string, comments: Comment[]): void;
+    syncDerivedCommentLinksForFile(file: TFile, noteContent: string, comments: Array<Comment | CommentThread>): void;
     refreshCommentViews(): Promise<void>;
     refreshEditorDecorations(): void;
     refreshMarkdownPreviews(): void;
@@ -361,7 +361,7 @@ export class CommentPersistenceController {
             this.host.getCommentManager(),
             this.host.getAggregateCommentIndex(),
         );
-        this.host.syncDerivedCommentLinksForFile(file, mainContent, syncedComments.comments);
+        this.host.syncDerivedCommentLinksForFile(file, mainContent, syncedComments.threads);
         return {
             mainContent,
             threads: syncedComments.threads,

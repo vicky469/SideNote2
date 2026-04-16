@@ -1,6 +1,5 @@
-import type { Comment } from "../../commentManager";
+import type { Comment, CommentThread } from "../../commentManager";
 import { getCommentSelectionLabel, getCommentStatusLabel, isAnchoredComment, isPageComment } from "../anchors/commentAnchors";
-import { sortCommentsByPosition } from "../storage/noteCommentStorage";
 import { extractWikiLinks } from "../text/commentMentions";
 
 const ALL_COMMENTS_NOTE_PATH = "SideNote2 index.md";
@@ -29,9 +28,37 @@ export interface ThoughtTrailBuildOptions {
 }
 
 interface ThoughtTrailEdge {
-    comment: Comment;
+    comment: Comment | CommentThread;
     targetFilePath: string;
     pageNoteOrdinal?: number;
+}
+
+function isThreadLike(value: Comment | CommentThread): value is CommentThread {
+    return Array.isArray((value as CommentThread).entries);
+}
+
+function getCommentBodies(value: Comment | CommentThread): string[] {
+    if (isThreadLike(value)) {
+        return value.entries.map((entry) => entry.body ?? "");
+    }
+
+    return [value.comment ?? ""];
+}
+
+function sortCommentItemsByPosition(items: Array<Comment | CommentThread>): Array<Comment | CommentThread> {
+    return items.slice().sort((left, right) => {
+        if (left.startLine !== right.startLine) {
+            return left.startLine - right.startLine;
+        }
+
+        if (left.startChar !== right.startChar) {
+            return left.startChar - right.startChar;
+        }
+
+        const leftTimestamp = isThreadLike(left) ? left.createdAt : left.timestamp;
+        const rightTimestamp = isThreadLike(right) ? right.createdAt : right.timestamp;
+        return leftTimestamp - rightTimestamp;
+    });
 }
 
 function cloneJsonValue<T>(value: T): T {
@@ -88,7 +115,7 @@ function toMermaidText(value: string): string {
         .replace(/[|{}[\]]/g, " ");
 }
 
-function formatEdgeLabel(comment: Comment, pageNoteOrdinal?: number): string {
+function formatEdgeLabel(comment: Comment | CommentThread, pageNoteOrdinal?: number): string {
     let label: string;
     if (isPageComment(comment)) {
         label = pageNoteOrdinal ? `pn${pageNoteOrdinal}` : "pn";
@@ -167,7 +194,7 @@ function buildCompactNodeLabels(filePaths: Iterable<string>): Map<string, string
 }
 
 function buildEdgesBySourceFile(
-    commentsByFile: Map<string, Comment[]>,
+    commentsByFile: Map<string, Array<Comment | CommentThread>>,
     options: ThoughtTrailBuildOptions,
 ): Map<string, ThoughtTrailEdge[]> {
     const resolveWikiLinkPath = options.resolveWikiLinkPath;
@@ -177,7 +204,7 @@ function buildEdgesBySourceFile(
 
     const edgesBySourceFile = new Map<string, ThoughtTrailEdge[]>();
     for (const filePath of Array.from(commentsByFile.keys()).sort((left, right) => left.localeCompare(right))) {
-        const fileComments = sortCommentsByPosition(commentsByFile.get(filePath) ?? []);
+        const fileComments = sortCommentItemsByPosition(commentsByFile.get(filePath) ?? []);
         const pageNoteOrdinals = new Map<string, number>();
         let nextPageNoteOrdinal = 1;
         for (const comment of fileComments) {
@@ -193,22 +220,24 @@ function buildEdgesBySourceFile(
         for (const comment of fileComments) {
             const seenTargets = new Set<string>();
 
-            for (const match of extractWikiLinks(comment.comment ?? "")) {
-                const resolvedPath = resolveWikiLinkPath(match.linkPath, comment.filePath);
-                if (!resolvedPath || resolvedPath === comment.filePath || isAllCommentsNotePath(resolvedPath, options.allCommentsNotePath)) {
-                    continue;
-                }
+            for (const body of getCommentBodies(comment)) {
+                for (const match of extractWikiLinks(body)) {
+                    const resolvedPath = resolveWikiLinkPath(match.linkPath, comment.filePath);
+                    if (!resolvedPath || resolvedPath === comment.filePath || isAllCommentsNotePath(resolvedPath, options.allCommentsNotePath)) {
+                        continue;
+                    }
 
-                if (seenTargets.has(resolvedPath)) {
-                    continue;
-                }
+                    if (seenTargets.has(resolvedPath)) {
+                        continue;
+                    }
 
-                seenTargets.add(resolvedPath);
-                edges.push({
-                    comment,
-                    targetFilePath: resolvedPath,
-                    pageNoteOrdinal: pageNoteOrdinals.get(comment.id),
-                });
+                    seenTargets.add(resolvedPath);
+                    edges.push({
+                        comment,
+                        targetFilePath: resolvedPath,
+                        pageNoteOrdinal: pageNoteOrdinals.get(comment.id),
+                    });
+                }
             }
         }
 
@@ -273,7 +302,7 @@ function getOrderedRoots(edgesBySourceFile: Map<string, ThoughtTrailEdge[]>): st
 
 export function buildThoughtTrailLines(
     vaultName: string,
-    comments: Comment[],
+    comments: Array<Comment | CommentThread>,
     options: ThoughtTrailBuildOptions = {},
 ): string[] {
     const visibleComments = comments.filter((comment) => !isAllCommentsNotePath(comment.filePath, options.allCommentsNotePath));
@@ -281,7 +310,7 @@ export function buildThoughtTrailLines(
         return [];
     }
 
-    const commentsByFile = new Map<string, Comment[]>();
+    const commentsByFile = new Map<string, Array<Comment | CommentThread>>();
     for (const comment of visibleComments) {
         const existing = commentsByFile.get(comment.filePath);
         if (existing) {

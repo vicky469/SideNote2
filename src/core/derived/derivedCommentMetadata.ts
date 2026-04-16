@@ -1,5 +1,5 @@
 import type { CachedMetadata, Plugin, TFile } from "obsidian";
-import type { Comment } from "../../commentManager";
+import type { Comment, CommentThread } from "../../commentManager";
 import { buildDerivedCommentLinks, type DerivedCommentLinks } from "../text/commentMentions";
 import {
     getDerivedCommentLinksSignature,
@@ -97,7 +97,7 @@ export class DerivedCommentMetadataManager {
         }
     }
 
-    public syncDerivedCommentLinksForFile(file: TFile, noteContent: string, comments: Comment[]): void {
+    public syncDerivedCommentLinksForFile(file: TFile, noteContent: string, comments: Array<Comment | CommentThread>): void {
         const nextDerivedLinks = buildDerivedCommentLinks(
             comments,
             noteContent,
