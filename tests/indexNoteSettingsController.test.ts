@@ -43,7 +43,6 @@ function createSettings(overrides: Partial<SideNote2Settings> = {}): SideNote2Se
         indexNotePath: overrides.indexNotePath ?? "SideNote2 index.md",
         indexHeaderImageUrl: overrides.indexHeaderImageUrl ?? "https://example.com/default.webp",
         indexHeaderImageCaption: overrides.indexHeaderImageCaption ?? "Default caption",
-        preferredAgentTarget: overrides.preferredAgentTarget ?? "codex",
     };
 }
 
@@ -160,7 +159,6 @@ test("loaded settings resolution normalizes persisted values and marks legacy co
         indexNotePath: "notes/index.md",
         indexHeaderImageUrl: "https://example.com/header.webp",
         indexHeaderImageCaption: "Custom caption",
-        preferredAgentTarget: "codex",
     });
     assert.equal(resolved.shouldRewriteLegacySettings, true);
 });
@@ -271,7 +269,6 @@ test("index note settings controller loads attachment comments and rewrites lega
         indexNotePath: "docs/index.md",
         indexHeaderImageUrl: "https://example.com/header.webp",
         indexHeaderImageCaption: "Header",
-        preferredAgentTarget: "codex",
     });
     assert.deepEqual(
         harness.commentManager.getCommentsForFile("docs/file.pdf").map((comment) => comment.id),
@@ -279,6 +276,9 @@ test("index note settings controller loads attachment comments and rewrites lega
     );
     assert.deepEqual(harness.commentManager.getCommentsForFile("docs/existing.pdf"), []);
     assert.equal(harness.savedPayloads.length, 1);
+    assert.equal("preferredAgentTarget" in harness.savedPayloads[0], false);
+    assert.equal("confirmDelete" in harness.savedPayloads[0], false);
+    assert.equal("enableDebugMode" in harness.savedPayloads[0], false);
 });
 
 test("index note settings controller renames the index note and retargets sidebar and draft hosts", async () => {
@@ -321,14 +321,4 @@ test("index note settings controller rejects invalid folder and file conflicts",
         "docs/index.md already exists. Choose another index note path.",
     ]);
     assert.equal(conflictHarness.savedPayloads.length, 0);
-});
-
-test("index note settings controller saves preferred agent changes without refreshing the aggregate note", async () => {
-    const harness = createControllerHarness();
-
-    await harness.controller.setPreferredAgentTarget("claude");
-
-    assert.equal(harness.getSettings().preferredAgentTarget, "codex");
-    assert.equal(harness.getRefreshAggregateNoteCount(), 0);
-    assert.equal(harness.savedPayloads.length, 0);
 });

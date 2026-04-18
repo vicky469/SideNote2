@@ -2,6 +2,7 @@ import * as assert from "node:assert/strict";
 import test from "node:test";
 import {
     extractCodexTextDeltaFromJsonEvent,
+    getCodexRuntimeDiagnostics,
     resetResolvedAgentExecutionEnvForTests,
     resolveAgentExecutionEnv,
     sanitizeAgentReplyText,
@@ -97,6 +98,63 @@ test("resolveAgentExecutionEnv falls back to the current environment when shell 
         HOME: "/Users/test",
         PATH: "/usr/bin",
         SHELL: "/bin/zsh",
+    });
+});
+
+test("getCodexRuntimeDiagnostics reports Codex as available when the process can be launched", async () => {
+    resetResolvedAgentExecutionEnvForTests();
+
+    let helpChecked = false;
+    const modules = createRuntimeModules((file, args, options, callback) => {
+        if (file === "/bin/zsh") {
+            callback(null, "/Users/test/.nvm/bin:/usr/bin\n", "");
+            return createTrackedProcessStub();
+        }
+
+        helpChecked = true;
+        assert.equal(file, "codex");
+        assert.deepEqual(args, ["--help"]);
+        assert.equal(options.cwd, "/Users/test");
+        assert.equal(options.env?.PATH, "/Users/test/.nvm/bin:/usr/bin");
+        callback(null, "codex help", "");
+        return createTrackedProcessStub();
+    });
+
+    const diagnostics = await getCodexRuntimeDiagnostics(modules, {
+        HOME: "/Users/test",
+        PATH: "/usr/bin",
+        SHELL: "/bin/zsh",
+    });
+
+    assert.equal(helpChecked, true);
+    assert.deepEqual(diagnostics, {
+        status: "available",
+        message: "Codex is available.",
+    });
+});
+
+test("getCodexRuntimeDiagnostics reports a missing codex binary clearly", async () => {
+    resetResolvedAgentExecutionEnvForTests();
+
+    const modules = createRuntimeModules((file, _args, _options, callback) => {
+        if (file === "/bin/zsh") {
+            callback(null, "/Users/test/.nvm/bin:/usr/bin\n", "");
+            return createTrackedProcessStub();
+        }
+
+        callback(Object.assign(new Error("missing codex"), { code: "ENOENT" }), "", "");
+        return createTrackedProcessStub();
+    });
+
+    const diagnostics = await getCodexRuntimeDiagnostics(modules, {
+        HOME: "/Users/test",
+        PATH: "/usr/bin",
+        SHELL: "/bin/zsh",
+    });
+
+    assert.deepEqual(diagnostics, {
+        status: "missing",
+        message: "Codex was not found on PATH.",
     });
 });
 

@@ -8,6 +8,8 @@ interface ExecFileResult {
 }
 
 type ExecEnv = Record<string, string | undefined>;
+type ChildProcessSignal = string;
+type FileEncoding = "utf8";
 type ChildProcessStream = {
     on(event: "data", listener: (chunk: Buffer | string) => void): void;
 };
@@ -19,9 +21,9 @@ type TrackedChildProcess = {
     stdin?: ChildProcessStdin | null;
     stdout?: ChildProcessStream | null;
     stderr?: ChildProcessStream | null;
-    on(event: "close", listener: (code: number | null, signal: NodeJS.Signals | null) => void): void;
+    on(event: "close", listener: (code: number | null, signal: ChildProcessSignal | null) => void): void;
     on(event: "error", listener: (error: Error) => void): void;
-    kill(signal?: NodeJS.Signals | number): boolean;
+    kill(signal?: ChildProcessSignal | number): boolean;
 };
 
 interface NodeModules {
@@ -48,7 +50,7 @@ interface NodeModules {
     };
     fsPromises: {
         mkdtemp(prefix: string): Promise<string>;
-        readFile(path: string, encoding: BufferEncoding): Promise<string>;
+        readFile(path: string, encoding: FileEncoding): Promise<string>;
         rm(path: string, options: { recursive?: boolean; force?: boolean }): Promise<void>;
     };
     os: {
@@ -70,6 +72,11 @@ export interface AgentRuntimeResult {
     runtime: AgentRunRuntime;
     replyText: string;
 }
+
+export type CodexRuntimeDiagnostics = {
+    status: "checking" | "available" | "missing" | "unsupported" | "unavailable";
+    message: string;
+};
 
 type JsonRpcRequestMessage = {
     id: string;
@@ -340,14 +347,14 @@ function joinTextContentItems(value: unknown): string | null {
     return fragments.length ? fragments.join("") : null;
 }
 
-function parseJsonLine(line: string): unknown | null {
+function parseJsonLine(line: string): unknown {
     const trimmedLine = line.trim();
     if (!trimmedLine) {
         return null;
     }
 
     try {
-        return JSON.parse(trimmedLine) as unknown;
+        return JSON.parse(trimmedLine);
     } catch {
         return null;
     }
@@ -417,6 +424,55 @@ export async function resolveAgentExecutionEnv(
 
 export function resetResolvedAgentExecutionEnvForTests(): void {
     resolvedAgentExecEnvPromise = null;
+}
+
+function isExecErrorWithCode(error: unknown, code: string): boolean {
+    return !!error
+        && typeof error === "object"
+        && "code" in error
+        && (error as { code?: unknown }).code === code;
+}
+
+export async function getCodexRuntimeDiagnostics(
+    modulesOverride?: NodeModules | null,
+    baseEnv: ExecEnv = getBaseProcessEnv(),
+): Promise<CodexRuntimeDiagnostics> {
+    const modules = modulesOverride ?? getNodeModules();
+    if (!modules) {
+        return {
+            status: "unsupported",
+            message: "Built-in @codex requires desktop Obsidian.",
+        };
+    }
+
+    try {
+        const env = await resolveAgentExecutionEnv(modules, baseEnv);
+        await execFileAsync(
+            modules,
+            "codex",
+            ["--help"],
+            {
+                cwd: env.HOME ?? "/",
+                env,
+            },
+        );
+        return {
+            status: "available",
+            message: "Codex is available.",
+        };
+    } catch (error) {
+        if (isExecErrorWithCode(error, "ENOENT")) {
+            return {
+                status: "missing",
+                message: "Codex was not found on PATH.",
+            };
+        }
+
+        return {
+            status: "unavailable",
+            message: "Codex could not be launched from this Obsidian environment.",
+        };
+    }
 }
 
 export function disposeAgentRuntimeProcesses(): void {

@@ -19,11 +19,15 @@ import { PluginRegistrationController } from "./control/pluginRegistrationContro
 import { WorkspaceContextController } from "./control/workspaceContextController";
 import { WorkspaceViewController } from "./control/workspaceViewController";
 import { AgentRunStore } from "./control/agentRunStore";
-import { disposeAgentRuntimeProcesses, runAgentRuntime } from "./control/agentRuntimeAdapter";
+import {
+    disposeAgentRuntimeProcesses,
+    getCodexRuntimeDiagnostics as probeCodexRuntimeDiagnostics,
+    runAgentRuntime,
+    type CodexRuntimeDiagnostics,
+} from "./control/agentRuntimeAdapter";
 import type { AgentRunRecord, AgentRunStreamState } from "./core/agents/agentRuns";
 import { DraftComment, DraftSelection } from "./domain/drafts";
 import { parsePromptDeleteSetting } from "./core/config/appConfig";
-import type { SideNote2AgentTarget } from "./core/config/agentTargets";
 import { DerivedCommentMetadataManager } from "./core/derived/derivedCommentMetadata";
 import { isAttachmentCommentableFile, isAttachmentCommentablePath, isMarkdownCommentableFile, isSidebarSupportedFile } from "./core/rules/commentableFiles";
 import { extractWikiLinkPaths } from "./core/text/commentMentions";
@@ -465,10 +469,6 @@ export default class SideNote2 extends Plugin {
         return this.indexNoteSettingsController.getIndexHeaderImageCaption();
     }
 
-    public getPreferredAgentTarget(): SideNote2AgentTarget {
-        return this.indexNoteSettingsController.getPreferredAgentTarget();
-    }
-
     public getAgentRuns(): AgentRunRecord[] {
         return this.commentAgentController.getAgentRuns();
     }
@@ -501,8 +501,15 @@ export default class SideNote2 extends Plugin {
         await this.indexNoteSettingsController.setIndexHeaderImageCaption(nextCaptionInput);
     }
 
-    public async setPreferredAgentTarget(nextTargetInput: SideNote2AgentTarget | string): Promise<void> {
-        await this.indexNoteSettingsController.setPreferredAgentTarget(nextTargetInput);
+    public async getCodexRuntimeDiagnostics(): Promise<CodexRuntimeDiagnostics> {
+        if (!(this.app.vault.adapter instanceof FileSystemAdapter)) {
+            return {
+                status: "unsupported",
+                message: "Built-in @codex requires desktop Obsidian with a filesystem-backed vault.",
+            };
+        }
+
+        return probeCodexRuntimeDiagnostics();
     }
 
     public async retryAgentRun(threadId: string): Promise<boolean> {

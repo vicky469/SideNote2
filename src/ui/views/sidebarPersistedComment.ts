@@ -33,7 +33,7 @@ export interface PersistedCommentPresentation extends BasePersistedCommentPresen
     };
 }
 
-export interface PersistedThreadEntryPresentation extends BasePersistedCommentPresentation {}
+export type PersistedThreadEntryPresentation = BasePersistedCommentPresentation;
 
 export interface SidebarCommentAuthorPresentation {
     kind: "user" | SideNote2AgentTarget;

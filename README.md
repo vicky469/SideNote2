@@ -14,9 +14,6 @@
   <a href="https://obsidian.md">
     <img src="https://img.shields.io/badge/Obsidian-API-7c3aed?style=flat-square&logo=obsidian&logoColor=white" alt="Obsidian API">
   </a>
-  <a href="https://github.com/agentskills/agentskills">
-    <img src="https://img.shields.io/badge/Agents-ready-111827?style=flat-square" alt="Agents ready">
-  </a>
   <a href="https://www.typescriptlang.org/">
     <img src="https://img.shields.io/badge/TypeScript-language-3178c6?style=flat-square&logo=typescript&logoColor=white" alt="TypeScript">
   </a>
@@ -45,7 +42,7 @@ For development, setup, testing, and release workflow, see [README-dev.md](./REA
 - Keeps resolved comments archived instead of removing them.
 - Generates `SideNote2 index.md` as a vault-wide comment index.
 - Lets the index sidebar switch between the comment list and a thought-trail graph built from side-note wiki links. The graph follows those links across connected markdown files, so it can show multi-step trails instead of only direct one-hop links.
-- Supports agent workflows so Codex, Claude Code, and other assistants can read and update side comments from the note-backed storage format.
+- Built-in `@codex` side notes on desktop Obsidian. Type `@codex` in a thread, watch the reply stream in the sidebar, and keep the final answer in the same thread.
 
 ## How to Get Started
 
@@ -56,34 +53,20 @@ For development, setup, testing, and release workflow, see [README-dev.md](./REA
    <p align="center">
      <img src="./assets/image.png" alt="Install SideNote2 with BRAT" width="420">
    </p>
-3. Optional but recommended for agent workflows: install the `sidenote2` CLI once.
-```bash
-npm install -g github:vicky469/SideNote2
-```
-   Then confirm it is available:
-```bash
-sidenote2 --help
-```
-4. Optional: install the `sidenote2` skill for agent workflows. The Agent Skills specification is an [open standard](https://github.com/agentskills/agentskills), used by a range of different AI systems.
-   For example, in Codex:
-```text
-Use the skill-installer skill and install:
-https://github.com/vicky469/SideNote2/tree/main/skills/sidenote2
-```
-
-Or store [`skills/sidenote2/SKILL.md`](./skills/sidenote2/SKILL.md)  in your home directory (`~/.claude/skills`, or `~/.agents/skills`).
-
-5. Restart Codex, then run `/skills`.
-   You should see `sidenote2`.
+3. Use desktop Obsidian with a filesystem-backed vault.
+4. Install and sign in to Codex on the same machine.
+   Quick check: open Terminal in your vault or project folder and run `codex`.
 
 ## Workflow
 
-1. Select text in a note.
-2. Right-click `Add comment to selection`.
-   You can use the ribbon button to open the sidebar, or assign your own hotkey in Obsidian.
-3. Write the comment in the sidebar.
-   See `Writing in Side Notes` below for editor shortcuts and formatting behavior.
-4. Review it later from the sidebar, from `SideNote2 index.md`, or from the sidebar thought trail.
+1. Open a note.
+2. Add a side note.
+   You can select text and right-click `Add comment to selection`, or use the sidebar for a page note.
+3. Write your comment in the sidebar.
+   Type `@codex` if you want Codex to take the task.
+4. Save the note.
+5. SideNote2 runs Codex locally and appends the reply back into the same thread.
+6. Review it later from the sidebar, from `SideNote2 index.md`, from the `Agent` tab, or from the thought trail.
 
 ## Glossary
 
@@ -117,38 +100,12 @@ Or store [`skills/sidenote2/SKILL.md`](./skills/sidenote2/SKILL.md)  in your hom
 | --- | --- |
 | Save draft | Click `Save`. |
 | Insert a newline | Press `Enter`. |
+| Ask Codex from a side note | Type `@codex` in the note, then save it. |
 | Link a note | Type `[[` to open note suggestions and insert an Obsidian wikilink. |
 | Add a tag | Type `#` to open tag suggestions and insert a tag. |
 | Reopen link or tag suggestions | Press `Tab` while the cursor is inside an unfinished `[[...` or `#...` token. |
 | Bold or highlight text | Use the sidebar `B` and `H` buttons to wrap the current selection with `**bold**` or `==highlight==`. |
 | Cancel a draft or edit | Press `Esc`. |
-
-## Agent Workflow
-
-1. In SideNote2, click <img src="./assets/share-side-note-icon.svg" alt="Share side note icon" width="16" height="16"> on the comment you want to send to an agent.
-   This copies an `obsidian://side-note2-comment?...` link.
-2. Paste that link into Codex, Claude Code, Kimi Code, or another assistant with the `sidenote2` instructions installed.
-   For write actions, the agent should also have the `sidenote2` CLI available on the machine.
-3. Use the glossary terms above so the agent knows whether you mean the whole thread or one message inside it.
-4. Ask one of these:
-   - `reply to this`
-   - `reply to this thread`
-   - `add another entry under this anchored note`
-   - `add another entry under this page note`
-   - `update this side note to: ...`
-   - `update this page note to: ...`
-   - `update this anchored note to: ...`
-   - `resolve this side note`
-   - `resolve this thread`
-
-The `sidenote2` skill tells the agent to use the real markdown note as source of truth and to safely create, append, update, or resolve the stored comment/thread through the `sidenote2` CLI.
-
-If you want to be extra explicit, say what kind of thing you are pointing at:
-
-- `reply to this thread`
-- `update this anchored note to explain X more simply`
-- `update this page note to summarize the whole file`
-- `resolve this thread`
 
 ## Settings
 

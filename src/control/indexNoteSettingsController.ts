@@ -7,10 +7,6 @@ import {
     normalizeAllCommentsNoteImageUrl,
     normalizeAllCommentsNotePath,
 } from "../core/derived/allCommentsNote";
-import {
-    normalizePreferredAgentTarget,
-    type SideNote2AgentTarget,
-} from "../core/config/agentTargets";
 import { isAttachmentCommentableFile, isAttachmentCommentablePath } from "../core/rules/commentableFiles";
 import {
     buildAttachmentCommentThreads,
@@ -100,10 +96,6 @@ export class IndexNoteSettingsController {
 
     public getIndexHeaderImageCaption(): string {
         return normalizeAllCommentsNoteImageCaption(this.host.getSettings().indexHeaderImageCaption);
-    }
-
-    public getPreferredAgentTarget(): SideNote2AgentTarget {
-        return normalizePreferredAgentTarget(this.host.getSettings().preferredAgentTarget);
     }
 
     public isAllCommentsNotePath(filePath: string): boolean {
@@ -199,24 +191,6 @@ export class IndexNoteSettingsController {
         await this.host.refreshAggregateNoteNow();
     }
 
-    public async setPreferredAgentTarget(nextTargetInput: SideNote2AgentTarget | string): Promise<void> {
-        const settings = this.host.getSettings();
-        const nextTarget = normalizePreferredAgentTarget(nextTargetInput);
-        if (!shouldApplyNormalizedSettingChange({
-            currentStoredValue: settings.preferredAgentTarget,
-            currentNormalizedValue: this.getPreferredAgentTarget(),
-            nextNormalizedValue: nextTarget,
-        })) {
-            return;
-        }
-
-        this.host.setSettings({
-            ...settings,
-            preferredAgentTarget: nextTarget,
-        });
-        await this.saveSettings();
-    }
-
     public readPersistedPluginData(): PersistedPluginData {
         return {
             ...this.persistedPluginData,
@@ -224,8 +198,14 @@ export class IndexNoteSettingsController {
     }
 
     public async writePersistedPluginData(data: PersistedPluginData): Promise<void> {
-        this.persistedPluginData = {
+        const persistedData = {
             ...data,
+        };
+        delete persistedData.confirmDelete;
+        delete persistedData.enableDebugMode;
+        delete persistedData.preferredAgentTarget;
+        this.persistedPluginData = {
+            ...persistedData,
         };
         await this.host.saveData(this.persistedPluginData);
     }

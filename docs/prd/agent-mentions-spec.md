@@ -22,6 +22,24 @@ This spec turns the plan plus the answered sidebar questions into concrete imple
 - retry behavior
 - tests
 
+## Simplification And Unification
+
+This spec adopts a simplified shipped product model:
+
+- built-in `@codex` is the primary user-facing agent workflow
+- the end user should not need to know about the `sidenote2` skill for built-in `@codex`
+- the end user should not need to install the `sidenote2` CLI for built-in `@codex`
+- SideNote2-specific protocol rules are encapsulated inside the plugin for the built-in flow
+- external share-link handoff remains available only as an advanced interoperability path
+
+The intended everyday experience is:
+
+1. type `@codex`
+2. save the side note
+3. watch the reply come back into the same thread
+
+The only runtime prerequisite for that built-in path is a working local Codex installation on the same machine.
+
 ## Final Decisions
 
 These decisions are closed for phase 1:
@@ -31,6 +49,10 @@ These decisions are closed for phase 1:
 - explicit retry creates a new run record
 - agent execution is owned by the desktop plugin/runtime, not by mobile clients
 - the current shipped build supports `@codex` only
+- built-in `@codex` is the primary user-facing workflow
+- built-in `@codex` must not require SideNote2-specific skill installation or SideNote2 CLI installation
+- SideNote2-specific agent protocol rules for built-in `@codex` live inside the plugin
+- external share-link handoff remains supported as an advanced path, not as the main onboarding path
 - unsupported explicit targets such as `@claude` must not dispatch and should surface a concise notice instead
 - the runtime working directory is the nearest git repo containing the note, with fallback to the note folder and then the vault root
 - raw agent reply text is the only note-body output
@@ -38,6 +60,7 @@ These decisions are closed for phase 1:
 - execution metadata stays in plugin data
 - the existing index sidebar `Agent` tab is the only dedicated phase-1 agent surface
 - no second active-runs panel is added
+- a read-only Codex diagnostics surface may exist in settings, but it is not required configuration
 
 ## Scope
 
@@ -53,6 +76,8 @@ In scope:
 - status rendering for queued, running, succeeded, failed
 - explicit retry from agent-involved threads
 - desktop-hosted execution plus runtime-precondition handling
+- product copy and onboarding that center built-in `@codex`
+- optional read-only Codex diagnostics
 
 Out of scope:
 
@@ -67,8 +92,24 @@ Out of scope:
 - source-note agent tabs outside the index sidebar
 - direct note writes by the external runtime
 - an OpenClaw-style mobile node, relay, or off-device execution layer for SideNote2 phase 1
+- requiring the user to install the `sidenote2` skill for built-in `@codex`
+- requiring the user to install the `sidenote2` CLI for built-in `@codex`
+- presenting external share-link handoff as the primary agent onboarding path
 
 ## Product Rules
+
+### Rule 0: Built-In `@codex` Is The Default Product Story
+
+All primary product copy, onboarding, and UI should treat built-in `@codex` as the normal way to use agent replies in SideNote2.
+
+The main user story is:
+
+- write a side note
+- include `@codex`
+- save it
+- receive the reply back in the same thread
+
+The share-link workflow remains available, but it is advanced and secondary.
 
 ### Rule 1: Explicit Targets Only
 
@@ -141,6 +182,34 @@ The index sidebar `Agent` tab must reuse the same controls as `List`:
 - `Files`
 - resolved visibility
 - nested-comment visibility
+
+### Rule 9: Built-In `@codex` Encapsulates SideNote2 Knowledge
+
+For built-in `@codex`, the plugin is responsible for telling Codex how SideNote2 works.
+
+That includes:
+
+- note-backed canonical storage expectations
+- thread and entry semantics
+- reply formatting constraints
+- process-narration suppression
+- write-back ownership by SideNote2
+
+The end user must not need to install a separate SideNote2 skill just to make built-in `@codex` work.
+
+### Rule 10: Diagnostics Are Read-Only
+
+If SideNote2 exposes Codex runtime checks in settings, they are diagnostics only.
+
+They must not turn the built-in flow into a setup wizard.
+
+The settings surface may show:
+
+- `Codex is available`
+- `Codex was not found on PATH`
+- `Built-in @codex requires desktop Obsidian`
+
+It may also include a lightweight re-check action.
 
 ## Directive Parsing Spec
 
@@ -239,7 +308,34 @@ Phase 1 uses direct local CLI adapters:
 - `@codex` -> `codex app-server` over local stdio JSON-RPC
 - `@claude` -> `claude -p`
 
-The adapter should launch through a login-shell environment so PATH and exported user credentials match normal terminal execution. The existing `preferredAgentTarget` setting remains non-authoritative for explicit mentions and may be reused later for generic agent affordances.
+The adapter should launch through a login-shell environment so PATH and exported user credentials match normal terminal execution.
+
+For the shipped built-in path:
+
+- SideNote2 owns the SideNote2-specific protocol instructions internally
+- the user does not install `sidenote2` CLI or `sidenote2` skill to make built-in `@codex` work
+- the only runtime prerequisite is a working local Codex installation and sign-in
+
+The existing `preferredAgentTarget` setting remains non-authoritative for explicit mentions and should not be positioned as required setup for built-in `@codex`.
+
+## Built-In Runtime Diagnostics
+
+SideNote2 may expose a small read-only Codex health check in settings or another non-blocking diagnostics surface.
+
+Purpose:
+
+- confirm whether the plugin can find `codex`
+- help the user understand why `@codex` did not dispatch
+- avoid surfacing only raw spawn errors when a clearer message is possible
+
+Recommended checks:
+
+- executable presence: can the plugin resolve and launch `codex`
+- environment support: is this desktop Obsidian with a filesystem-backed vault
+- optional authentication hint: if there is a cheap reliable check, surface `sign-in required`; otherwise leave sign-in detection to normal runtime error handling
+
+This is not a configuration step.
+It is only a quick health indicator.
 
 ## Runtime Streaming
 
@@ -270,6 +366,23 @@ Streaming UI rules:
 - do not render a generic placeholder like `Working...` before real text exists
 - do not synthesize fake streaming from the final reply text
 - if a runtime does not provide partial assistant deltas, keep the transient child card hidden and persist only the final reply once the run completes
+
+## Shared Protocol Direction
+
+SideNote2 should maintain one canonical internal protocol for agent behavior.
+
+That protocol should define:
+
+- what a SideNote2 thread is
+- what a thread entry is
+- that the markdown note is canonical
+- that `SideNote2 index.md` is derived only
+- how built-in agent replies should be phrased and constrained
+- that SideNote2, not the runtime, owns the final note write
+
+The built-in `@codex` runtime path should consume this protocol directly from plugin code.
+
+The external `skills/sidenote2/SKILL.md` may continue to exist, but it should be treated as a public packaging of the same protocol for advanced external handoff cases, not as a required dependency for normal built-in use.
 
 ## Data Model
 
@@ -606,6 +719,7 @@ Add or extend tests for:
 
 - directive parsing and email avoidance
 - conflicting-target detection
+- built-in `@codex` flow not depending on SideNote2 skill-install state
 - run-store normalization
 - post-persist trigger behavior in `CommentMutationController`
 - edit-save no-dispatch behavior
@@ -615,9 +729,11 @@ Add or extend tests for:
 - `IndexSidebarMode = "agent"` persistence
 - agent-tab membership under file filter and resolved mode
 - agent-tab sorting by status and recency
+- diagnostics mapping when Codex is present or unavailable
 
 ## Implementation Notes
 
 - The current `preferredAgentTarget` setting already exists in code. This spec does not require it to drive explicit mention dispatch.
+- If a diagnostics surface is added, it should be a small read-only status row. It is not a required wizard and not a new agent configuration flow.
 - This desktop-owned execution model is intentional. Unlike OpenClaw, SideNote2 phase 1 does not add a second mobile/client transport layer around the runtime.
 - The current plan `Open Questions` section can remain as historical context, but implementation should follow the closed decisions in this spec.
