@@ -726,16 +726,12 @@ export default class SideNote2View extends ItemView {
             indexChipRow = toolbarEl.createDiv("sidenote2-sidebar-toolbar-row");
             indexChipRow.addClass("is-index-secondary-row");
             indexChipGroup = indexChipRow.createDiv("sidenote2-sidebar-toolbar-group");
-            this.renderToolbarChip(indexChipGroup, {
-                label: "Files",
+            this.renderToolbarIconButton(indexChipGroup, {
                 icon: "list-filter",
                 active: !!options.selectedIndexFileFilterRootPath,
                 ariaLabel: options.indexFileFilterOptions.length
                     ? "Filter index by files"
                     : "No files with side notes yet",
-                count: options.selectedIndexFileFilterRootPath
-                    ? String(options.filteredIndexFilePaths.length)
-                    : undefined,
                 disabled: !options.indexFileFilterOptions.length,
                 onClick: () => {
                     this.openIndexFileFilterModal(options.indexFileFilterOptions);
@@ -784,12 +780,10 @@ export default class SideNote2View extends ItemView {
                 },
             });
         } else if (shouldShowResolvedChip) {
-            this.renderToolbarChip(filterGroup, {
-                label: "Resolved",
+            this.renderToolbarIconButton(filterGroup, {
+                icon: "check",
                 active: showResolved,
                 ariaLabel: showResolved ? "Show active comments" : "Show resolved comments only",
-                count: String(options.resolvedCount),
-                showIndicator: true,
                 onClick: () => {
                     void this.plugin.setShowResolvedComments(!showResolved);
                 },
@@ -872,6 +866,7 @@ export default class SideNote2View extends ItemView {
             icon: string;
             ariaLabel: string;
             active?: boolean;
+            disabled?: boolean;
             onClick: () => void;
         },
     ): void {
@@ -881,6 +876,7 @@ export default class SideNote2View extends ItemView {
         button.setAttribute("type", "button");
         button.setAttribute("aria-pressed", options.active ? "true" : "false");
         button.setAttribute("aria-label", options.ariaLabel);
+        button.disabled = options.disabled ?? false;
         setIcon(button, options.icon);
         button.onclick = options.onClick;
     }
