@@ -7,12 +7,18 @@ import {
     normalizeAllCommentsNoteImageUrl,
     normalizeAllCommentsNotePath,
 } from "../core/derived/allCommentsNote";
+import {
+    normalizePreferredAgentTarget,
+    type SideNote2AgentTarget,
+} from "../core/config/agentTargets";
 import { isAttachmentCommentableFile, isAttachmentCommentablePath } from "../core/rules/commentableFiles";
 import {
     buildAttachmentCommentThreads,
     parseAttachmentCommentThreads,
 } from "../core/storage/attachmentCommentStorage";
-import type { SideNote2Settings } from "../ui/settings/SideNote2SettingTab";
+import {
+    type SideNote2Settings,
+} from "../ui/settings/SideNote2SettingTab";
 import {
     getIndexNoteParentPath,
     resolveIndexNotePathChange,
@@ -90,6 +96,10 @@ export class IndexNoteSettingsController {
 
     public getIndexHeaderImageCaption(): string {
         return normalizeAllCommentsNoteImageCaption(this.host.getSettings().indexHeaderImageCaption);
+    }
+
+    public getPreferredAgentTarget(): SideNote2AgentTarget {
+        return normalizePreferredAgentTarget(this.host.getSettings().preferredAgentTarget);
     }
 
     public isAllCommentsNotePath(filePath: string): boolean {
@@ -183,6 +193,24 @@ export class IndexNoteSettingsController {
         });
         await this.saveSettings();
         await this.host.refreshAggregateNoteNow();
+    }
+
+    public async setPreferredAgentTarget(nextTargetInput: SideNote2AgentTarget | string): Promise<void> {
+        const settings = this.host.getSettings();
+        const nextTarget = normalizePreferredAgentTarget(nextTargetInput);
+        if (!shouldApplyNormalizedSettingChange({
+            currentStoredValue: settings.preferredAgentTarget,
+            currentNormalizedValue: this.getPreferredAgentTarget(),
+            nextNormalizedValue: nextTarget,
+        })) {
+            return;
+        }
+
+        this.host.setSettings({
+            ...settings,
+            preferredAgentTarget: nextTarget,
+        });
+        await this.saveSettings();
     }
 
 }

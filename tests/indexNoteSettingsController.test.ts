@@ -43,6 +43,7 @@ function createSettings(overrides: Partial<SideNote2Settings> = {}): SideNote2Se
         indexNotePath: overrides.indexNotePath ?? "SideNote2 index.md",
         indexHeaderImageUrl: overrides.indexHeaderImageUrl ?? "https://example.com/default.webp",
         indexHeaderImageCaption: overrides.indexHeaderImageCaption ?? "Default caption",
+        preferredAgentTarget: overrides.preferredAgentTarget ?? "codex",
     };
 }
 
@@ -151,6 +152,7 @@ test("loaded settings resolution normalizes persisted values and marks legacy co
         indexNotePath: " notes/index ",
         indexHeaderImageUrl: " https://example.com/header.webp ",
         indexHeaderImageCaption: " Custom caption ",
+        preferredAgentTarget: " CLAUDE ",
         confirmDelete: true,
     }, createSettings());
 
@@ -158,6 +160,7 @@ test("loaded settings resolution normalizes persisted values and marks legacy co
         indexNotePath: "notes/index.md",
         indexHeaderImageUrl: "https://example.com/header.webp",
         indexHeaderImageCaption: "Custom caption",
+        preferredAgentTarget: "claude",
     });
     assert.equal(resolved.shouldRewriteLegacySettings, true);
 });
@@ -252,6 +255,7 @@ test("index note settings controller loads attachment comments and rewrites lega
             indexNotePath: " docs/index ",
             indexHeaderImageUrl: " https://example.com/header.webp ",
             indexHeaderImageCaption: " Header ",
+            preferredAgentTarget: " claude ",
             confirmDelete: true,
             attachmentComments: buildAttachmentComments([
                 createComment({ filePath: "docs/file.pdf", id: "pdf-comment" }),
@@ -267,6 +271,7 @@ test("index note settings controller loads attachment comments and rewrites lega
         indexNotePath: "docs/index.md",
         indexHeaderImageUrl: "https://example.com/header.webp",
         indexHeaderImageCaption: "Header",
+        preferredAgentTarget: "claude",
     });
     assert.deepEqual(
         harness.commentManager.getCommentsForFile("docs/file.pdf").map((comment) => comment.id),
@@ -316,4 +321,14 @@ test("index note settings controller rejects invalid folder and file conflicts",
         "docs/index.md already exists. Choose another index note path.",
     ]);
     assert.equal(conflictHarness.savedPayloads.length, 0);
+});
+
+test("index note settings controller saves preferred agent changes without refreshing the aggregate note", async () => {
+    const harness = createControllerHarness();
+
+    await harness.controller.setPreferredAgentTarget("claude");
+
+    assert.equal(harness.getSettings().preferredAgentTarget, "claude");
+    assert.equal(harness.getRefreshAggregateNoteCount(), 0);
+    assert.equal(harness.savedPayloads.length, 1);
 });

@@ -15,13 +15,17 @@ import { WorkspaceContextController } from "./control/workspaceContextController
 import { WorkspaceViewController } from "./control/workspaceViewController";
 import { DraftComment, DraftSelection } from "./domain/drafts";
 import { parsePromptDeleteSetting } from "./core/config/appConfig";
+import type { SideNote2AgentTarget } from "./core/config/agentTargets";
 import { DerivedCommentMetadataManager } from "./core/derived/derivedCommentMetadata";
 import { isAttachmentCommentableFile, isAttachmentCommentablePath, isMarkdownCommentableFile, isSidebarSupportedFile } from "./core/rules/commentableFiles";
 import { extractWikiLinkPaths } from "./core/text/commentMentions";
 import { AggregateCommentIndex } from "./index/AggregateCommentIndex";
 import { ParsedNoteCache } from "./cache/ParsedNoteCache";
 import { parseNoteComments, ParsedNoteComments } from "./core/storage/noteCommentStorage";
-import SideNote2SettingTab, { DEFAULT_SETTINGS, SideNote2Settings } from "./ui/settings/SideNote2SettingTab";
+import SideNote2SettingTab, {
+    DEFAULT_SETTINGS,
+    type SideNote2Settings,
+} from "./ui/settings/SideNote2SettingTab";
 import { SIDE_NOTE2_ICON_ID, SIDE_NOTE2_ICON_SVG } from "./ui/sideNote2Icon";
 import SupportLogInspectorModal from "./ui/modals/SupportLogInspectorModal";
 import SideNote2View from "./ui/views/SideNote2View";
@@ -412,6 +416,10 @@ export default class SideNote2 extends Plugin {
         return this.indexNoteSettingsController.getIndexHeaderImageCaption();
     }
 
+    public getPreferredAgentTarget(): SideNote2AgentTarget {
+        return this.indexNoteSettingsController.getPreferredAgentTarget();
+    }
+
     public isAllCommentsNotePath(filePath: string): boolean {
         return this.indexNoteSettingsController.isAllCommentsNotePath(filePath);
     }
@@ -426,6 +434,10 @@ export default class SideNote2 extends Plugin {
 
     public async setIndexHeaderImageCaption(nextCaptionInput: string): Promise<void> {
         await this.indexNoteSettingsController.setIndexHeaderImageCaption(nextCaptionInput);
+    }
+
+    public async setPreferredAgentTarget(nextTargetInput: SideNote2AgentTarget | string): Promise<void> {
+        await this.indexNoteSettingsController.setPreferredAgentTarget(nextTargetInput);
     }
 
     public async shouldConfirmDelete(): Promise<boolean> {

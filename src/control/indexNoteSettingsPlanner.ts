@@ -4,9 +4,13 @@ import {
     normalizeAllCommentsNoteImageUrl,
     normalizeAllCommentsNotePath,
 } from "../core/derived/allCommentsNote";
-import type { SideNote2Settings } from "../ui/settings/SideNote2SettingTab";
+import { normalizePreferredAgentTarget } from "../core/config/agentTargets";
+import {
+    type SideNote2Settings,
+} from "../ui/settings/SideNote2SettingTab";
 
-export type PersistedPluginData = Partial<SideNote2Settings> & {
+export type PersistedPluginData = Partial<Omit<SideNote2Settings, "preferredAgentTarget">> & {
+    preferredAgentTarget?: unknown;
     attachmentComments?: unknown;
     confirmDelete?: unknown;
     enableDebugMode?: unknown;
@@ -44,6 +48,9 @@ export function resolveLoadedSettings(
             indexHeaderImageCaption: hasOwn(loaded ?? {}, "indexHeaderImageCaption")
                 ? normalizeAllCommentsNoteImageCaption(loaded?.indexHeaderImageCaption)
                 : defaults.indexHeaderImageCaption,
+            preferredAgentTarget: hasOwn(loaded ?? {}, "preferredAgentTarget")
+                ? normalizePreferredAgentTarget(loaded?.preferredAgentTarget)
+                : defaults.preferredAgentTarget,
         },
         shouldRewriteLegacySettings: hasOwn(loaded ?? {}, "confirmDelete")
             || hasOwn(loaded ?? {}, "enableDebugMode"),
