@@ -79,6 +79,44 @@ test("CommentManager targets child thread entries by id", () => {
     );
 });
 
+test("CommentManager can permanently clear soft-deleted comments for one file", () => {
+    const baseTimestamp = Date.now();
+    const activeThread = commentToThread(createComment("thread-1", baseTimestamp, "parent"));
+    activeThread.entries.push({
+        id: "entry-2",
+        body: "deleted child",
+        timestamp: baseTimestamp + 1000,
+        deletedAt: baseTimestamp + 2000,
+    });
+
+    const deletedThread = {
+        ...commentToThread(createComment("thread-2", baseTimestamp + 3000, "deleted thread")),
+        deletedAt: baseTimestamp + 4000,
+    };
+
+    const otherFileThread = {
+        ...commentToThread(createComment("thread-3", baseTimestamp + 5000, "other file")),
+        filePath: "other.md",
+    };
+
+    const manager = new CommentManager([activeThread, deletedThread, otherFileThread]);
+
+    assert.equal(manager.clearDeletedCommentsForFile("note.md", baseTimestamp + 6000), true);
+    assert.deepEqual(
+        manager.getThreadsForFile("note.md", { includeDeleted: true }).map((thread) => ({
+            id: thread.id,
+            entryIds: thread.entries.map((entry) => entry.id),
+        })),
+        [{
+            id: "thread-1",
+            entryIds: ["thread-1"],
+        }],
+    );
+    assert.equal(manager.getThreadById("thread-2"), undefined);
+    assert.equal(manager.getThreadById("thread-3")?.filePath, "other.md");
+    assert.equal(manager.clearDeletedCommentsForFile("note.md", baseTimestamp + 7000), false);
+});
+
 test("CommentManager reorders root threads within the same file", () => {
     const first = createComment("thread-1", 1710000000000, "first");
     const second = createComment("thread-2", 1710000001000, "second");

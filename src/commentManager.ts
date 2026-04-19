@@ -463,6 +463,51 @@ export class CommentManager {
         thread.updatedAt = Math.max(thread.updatedAt, restoredAt);
     }
 
+    clearDeletedCommentsForFile(filePath: string, clearedAt: number = Date.now()): boolean {
+        this.purgeExpiredDeletedComments(clearedAt);
+
+        let changed = false;
+        const nextThreads: CommentThread[] = [];
+        for (const thread of this.threads) {
+            if (thread.filePath !== filePath) {
+                nextThreads.push(thread);
+                continue;
+            }
+
+            if (thread.deletedAt) {
+                changed = true;
+                continue;
+            }
+
+            const retainedEntries = thread.entries.filter((entry) => !entry.deletedAt);
+            if (retainedEntries.length !== thread.entries.length) {
+                changed = true;
+            }
+
+            if (!retainedEntries.length) {
+                changed = true;
+                continue;
+            }
+
+            if (retainedEntries.length === thread.entries.length) {
+                nextThreads.push(thread);
+                continue;
+            }
+
+            nextThreads.push({
+                ...thread,
+                entries: retainedEntries.map((entry) => ({ ...entry })),
+                updatedAt: clearedAt,
+            });
+        }
+
+        if (changed) {
+            this.threads = nextThreads;
+        }
+
+        return changed;
+    }
+
     resolveComment(id: string) {
         const thread = this.threads.find((candidate) =>
             candidate.id === id || candidate.entries.some((entry) => entry.id === id));

@@ -28,6 +28,16 @@ export function hasDeletedComments(thread: Pick<CommentThread, "deletedAt" | "en
     return isSoftDeleted(thread) || thread.entries.some((entry) => isSoftDeleted(entry));
 }
 
+export function countDeletedComments(threads: readonly Pick<CommentThread, "deletedAt" | "entries">[]): number {
+    return threads.reduce((count, thread) => (
+        count
+        + (isSoftDeleted(thread) ? 1 : 0)
+        + (isSoftDeleted(thread) ? 0 : thread.entries.reduce((entryCount, entry) => (
+            entryCount + (isSoftDeleted(entry) ? 1 : 0)
+        ), 0))
+    ), 0);
+}
+
 export function purgeExpiredDeletedEntries(
     entries: readonly CommentThreadEntry[],
     now: number = Date.now(),

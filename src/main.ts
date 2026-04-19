@@ -1048,6 +1048,10 @@ export default class SideNote2 extends Plugin {
         await this.commentMutationController.restoreComment(commentId);
     }
 
+    async clearDeletedCommentsForFile(filePath: string): Promise<boolean> {
+        return this.commentMutationController.clearDeletedCommentsForFile(filePath);
+    }
+
     async resolveComment(commentId: string) {
         await this.commentMutationController.resolveComment(commentId);
     }

@@ -559,6 +559,42 @@ test("comment mutation controller restores a soft deleted comment", async () => 
     }]);
 });
 
+test("comment mutation controller permanently clears deleted comments for a file", async () => {
+    const baseTimestamp = Date.now();
+    const activeComment = createComment({ id: "thread-1", timestamp: baseTimestamp });
+    const deletedComment = createComment({ id: "thread-2", timestamp: baseTimestamp + 1_000 });
+    const host = createHost({
+        knownComments: [activeComment, deletedComment],
+        loadedComments: [activeComment, deletedComment],
+        now: baseTimestamp + 3_000,
+    });
+    host.manager.deleteComment(deletedComment.id, baseTimestamp + 2_000);
+
+    const cleared = await host.controller.clearDeletedCommentsForFile(activeComment.filePath);
+
+    assert.equal(cleared, true);
+    assert.deepEqual(host.loadedFiles, [activeComment.filePath]);
+    assert.deepEqual(host.persistedFiles, [{
+        path: activeComment.filePath,
+        immediateAggregateRefresh: true,
+    }]);
+    assert.equal(host.manager.getCommentById("thread-2"), undefined);
+});
+
+test("comment mutation controller skips clear when there is nothing deleted for the file", async () => {
+    const activeComment = createComment({ id: "thread-1" });
+    const host = createHost({
+        knownComments: [activeComment],
+        loadedComments: [activeComment],
+    });
+
+    const cleared = await host.controller.clearDeletedCommentsForFile(activeComment.filePath);
+
+    assert.equal(cleared, false);
+    assert.deepEqual(host.loadedFiles, [activeComment.filePath]);
+    assert.deepEqual(host.persistedFiles, []);
+});
+
 test("comment mutation controller re-anchors an orphaned thread to the current selection", async () => {
     const comment = createComment({
         id: "comment-1",

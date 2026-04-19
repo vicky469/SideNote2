@@ -67,7 +67,11 @@ import {
     shouldShowResolvedToolbarChip,
 } from "./indexSidebarState";
 import { StreamedAgentReplyController } from "./streamedAgentReplyController";
-import { hasDeletedComments, isSoftDeleted } from "../../core/rules/deletedCommentVisibility";
+import {
+    countDeletedComments,
+    hasDeletedComments,
+    isSoftDeleted,
+} from "../../core/rules/deletedCommentVisibility";
 import {
     normalizeIndexFileFilterRootPath,
     resolveIndexAgentOutcomeFilterFromState,
@@ -350,6 +354,9 @@ export default class SideNote2View extends ItemView {
             const pageThreadsWithDeleted = isAllCommentsView
                 ? []
                 : this.plugin.getThreadsForFile(file.path, { includeDeleted: true });
+            const deletedCommentCount = isAllCommentsView
+                ? 0
+                : countDeletedComments(pageThreadsWithDeleted);
             const showResolved = this.plugin.shouldShowResolvedComments();
             const allAgentRuns = this.plugin.getAgentRuns();
             const isAgentIndexMode = isAllCommentsView && this.indexSidebarMode === "agent";
@@ -485,6 +492,7 @@ export default class SideNote2View extends ItemView {
                 resolvedCount,
                 hasResolvedComments,
                 hasDeletedComments: !isAllCommentsView && pageThreadsWithDeleted.some((thread) => hasDeletedComments(thread)),
+                deletedCommentCount,
                 showDeletedComments: showDeleted,
                 hasNestedComments,
                 isAgentMode: isAgentIndexMode,
@@ -696,6 +704,7 @@ export default class SideNote2View extends ItemView {
             resolvedCount: number;
             hasResolvedComments: boolean;
             hasDeletedComments: boolean;
+            deletedCommentCount: number;
             showDeletedComments: boolean;
             hasNestedComments: boolean;
             isAgentMode: boolean;
@@ -833,6 +842,19 @@ export default class SideNote2View extends ItemView {
                     void this.plugin.setShowDeletedComments(!showDeletedComments);
                 },
             });
+
+            if (showDeletedComments && options.deletedCommentCount > 0) {
+                this.renderToolbarChip(filterGroup, {
+                    label: "Empty trash",
+                    active: false,
+                    ariaLabel: `Permanently delete ${options.deletedCommentCount} deleted side note${options.deletedCommentCount === 1 ? "" : "s"} from this note`,
+                    count: String(options.deletedCommentCount),
+                    icon: "trash",
+                    onClick: () => {
+                        void this.clearDeletedCommentsForCurrentFile();
+                    },
+                });
+            }
         }
 
         if (options.addPageCommentAction) {
@@ -1617,5 +1639,20 @@ export default class SideNote2View extends ItemView {
             await this.plugin.setShowDeletedComments(false);
         }
         await this.plugin.deleteComment(commentId);
+    }
+
+    private async clearDeletedCommentsForCurrentFile(): Promise<void> {
+        const filePath = this.file?.path ?? null;
+        if (!filePath || this.plugin.isAllCommentsNotePath(filePath)) {
+            return;
+        }
+        const changed = await this.plugin.clearDeletedCommentsForFile(filePath);
+        if (!changed) {
+            return;
+        }
+
+        if (this.plugin.shouldShowDeletedComments()) {
+            await this.plugin.setShowDeletedComments(false);
+        }
     }
 }
