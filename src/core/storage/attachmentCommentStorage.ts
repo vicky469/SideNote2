@@ -2,11 +2,16 @@ import type { Comment, CommentThread, CommentThreadEntry } from "../../commentMa
 import { commentToThread, threadToComment, cloneCommentThread } from "../../commentManager";
 import { isPageComment } from "../anchors/commentAnchors";
 import { isAttachmentCommentablePath } from "../rules/commentableFiles";
+import {
+    normalizeDeletedAt,
+    purgeExpiredDeletedThreads,
+} from "../rules/deletedCommentVisibility";
 
 interface StoredAttachmentCommentThreadEntry {
     id: string;
     body: string;
     timestamp: number;
+    deletedAt?: number;
 }
 
 interface StoredAttachmentCommentThread {
@@ -23,6 +28,7 @@ interface StoredAttachmentCommentThread {
     updatedAt: number;
     anchorKind?: "page";
     resolved?: boolean;
+    deletedAt?: number;
 }
 
 function normalizeCommentBody(body: string): string {
@@ -30,14 +36,17 @@ function normalizeCommentBody(body: string): string {
 }
 
 function toStoredEntry(entry: CommentThreadEntry): StoredAttachmentCommentThreadEntry {
+    const deletedAt = normalizeDeletedAt(entry.deletedAt);
     return {
         id: entry.id,
         body: normalizeCommentBody(entry.body),
         timestamp: entry.timestamp,
+        ...(deletedAt !== undefined ? { deletedAt } : {}),
     };
 }
 
 function toStoredAttachmentThread(thread: CommentThread): StoredAttachmentCommentThread {
+    const deletedAt = normalizeDeletedAt(thread.deletedAt);
     return {
         id: thread.id,
         filePath: thread.filePath,
@@ -52,6 +61,7 @@ function toStoredAttachmentThread(thread: CommentThread): StoredAttachmentCommen
         updatedAt: thread.updatedAt,
         anchorKind: "page",
         resolved: thread.resolved === true ? true : undefined,
+        ...(deletedAt !== undefined ? { deletedAt } : {}),
     };
 }
 
@@ -69,10 +79,12 @@ function fromStoredEntry(candidate: unknown): CommentThreadEntry | null {
         return null;
     }
 
+    const deletedAt = normalizeDeletedAt(item.deletedAt);
     return {
         id: item.id,
         body: normalizeCommentBody(item.body),
         timestamp: item.timestamp,
+        ...(deletedAt !== undefined ? { deletedAt } : {}),
     };
 }
 
@@ -125,6 +137,7 @@ function fromStoredAttachmentThread(candidate: unknown): CommentThread | null {
         anchorKind: "page",
         orphaned: false,
         resolved: item.resolved === true,
+        deletedAt: normalizeDeletedAt(item.deletedAt),
     };
 }
 
@@ -133,7 +146,7 @@ export function parseAttachmentCommentThreads(value: unknown): CommentThread[] {
         return [];
     }
 
-    return value
+    return purgeExpiredDeletedThreads(value
         .map((item) => fromStoredAttachmentThread(item))
         .filter((thread): thread is CommentThread => thread !== null)
         .sort((left, right) => {
@@ -143,7 +156,7 @@ export function parseAttachmentCommentThreads(value: unknown): CommentThread[] {
 
             return left.createdAt - right.createdAt;
         })
-        .map((thread) => cloneCommentThread(thread));
+        .map((thread) => cloneCommentThread(thread)));
 }
 
 export function buildAttachmentCommentThreads(threads: CommentThread[]): StoredAttachmentCommentThread[] {

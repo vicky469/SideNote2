@@ -38,7 +38,12 @@ import SideNote2SettingTab, {
     DEFAULT_SETTINGS,
     type SideNote2Settings,
 } from "./ui/settings/SideNote2SettingTab";
-import { SIDE_NOTE2_ICON_ID, SIDE_NOTE2_ICON_SVG } from "./ui/sideNote2Icon";
+import {
+    SIDE_NOTE2_ICON_ID,
+    SIDE_NOTE2_ICON_SVG,
+    SIDE_NOTE2_REGENERATE_ICON_ID,
+    SIDE_NOTE2_REGENERATE_ICON_SVG,
+} from "./ui/sideNote2Icon";
 import SupportLogInspectorModal from "./ui/modals/SupportLogInspectorModal";
 import SideNote2View from "./ui/views/SideNote2View";
 import {
@@ -250,6 +255,8 @@ export default class SideNote2 extends Plugin {
                 skipCommentViewRefresh?: boolean;
             },
         ): Promise<boolean> => this.commentMutationController.appendThreadEntry(threadId, entry, options),
+        editComment: (commentId: string, newCommentText: string, options?: { skipCommentViewRefresh?: boolean }): Promise<boolean> =>
+            this.commentMutationController.editComment(commentId, newCommentText, options),
         runAgentRuntime: (invocation) => runAgentRuntime(invocation),
         showNotice: (message) => {
             this.showNotice(message, "agents", "agents.notice");
@@ -361,6 +368,7 @@ export default class SideNote2 extends Plugin {
             pluginVersion: this.manifest.version,
         });
         addIcon(SIDE_NOTE2_ICON_ID, SIDE_NOTE2_ICON_SVG);
+        addIcon(SIDE_NOTE2_REGENERATE_ICON_ID, SIDE_NOTE2_REGENERATE_ICON_SVG);
 
         this.commentManager = new CommentManager([]);
         await this.loadSettings();
@@ -512,8 +520,8 @@ export default class SideNote2 extends Plugin {
         return probeCodexRuntimeDiagnostics();
     }
 
-    public async retryAgentRun(threadId: string): Promise<boolean> {
-        return this.commentAgentController.retryLatestRun(threadId);
+    public async retryAgentRun(runId: string): Promise<boolean> {
+        return this.commentAgentController.retryRun(runId);
     }
 
     public async shouldConfirmDelete(): Promise<boolean> {
@@ -751,6 +759,14 @@ export default class SideNote2 extends Plugin {
         return this.commentSessionController.shouldShowNestedComments();
     }
 
+    public shouldShowDeletedComments(): boolean {
+        return this.commentSessionController.shouldShowDeletedComments();
+    }
+
+    public async setShowDeletedComments(showDeleted: boolean): Promise<boolean> {
+        return this.commentSessionController.setShowDeletedComments(showDeleted);
+    }
+
     public async setShowNestedComments(showNested: boolean): Promise<boolean> {
         return this.commentSessionController.setShowNestedComments(showNested);
     }
@@ -826,8 +842,8 @@ export default class SideNote2 extends Plugin {
         return this.aggregateCommentIndex.getAllThreads();
     }
 
-    public getThreadsForFile(filePath: string): CommentThread[] {
-        return this.commentManager.getThreadsForFile(filePath);
+    public getThreadsForFile(filePath: string, options: { includeDeleted?: boolean } = {}): CommentThread[] {
+        return this.commentManager.getThreadsForFile(filePath, options);
     }
 
     public async reorderThreadsForFile(
@@ -1026,6 +1042,10 @@ export default class SideNote2 extends Plugin {
 
     async deleteComment(commentId: string) {
         await this.commentMutationController.deleteComment(commentId);
+    }
+
+    async restoreComment(commentId: string) {
+        await this.commentMutationController.restoreComment(commentId);
     }
 
     async resolveComment(commentId: string) {

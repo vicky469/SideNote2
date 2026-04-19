@@ -1,5 +1,9 @@
 import type { Comment, CommentThread, CommentThreadEntry } from "../../commentManager";
 import { cloneCommentThreads, threadToComment } from "../../commentManager";
+import {
+    normalizeDeletedAt,
+    purgeExpiredDeletedThreads,
+} from "../rules/deletedCommentVisibility";
 
 const HIDDEN_SECTION_OPEN = "<!-- SideNote2 comments";
 const HIDDEN_SECTION_CLOSE = "-->";
@@ -8,6 +12,7 @@ interface StoredNoteCommentThreadEntry {
     id: string;
     body: string;
     timestamp: number;
+    deletedAt?: number;
 }
 
 interface StoredNoteCommentThread {
@@ -21,6 +26,7 @@ interface StoredNoteCommentThread {
     anchorKind?: "selection" | "page";
     orphaned?: boolean;
     resolved?: boolean;
+    deletedAt?: number;
     entries: StoredNoteCommentThreadEntry[];
     createdAt: number;
     updatedAt: number;
@@ -86,10 +92,12 @@ function normalizeCommentBody(body: string): string {
 }
 
 function cloneThreadEntry(entry: CommentThreadEntry): CommentThreadEntry {
+    const deletedAt = normalizeDeletedAt(entry.deletedAt);
     return {
         id: entry.id,
         body: normalizeCommentBody(entry.body),
         timestamp: entry.timestamp,
+        ...(deletedAt !== undefined ? { deletedAt } : {}),
     };
 }
 
@@ -103,6 +111,7 @@ function normalizeThread(thread: CommentThread): CommentThread {
         anchorKind: thread.anchorKind === "page" ? "page" : "selection",
         orphaned: thread.anchorKind === "page" ? false : thread.orphaned === true,
         resolved: thread.resolved === true,
+        deletedAt: normalizeDeletedAt(thread.deletedAt),
         entries,
         createdAt: thread.createdAt || firstEntry?.timestamp || 0,
         updatedAt: thread.updatedAt || latestEntry?.timestamp || thread.createdAt || 0,
@@ -133,15 +142,18 @@ export function sortCommentsByPosition(comments: Comment[]): Comment[] {
 }
 
 function toStoredThreadEntry(entry: CommentThreadEntry): StoredNoteCommentThreadEntry {
+    const deletedAt = normalizeDeletedAt(entry.deletedAt);
     return {
         id: entry.id,
         body: normalizeCommentBody(entry.body),
         timestamp: entry.timestamp,
+        ...(deletedAt !== undefined ? { deletedAt } : {}),
     };
 }
 
 function toStoredThread(thread: CommentThread): StoredNoteCommentThread {
     const normalized = normalizeThread(thread);
+    const deletedAt = normalizeDeletedAt(normalized.deletedAt);
     return {
         id: normalized.id,
         startLine: normalized.startLine,
@@ -153,6 +165,7 @@ function toStoredThread(thread: CommentThread): StoredNoteCommentThread {
         anchorKind: normalized.anchorKind === "page" ? "page" : undefined,
         orphaned: normalized.orphaned === true ? true : undefined,
         resolved: normalized.resolved === true ? true : undefined,
+        ...(deletedAt !== undefined ? { deletedAt } : {}),
         entries: normalized.entries.map((entry) => toStoredThreadEntry(entry)),
         createdAt: normalized.createdAt,
         updatedAt: normalized.updatedAt,
@@ -186,10 +199,12 @@ function fromStoredThreadEntry(candidate: unknown): CommentThreadEntry | null {
         return null;
     }
 
+    const deletedAt = normalizeDeletedAt(item.deletedAt);
     return {
         id: item.id,
         body: normalizeCommentBody(item.body),
         timestamp: item.timestamp,
+        ...(deletedAt !== undefined ? { deletedAt } : {}),
     };
 }
 
@@ -234,6 +249,7 @@ function fromStoredThread(candidate: unknown, filePath: string): CommentThread |
         anchorKind: item.anchorKind === "page" ? "page" : "selection",
         orphaned: item.orphaned === true,
         resolved: item.resolved === true,
+        deletedAt: normalizeDeletedAt(item.deletedAt),
         entries,
         createdAt: item.createdAt,
         updatedAt: item.updatedAt,
@@ -502,11 +518,12 @@ export function parseNoteComments(noteContent: string, filePath: string): Parsed
     const threads = sectionContent
         ? parseJsonSection(sectionContent, filePath) ?? []
         : [];
+    const retainedThreads = purgeExpiredDeletedThreads(threads);
 
     return {
         mainContent,
-        threads,
-        comments: threads.map((thread) => threadToComment(thread)),
+        threads: retainedThreads,
+        comments: retainedThreads.map((thread) => threadToComment(thread)),
     };
 }
 
@@ -567,13 +584,19 @@ export function serializeNoteComments(noteContent: string, comments: Comment[]):
         anchorKind: comment.anchorKind === "page" ? "page" : "selection",
         orphaned: comment.orphaned === true,
         resolved: comment.resolved === true,
+        ...(normalizeDeletedAt(comment.deletedAt) !== undefined
+            ? { deletedAt: normalizeDeletedAt(comment.deletedAt) }
+            : {}),
         entries: [{
             id: comment.id,
             body: comment.comment,
             timestamp: comment.timestamp,
+            ...(normalizeDeletedAt(comment.deletedAt) !== undefined
+                ? { deletedAt: normalizeDeletedAt(comment.deletedAt) }
+                : {}),
         }],
         createdAt: comment.timestamp,
-        updatedAt: comment.timestamp,
+        updatedAt: normalizeDeletedAt(comment.deletedAt) ?? comment.timestamp,
     }));
 
     return serializeNoteCommentThreads(noteContent, threads);

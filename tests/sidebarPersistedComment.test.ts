@@ -234,7 +234,7 @@ test("shouldRenderNestedThreadEntries keeps streamed agent replies visible even 
     }), true);
 });
 
-test("getRenderableThreadEntries hides the persisted agent output entry while the live stream is retained", () => {
+test("getRenderableThreadEntries keeps the persisted agent output entry visible while the live stream is retained", () => {
     const thread = createThreadWithEntries({
         entries: [
             { id: "entry-1", body: "Parent", timestamp: 100 },
@@ -255,7 +255,7 @@ test("getRenderableThreadEntries hides the persisted agent output entry while th
             updatedAt: 200,
             outputEntryId: "entry-2",
         }),
-        [thread.entries[0]],
+        thread.entries,
     );
 });
 

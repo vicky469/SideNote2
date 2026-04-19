@@ -7,6 +7,7 @@ import {
     getFirstThreadEntry,
     threadEntryToComment,
 } from "../commentManager";
+import { isSoftDeleted } from "../core/rules/deletedCommentVisibility";
 
 function isThreadLike(value: Comment | CommentThread): value is CommentThread {
     return Array.isArray((value as CommentThread).entries);
@@ -49,11 +50,16 @@ export class AggregateCommentIndex {
     }
 
     getAllThreads(): CommentThread[] {
-        return Array.from(this.threadsByFile.values()).flatMap((threads) => cloneCommentThreads(threads));
+        return Array.from(this.threadsByFile.values())
+            .flatMap((threads) => threads)
+            .map((thread) => cloneThreadForVisibility(thread))
+            .filter((thread): thread is CommentThread => thread !== null);
     }
 
     getThreadsForFile(filePath: string): CommentThread[] {
-        return cloneCommentThreads(this.threadsByFile.get(filePath) ?? []);
+        return (this.threadsByFile.get(filePath) ?? [])
+            .map((thread) => cloneThreadForVisibility(thread))
+            .filter((thread): thread is CommentThread => thread !== null);
     }
 
     getThreadById(threadId: string): CommentThread | null {
@@ -81,4 +87,22 @@ export class AggregateCommentIndex {
         const entry = thread.entries.find((threadEntry) => threadEntry.id === commentId) ?? getFirstThreadEntry(thread);
         return threadEntryToComment(thread, entry);
     }
+}
+
+function cloneThreadForVisibility(thread: CommentThread): CommentThread | null {
+    if (isSoftDeleted(thread)) {
+        return null;
+    }
+
+    const cloned = cloneCommentThread(thread);
+    cloned.entries = cloned.entries.filter((entry) => !isSoftDeleted(entry));
+    if (!cloned.entries.length) {
+        return null;
+    }
+
+    cloned.updatedAt = Math.max(
+        cloned.createdAt,
+        ...cloned.entries.map((entry) => entry.timestamp),
+    );
+    return cloned;
 }

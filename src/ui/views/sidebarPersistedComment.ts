@@ -7,6 +7,7 @@ import type { SideNote2AgentTarget } from "../../core/config/agentTargets";
 import type { DraftComment } from "../../domain/drafts";
 import { normalizeCommentMarkdownForRender } from "../editor/commentMarkdownRendering";
 import { decorateRenderedCommentMentions } from "../editor/commentEditorStyling";
+import { SIDE_NOTE2_REGENERATE_ICON_ID } from "../sideNote2Icon";
 import { shouldActivateSidebarComment } from "./commentPointerAction";
 import { formatSidebarCommentMeta } from "./sidebarCommentSections";
 
@@ -45,6 +46,7 @@ export interface SidebarPersistedCommentHost {
     currentFilePath: string | null;
     currentUserLabel: string;
     showSourceRedirectAction: boolean;
+    enableSoftDeleteActions: boolean;
     showNestedComments: boolean;
     enableManualReorder: boolean;
     enableThreadReorder: boolean;
@@ -52,7 +54,6 @@ export interface SidebarPersistedCommentHost {
     agentRun: AgentRunRecord | null;
     agentStream: AgentRunStreamState | null;
     threadAgentRuns: AgentRunRecord[];
-    showAgentRetryAction: boolean;
     getEventTargetElement(target: EventTarget | null): HTMLElement | null;
     isSelectionInsideSidebarContent(selection?: Selection | null): boolean;
     claimSidebarInteractionOwnership(focusTarget?: HTMLElement | null): void;
@@ -63,11 +64,12 @@ export interface SidebarPersistedCommentHost {
     shareComment(comment: Comment): Promise<void>;
     resolveComment(commentId: string): void;
     unresolveComment(commentId: string): void;
+    restoreComment(commentId: string): Promise<void> | void;
     startEditDraft(commentId: string, hostFilePath: string | null): void;
     startAppendEntryDraft(commentId: string, hostFilePath: string | null): void;
-    retryAgentRun(threadId: string): void;
+    retryAgentRun(runId: string): void;
     reanchorCommentThreadToCurrentSelection(commentId: string): void;
-    deleteCommentWithConfirm(commentId: string): void;
+    deleteCommentWithConfirm(commentId: string): Promise<void> | void;
     renderAppendDraft(container: HTMLDivElement, comment: DraftComment): void;
     setIcon(element: HTMLElement, icon: string): void;
 }
@@ -186,6 +188,9 @@ function buildBasePersistedCommentPresentation(
     if (comment.resolved) {
         classes.push("resolved");
     }
+    if (comment.deletedAt) {
+        classes.push("deleted");
+    }
     if (activeCommentId === comment.id) {
         classes.push("active");
     }
@@ -263,17 +268,11 @@ async function renderThreadEntryContent(
 
 export function getRenderableThreadEntries(
     thread: CommentThread,
-    agentStream: AgentRunStreamState | null = null,
+    _agentStream: AgentRunStreamState | null = null,
 ): CommentThreadEntry[] {
-    const entries = thread.entries.length > 0
+    return thread.entries.length > 0
         ? thread.entries
         : [getFirstThreadEntry(thread)];
-
-    if (!agentStream?.outputEntryId) {
-        return entries;
-    }
-
-    return entries.filter((entry) => entry.id !== agentStream.outputEntryId);
 }
 
 export function shouldRenderNestedThreadEntries(
@@ -283,14 +282,15 @@ export function shouldRenderNestedThreadEntries(
         showNestedComments: boolean;
         hasAppendDraftComment: boolean;
         hasAgentStream: boolean;
+        hasDeletedEntriesVisible?: boolean;
     },
 ): boolean {
     const childEntries = getRenderableThreadEntries(thread).slice(1);
     if (childEntries.length === 0) {
-        return options.hasAppendDraftComment || options.hasAgentStream;
+        return options.hasAppendDraftComment || options.hasAgentStream || options.hasDeletedEntriesVisible === true;
     }
 
-    if (options.showNestedComments || options.hasAppendDraftComment || options.hasAgentStream) {
+    if (options.showNestedComments || options.hasAppendDraftComment || options.hasAgentStream || options.hasDeletedEntriesVisible) {
         return true;
     }
 
@@ -471,9 +471,36 @@ function renderDeleteButton(
     deleteButton.setAttribute("type", "button");
     deleteButton.setAttribute("aria-label", ariaLabel);
     host.setIcon(deleteButton, "trash-2");
-    deleteButton.onclick = (event) => {
+    deleteButton.onclick = async (event) => {
+        console.log("[SideNote2] sidebar.delete.click", {
+            commentId,
+            ariaLabel,
+        });
+        event.preventDefault();
         event.stopPropagation();
-        host.deleteCommentWithConfirm(commentId);
+        await host.deleteCommentWithConfirm(commentId);
+        console.log("[SideNote2] sidebar.delete.click.completed", {
+            commentId,
+        });
+    };
+}
+
+function renderRestoreButton(
+    actionsEl: HTMLDivElement,
+    commentId: string,
+    host: SidebarPersistedCommentHost,
+    ariaLabel: string,
+): void {
+    const restoreButton = actionsEl.createEl("button", {
+        cls: "clickable-icon sidenote2-comment-action-button sidenote2-comment-action-restore",
+    });
+    restoreButton.setAttribute("type", "button");
+    restoreButton.setAttribute("aria-label", ariaLabel);
+    host.setIcon(restoreButton, "rotate-ccw");
+    restoreButton.onclick = async (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        await host.restoreComment(commentId);
     };
 }
 
@@ -544,7 +571,7 @@ function renderPersistedEntryCard(
 function renderThreadFooterActions(
     commentEl: HTMLDivElement,
     comment: Comment,
-    threadId: string,
+    retryRunId: string | null,
     author: SidebarCommentAuthorPresentation,
     agentRun: AgentRunRecord | null,
     options: {
@@ -591,15 +618,21 @@ function renderThreadFooterActions(
     }
 
     const retryButton = footerActionsEl.createEl("button", {
-        cls: "clickable-icon sidenote2-comment-action-button sidenote2-comment-action-retry",
+        cls: "clickable-icon sidenote2-comment-action-button sidenote2-comment-action-retry sidenote2-thread-footer-regenerate-button",
     });
     retryButton.setAttribute("type", "button");
-    retryButton.setAttribute("aria-label", "Retry latest agent run");
-    host.setIcon(retryButton, "refresh-cw");
+    retryButton.setAttribute("aria-label", "Generate");
+    host.setIcon(retryButton, SIDE_NOTE2_REGENERATE_ICON_ID);
     retryButton.onclick = (event) => {
         event.stopPropagation();
-        host.retryAgentRun(threadId);
+        if (retryRunId) {
+            host.retryAgentRun(retryRunId);
+        }
     };
+}
+
+function hasVisibleDeletedEntries(thread: CommentThread): boolean {
+    return thread.entries.slice(1).some((entry) => !!entry.deletedAt);
 }
 
 function renderThreadReanchorAction(
@@ -631,12 +664,14 @@ export async function renderPersistedCommentCard(
     const threadEl = commentsContainer.createDiv("sidenote2-thread-stack");
     threadEl.setAttribute("data-thread-id", thread.id);
     const shouldRenderStoredChildren = host.showNestedComments
-        || entries.slice(1).some((entry) => entry.id === host.activeCommentId);
+        || entries.slice(1).some((entry) => entry.id === host.activeCommentId)
+        || hasVisibleDeletedEntries(thread);
     const shouldRenderChildComments = shouldRenderNestedThreadEntries(thread, {
         activeCommentId: host.activeCommentId,
         showNestedComments: host.showNestedComments,
         hasAppendDraftComment: !!host.appendDraftComment,
         hasAgentStream: !!host.agentStream,
+        hasDeletedEntriesVisible: hasVisibleDeletedEntries(thread),
     });
     const canReorderChildEntries = host.enableManualReorder && entries.length > 2 && shouldRenderStoredChildren;
     const renderedParent = renderPersistedEntryCard(threadEl, {
@@ -657,24 +692,30 @@ export async function renderPersistedCommentCard(
         }, host);
     }
 
-    const resolveButton = actionsEl.createEl("button", {
-        cls: "clickable-icon sidenote2-comment-action-button sidenote2-comment-action-resolve",
-    });
-    resolveButton.setAttribute("type", "button");
-    resolveButton.setAttribute("aria-label", presentation.resolveAction.ariaLabel);
-    host.setIcon(resolveButton, presentation.resolveAction.icon);
-    resolveButton.onclick = (event) => {
-        event.stopPropagation();
-        if (thread.resolved) {
-            host.unresolveComment(thread.id);
-        } else {
-            host.resolveComment(thread.id);
-        }
-    };
+    if (comment.deletedAt && host.enableSoftDeleteActions) {
+        renderRestoreButton(actionsEl, comment.id, host, "Restore deleted side note");
+    } else {
+        const resolveButton = actionsEl.createEl("button", {
+            cls: "clickable-icon sidenote2-comment-action-button sidenote2-comment-action-resolve",
+        });
+        resolveButton.setAttribute("type", "button");
+        resolveButton.setAttribute("aria-label", presentation.resolveAction.ariaLabel);
+        host.setIcon(resolveButton, presentation.resolveAction.icon);
+        resolveButton.onclick = (event) => {
+            event.stopPropagation();
+            if (thread.resolved) {
+                host.unresolveComment(thread.id);
+            } else {
+                host.resolveComment(thread.id);
+            }
+        };
 
-    renderEditButton(actionsEl, comment.id, host, "Edit side note");
-    renderDeleteButton(actionsEl, comment.id, host, "Delete side note thread");
-    if (host.showSourceRedirectAction) {
+        renderEditButton(actionsEl, comment.id, host, "Edit side note");
+        if (host.enableSoftDeleteActions) {
+            renderDeleteButton(actionsEl, comment.id, host, "Delete side note thread");
+        }
+    }
+    if (host.showSourceRedirectAction && !comment.deletedAt) {
         renderSourceRedirectButton(
             actionsEl,
             comment,
@@ -683,13 +724,13 @@ export async function renderPersistedCommentCard(
             host,
         );
     }
-    if (presentation.reanchorAction) {
+    if (presentation.reanchorAction && !comment.deletedAt) {
         renderThreadReanchorAction(commentEl, thread.id, presentation.reanchorAction.label, host);
     }
-    renderThreadFooterActions(commentEl, comment, thread.id, parentAuthor, null, {
-        showShareAction: true,
-        showAddEntryAction: true,
-        showRetryAction: host.showAgentRetryAction && !!host.agentRun,
+    renderThreadFooterActions(commentEl, comment, null, parentAuthor, null, {
+        showShareAction: !comment.deletedAt,
+        showAddEntryAction: !comment.deletedAt,
+        showRetryAction: false,
     }, host);
 
     if (!shouldRenderChildComments) {
@@ -718,9 +759,17 @@ export async function renderPersistedCommentCard(
                     entryId: entryComment.id,
                 }, host);
             }
-            renderEditButton(entryActionsEl, entryComment.id, host, "Edit side note");
-            renderDeleteButton(entryActionsEl, entryComment.id, host, "Delete side note entry");
-            if (host.showSourceRedirectAction) {
+            if (thread.deletedAt) {
+                // Parent restore controls the whole soft-deleted thread.
+            } else if (entryComment.deletedAt && host.enableSoftDeleteActions) {
+                renderRestoreButton(entryActionsEl, entryComment.id, host, "Restore deleted side note entry");
+            } else {
+                renderEditButton(entryActionsEl, entryComment.id, host, "Edit side note");
+                if (host.enableSoftDeleteActions) {
+                    renderDeleteButton(entryActionsEl, entryComment.id, host, "Delete side note entry");
+                }
+            }
+            if (host.showSourceRedirectAction && !entryComment.deletedAt && !thread.deletedAt) {
                 renderSourceRedirectButton(entryActionsEl, entryComment, "Open source note", "obsidian-external-link", host);
             }
             renderTasks.push(renderedEntry.renderTask);
@@ -729,13 +778,13 @@ export async function renderPersistedCommentCard(
             renderThreadFooterActions(
                 entryEl,
                 entryComment,
-                thread.id,
+                entryAgentRun?.id ?? null,
                 entryAuthor,
                 entryAgentRun,
                 {
-                showShareAction: false,
-                showAddEntryAction: true,
-                showRetryAction: false,
+                showShareAction: !entryComment.deletedAt && !thread.deletedAt,
+                showAddEntryAction: !entryComment.deletedAt && !thread.deletedAt,
+                showRetryAction: !!entryAgentRun && !entryComment.deletedAt && !thread.deletedAt,
                 },
                 host,
             );

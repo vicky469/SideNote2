@@ -53,6 +53,7 @@ export interface CommentAgentHost {
             skipCommentViewRefresh?: boolean;
         },
     ): Promise<boolean>;
+    editComment(commentId: string, newCommentText: string, options?: { skipCommentViewRefresh?: boolean }): Promise<boolean>;
     runAgentRuntime(invocation: {
         target: SideNote2AgentTarget;
         prompt: string;
@@ -68,6 +69,7 @@ const AGENT_CONFLICT_NOTICE = "Use only one explicit supported agent target per 
 const AGENT_RETRY_NOTICE = `Retry requires a single explicit ${PRIMARY_SUPPORTED_AGENT.directive} target in the triggering entry.`;
 const AGENT_PENDING_SESSION_NOTICE = "The previous SideNote2 agent run did not finish. Retry the thread to run it again.";
 const AGENT_DESKTOP_RUNTIME_NOTICE = "Agent execution requires desktop Obsidian with a filesystem-backed vault.";
+const AGENT_REGENERATE_REPLACE_FAILED_NOTICE = "Unable to replace the previous agent reply.";
 
 function summarizeError(error: unknown): string {
     if (error instanceof Error && error.message.trim()) {
@@ -158,23 +160,29 @@ export class CommentAgentController {
         });
     }
 
-    public async retryLatestRun(threadId: string): Promise<boolean> {
-        const latestRun = getLatestAgentRunForThread(this.store.getRuns(), threadId);
-        if (!latestRun) {
-            this.host.showNotice("No agent run exists for that thread yet.");
+    public async retryRun(runId: string): Promise<boolean> {
+        const previousRun = this.store.getRunById(runId);
+        if (!previousRun) {
+            this.host.showNotice("Unable to find that agent reply.");
             return false;
         }
 
-        const file = this.host.getFileByPath(latestRun.filePath);
+        const file = this.host.getFileByPath(previousRun.filePath);
         if (!this.host.isCommentableFile(file)) {
-            this.host.showNotice("Unable to reload that thread for retry.");
+            this.host.showNotice("Unable to reload that side note reply.");
             return false;
         }
 
         await this.host.loadCommentsForFile(file);
-        const latestComment = this.host.getCommentManager().getCommentById(latestRun.triggerEntryId);
+        const latestComment = this.host.getCommentManager().getCommentById(previousRun.triggerEntryId);
         if (!latestComment) {
-            this.host.showNotice("Unable to find the triggering entry for retry.");
+            this.host.showNotice("Unable to find the latest saved side note entry.");
+            return false;
+        }
+
+        const thread = this.host.getCommentManager().getThreadById(previousRun.threadId);
+        if (!thread) {
+            this.host.showNotice("Unable to find that side note thread.");
             return false;
         }
 
@@ -185,18 +193,19 @@ export class CommentAgentController {
         }
 
         const run = this.buildQueuedRun({
-            threadId,
-            triggerEntryId: latestRun.triggerEntryId,
-            filePath: latestRun.filePath,
+            threadId: thread.id,
+            triggerEntryId: previousRun.triggerEntryId,
+            filePath: latestComment.filePath,
             requestedAgent: resolvedTarget,
             promptText: latestComment.comment,
-            retryOfRunId: latestRun.id,
+            retryOfRunId: previousRun.id,
         });
         await this.enqueueRun(run);
         void this.host.log?.("info", "agents", "agents.retry.created", {
             runId: run.id,
-            retryOfRunId: latestRun.id,
-            threadId,
+            retryOfRunId: previousRun.id,
+            threadId: thread.id,
+            triggerEntryId: previousRun.triggerEntryId,
             requestedAgent: run.requestedAgent,
         });
         return true;
@@ -229,11 +238,38 @@ export class CommentAgentController {
         }
 
         const startedAt = this.host.now();
+        const previousRun = queuedRun.retryOfRunId
+            ? this.store.getRunById(queuedRun.retryOfRunId)
+            : null;
+        const replaceOutputEntryId = previousRun?.outputEntryId ?? undefined;
+        const outputEntryId = replaceOutputEntryId ?? this.host.createCommentId();
+        if (!replaceOutputEntryId) {
+            const appended = await this.host.appendThreadEntry(queuedRun.threadId, {
+                id: outputEntryId,
+                body: "",
+                timestamp: startedAt,
+            }, {
+                skipCommentViewRefresh: true,
+            });
+            if (!appended) {
+                const failedRun = await this.store.updateRun(runId, (run) => ({
+                    ...run,
+                    status: "failed",
+                    endedAt: this.host.now(),
+                    error: "Unable to append the agent reply to the thread.",
+                }));
+                if (failedRun) {
+                    await this.refreshStatusViews();
+                }
+                return;
+            }
+        }
         const runningRun = await this.store.updateRun(runId, (run) => ({
             ...run,
             status: "running",
             startedAt,
             error: undefined,
+            outputEntryId,
         }));
         if (!runningRun) {
             return;
@@ -244,6 +280,7 @@ export class CommentAgentController {
             partialText: "",
             startedAt,
             updatedAt: startedAt,
+            outputEntryId,
         }));
 
         void this.host.log?.("info", "agents", "agents.run.started", {
@@ -271,6 +308,7 @@ export class CommentAgentController {
                         partialText,
                         startedAt,
                         updatedAt: this.host.now(),
+                        outputEntryId,
                     }),
                 ),
             });
@@ -279,17 +317,13 @@ export class CommentAgentController {
                 throw new Error("The agent returned an empty response.");
             }
 
-            const outputEntryId = this.host.createCommentId();
             const timestamp = this.host.now();
-            const appended = await this.host.appendThreadEntry(runningRun.threadId, {
-                id: outputEntryId,
-                body: replyText,
-                timestamp,
-            }, {
-                skipCommentViewRefresh: true,
-            });
-            if (!appended) {
-                throw new Error("Unable to append the agent reply to the thread.");
+            const replaced = await this.host.editComment(outputEntryId, replyText, { skipCommentViewRefresh: true });
+            if (!replaced) {
+                if (replaceOutputEntryId) {
+                    throw new Error(AGENT_REGENERATE_REPLACE_FAILED_NOTICE);
+                }
+                throw new Error("Unable to update the agent reply.");
             }
 
             const completedRun = await this.store.updateRun(runId, (run) => ({
@@ -303,6 +337,15 @@ export class CommentAgentController {
             if (!completedRun) {
                 throw new Error("Unable to finalize the agent run.");
             }
+            this.setRunStream(this.buildRunStreamState(completedRun, {
+                status: "succeeded",
+                partialText: replyText,
+                startedAt,
+                updatedAt: timestamp,
+                outputEntryId,
+            }));
+            await this.refreshStatusViews();
+            this.clearRunStream(runId, runningRun.threadId);
             void this.host.log?.("info", "agents", "agents.reply.appended", {
                 runId,
                 threadId: runningRun.threadId,
@@ -314,19 +357,19 @@ export class CommentAgentController {
                 runtime: runtimeResponse.runtime,
                 outputEntryId,
             });
-            this.setRunStream(this.buildRunStreamState(completedRun, {
-                status: "succeeded",
-                partialText: replyText,
-                startedAt,
-                updatedAt: timestamp,
-                outputEntryId,
-            }));
         } catch (error) {
             await this.failRun(runId, runningRun, summarizeError(error));
         }
     }
 
     private async failRun(runId: string, run: AgentRunRecord, message: string): Promise<void> {
+        const existingStream = this.runStreams.get(runId);
+        const failureText = existingStream?.partialText.trim().length
+            ? existingStream.partialText
+            : message;
+        if (run.outputEntryId) {
+            await this.host.editComment(run.outputEntryId, failureText, { skipCommentViewRefresh: true });
+        }
         const failedRun = await this.store.updateRun(runId, (currentRun) => ({
             ...currentRun,
             status: "failed",
@@ -334,14 +377,16 @@ export class CommentAgentController {
             error: message,
         }));
         if (failedRun) {
-            const existingStream = this.runStreams.get(runId);
             this.setRunStream(this.buildRunStreamState(failedRun, {
                 status: "failed",
-                partialText: existingStream?.partialText ?? "",
+                partialText: failureText,
                 startedAt: failedRun.startedAt ?? run.createdAt,
                 updatedAt: failedRun.endedAt ?? this.host.now(),
+                outputEntryId: failedRun.outputEntryId,
                 error: message,
             }));
+            await this.refreshStatusViews();
+            this.clearRunStream(runId, run.threadId);
         }
         void this.host.log?.("warn", "agents", "agents.run.failed", {
             runId,

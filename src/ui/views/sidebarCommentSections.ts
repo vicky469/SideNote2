@@ -7,6 +7,7 @@ export interface SidebarCommentPresentationLike {
     resolved?: boolean;
     anchorKind?: CommentAnchorKind;
     orphaned?: boolean;
+    deletedAt?: number;
 }
 
 function formatCommentTimestamp(timestamp: number): string {
@@ -21,6 +22,9 @@ export function formatSidebarCommentMeta(comment: SidebarCommentPresentationLike
     }
     if (comment.resolved) {
         segments.push("resolved");
+    }
+    if (comment.deletedAt) {
+        segments.push("deleted");
     }
 
     return segments.join(" · ");

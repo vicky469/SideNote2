@@ -17,6 +17,7 @@ export class CommentSessionController {
     private readonly draftSessionStore = new DraftSessionStore();
     private readonly revealedCommentSelectionStore = new RevealedCommentSelectionStore();
     private showResolvedComments = false;
+    private showDeletedComments = false;
     private showNestedComments = true;
 
     constructor(private readonly host: CommentSessionHost) {}
@@ -102,6 +103,20 @@ export class CommentSessionController {
 
     public shouldShowNestedComments(): boolean {
         return this.showNestedComments;
+    }
+
+    public shouldShowDeletedComments(): boolean {
+        return this.showDeletedComments;
+    }
+
+    public async setShowDeletedComments(showDeleted: boolean): Promise<boolean> {
+        if (this.showDeletedComments === showDeleted) {
+            return false;
+        }
+
+        this.showDeletedComments = showDeleted;
+        await this.host.refreshCommentViews();
+        return true;
     }
 
     public async setShowNestedComments(showNested: boolean): Promise<boolean> {

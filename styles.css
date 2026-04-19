@@ -689,6 +689,19 @@
     text-decoration-color: var(--text-faint, var(--text-muted));
 }
 
+.sidenote2-comment-item.deleted {
+    opacity: 0.76;
+    background: var(--background-primary-alt, var(--background-secondary));
+    border-style: dashed;
+}
+
+.sidenote2-comment-item.deleted .sidenote2-timestamp,
+.sidenote2-comment-item.deleted .sidenote2-comment-content {
+    text-decoration: line-through;
+    text-decoration-thickness: 0.08em;
+    text-decoration-color: var(--text-faint, var(--text-muted));
+}
+
 .sidenote2-comment-draft {
     cursor: default;
     border-color: var(--interactive-accent);
@@ -817,6 +830,10 @@
 
 .sidenote2-comment-content :is(p, ul, ol, blockquote, pre) {
     margin-block: 0.35rem;
+}
+
+.sidenote2-comment-content :is(p, li) {
+    white-space: pre-wrap;
 }
 
 .sidenote2-comment-content :is(ul, ol) {
@@ -1044,8 +1061,8 @@
     gap: 2px;
     flex: 0 0 auto;
     margin-left: auto;
-    opacity: 0;
-    pointer-events: none;
+    opacity: 1;
+    pointer-events: auto;
     transition: opacity 0.14s ease;
 }
 
@@ -1074,19 +1091,9 @@
     align-items: center;
     gap: 2px;
     flex: 0 0 auto;
-    opacity: 0;
-    pointer-events: none;
-    transition: opacity 0.14s ease;
-}
-
-.sidenote2-comment-item:hover .sidenote2-comment-actions,
-.sidenote2-comment-item:hover .sidenote2-thread-footer-actions,
-.sidenote2-comment-item:focus-within .sidenote2-comment-actions,
-.sidenote2-comment-item:focus-within .sidenote2-thread-footer-actions,
-.sidenote2-comment-item.active .sidenote2-comment-actions,
-.sidenote2-comment-item.active .sidenote2-thread-footer-actions {
     opacity: 1;
     pointer-events: auto;
+    transition: opacity 0.14s ease;
 }
 
 .sidenote2-inline-editor {

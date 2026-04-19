@@ -91,3 +91,44 @@ test("AggregateCommentIndex resolves child thread entries by id", () => {
     assert.equal(index.getCommentById("entry-2")?.comment, "child");
     assert.equal(index.getThreadById("entry-2")?.id, "thread-1");
 });
+
+test("AggregateCommentIndex hides soft-deleted threads and child entries from sidebar queries", () => {
+    const index = new AggregateCommentIndex();
+    const baseTimestamp = Date.now();
+    const activeThread = commentToThread(createComment({
+        filePath: "a.md",
+        id: "thread-1",
+        comment: "parent",
+        timestamp: baseTimestamp,
+    }));
+    activeThread.entries.push({
+        id: "entry-2",
+        body: "deleted child",
+        timestamp: baseTimestamp + 1000,
+        deletedAt: baseTimestamp + 2000,
+    });
+
+    const deletedThread = commentToThread(createComment({
+        filePath: "a.md",
+        id: "thread-2",
+        comment: "deleted thread",
+        timestamp: baseTimestamp + 3000,
+        deletedAt: baseTimestamp + 4000,
+    }));
+
+    index.updateFile("a.md", [activeThread, deletedThread]);
+
+    assert.deepEqual(
+        index.getThreadsForFile("a.md").map((thread) => ({
+            id: thread.id,
+            entryIds: thread.entries.map((entry) => entry.id),
+        })),
+        [{
+            id: "thread-1",
+            entryIds: ["thread-1"],
+        }],
+    );
+    assert.equal(index.getAllComments().length, 1);
+    assert.equal(index.getCommentById("entry-2")?.deletedAt, baseTimestamp + 2000);
+    assert.equal(index.getCommentById("thread-2")?.deletedAt, baseTimestamp + 4000);
+});

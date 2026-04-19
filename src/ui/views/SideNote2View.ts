@@ -26,7 +26,6 @@ import {
 import type { DraftComment } from "../../domain/drafts";
 import type SideNote2 from "../../main";
 import type { AgentStreamUpdate } from "../../control/commentAgentController";
-import ConfirmDeleteModal from "../modals/ConfirmDeleteModal";
 import SideNoteFileFilterModal from "../modals/SideNoteFileFilterModal";
 import SideNoteLinkSuggestModal from "../modals/SideNoteLinkSuggestModal";
 import SideNoteTagSuggestModal from "../modals/SideNoteTagSuggestModal";
@@ -67,6 +66,7 @@ import {
     shouldShowResolvedToolbarChip,
 } from "./indexSidebarState";
 import { StreamedAgentReplyController } from "./streamedAgentReplyController";
+import { hasDeletedComments, isSoftDeleted } from "../../core/rules/deletedCommentVisibility";
 import {
     normalizeIndexFileFilterRootPath,
     resolveIndexAgentOutcomeFilterFromState,
@@ -78,6 +78,24 @@ import {
 
 function matchesResolvedVisibility(resolved: boolean | undefined, showResolved: boolean): boolean {
     return showResolved ? resolved === true : resolved !== true;
+}
+
+function matchesPageSidebarVisibility(
+    thread: CommentThread,
+    options: {
+        showResolved: boolean;
+        showDeleted: boolean;
+    },
+): boolean {
+    if (options.showDeleted) {
+        return isSoftDeleted(thread) || hasDeletedComments(thread);
+    }
+
+    if (isSoftDeleted(thread)) {
+        return false;
+    }
+
+    return matchesResolvedVisibility(thread.resolved, options.showResolved);
 }
 
 function parseIndexSidebarMode(value: unknown): IndexSidebarMode | null {
@@ -317,14 +335,24 @@ export default class SideNote2View extends ItemView {
 
             this.containerEl.empty();
             this.containerEl.addClass("sidenote2-view-container");
+            const showDeleted = this.plugin.shouldShowDeletedComments();
             const persistedThreads = isAllCommentsView
                 ? this.plugin.getAllIndexedThreads()
-                : this.plugin.getThreadsForFile(file.path);
+                : this.plugin.getThreadsForFile(file.path, { includeDeleted: showDeleted });
+            const pageThreadsWithDeleted = isAllCommentsView
+                ? []
+                : this.plugin.getThreadsForFile(file.path, { includeDeleted: true });
             const showResolved = this.plugin.shouldShowResolvedComments();
             const allAgentRuns = this.plugin.getAgentRuns();
             const isAgentIndexMode = isAllCommentsView && this.indexSidebarMode === "agent";
             const visiblePersistedThreads = persistedThreads.filter((thread) =>
-                isAgentIndexMode || matchesResolvedVisibility(thread.resolved, showResolved));
+                isAgentIndexMode
+                || (isAllCommentsView
+                    ? matchesResolvedVisibility(thread.resolved, showResolved)
+                    : matchesPageSidebarVisibility(thread, {
+                        showResolved,
+                        showDeleted,
+                    })));
             const allAgentSidebarThreads = isAllCommentsView
                 ? buildAgentSidebarThreads(persistedThreads, allAgentRuns)
                 : [];
@@ -448,6 +476,8 @@ export default class SideNote2View extends ItemView {
                 isAllCommentsView,
                 resolvedCount,
                 hasResolvedComments,
+                hasDeletedComments: !isAllCommentsView && pageThreadsWithDeleted.some((thread) => hasDeletedComments(thread)),
+                showDeletedComments: showDeleted,
                 hasNestedComments,
                 isAgentMode: isAgentIndexMode,
                 agentOutcomeCounts: {
@@ -513,7 +543,6 @@ export default class SideNote2View extends ItemView {
                     threadAgentRuns[0] ?? null,
                     this.plugin.getActiveAgentStreamForThread(item.thread.id),
                     threadAgentRuns,
-                    isAllCommentsView && this.indexSidebarMode === "agent",
                     nestedAppendDraftThreadId === item.thread.id && visibleDraftComment?.mode === "append"
                         ? visibleDraftComment
                         : null,
@@ -593,10 +622,6 @@ export default class SideNote2View extends ItemView {
         if (!(threadEl instanceof HTMLDivElement)) {
             return;
         }
-        if (this.shouldHideStreamedReplyController(threadEl, update.stream)) {
-            this.removeStreamedReplyController(update.threadId);
-            return;
-        }
 
         this.getOrCreateStreamedReplyController(update.threadId).sync(this.containerEl, update.stream);
     }
@@ -619,11 +644,6 @@ export default class SideNote2View extends ItemView {
                 this.removeStreamedReplyController(threadId);
                 continue;
             }
-            if (this.shouldHideStreamedReplyController(threadEl, stream)) {
-                this.removeStreamedReplyController(threadId);
-                continue;
-            }
-
             this.getOrCreateStreamedReplyController(threadId).sync(this.containerEl, stream);
         }
 
@@ -661,21 +681,14 @@ export default class SideNote2View extends ItemView {
         this.streamedReplyControllers.clear();
     }
 
-    private shouldHideStreamedReplyController(threadEl: HTMLDivElement, stream: ReturnType<SideNote2["getActiveAgentStreamForThread"]>): boolean {
-        if (!stream?.outputEntryId) {
-            return false;
-        }
-
-        const persistedReplyEl = threadEl.querySelector(`.sidenote2-thread-entry-item[data-comment-id="${stream.outputEntryId}"]`);
-        return persistedReplyEl instanceof HTMLDivElement;
-    }
-
     private renderSidebarToolbar(
         container: HTMLElement,
         options: {
             isAllCommentsView: boolean;
             resolvedCount: number;
             hasResolvedComments: boolean;
+            hasDeletedComments: boolean;
+            showDeletedComments: boolean;
             hasNestedComments: boolean;
             isAgentMode: boolean;
             agentOutcomeCounts: {
@@ -694,6 +707,7 @@ export default class SideNote2View extends ItemView {
     ) {
         const showResolved = this.plugin.shouldShowResolvedComments();
         const showNestedComments = this.plugin.shouldShowNestedComments();
+        const showDeletedComments = options.showDeletedComments;
         const showListOnlyToolbarChips = shouldShowIndexListToolbarChips(options.isAllCommentsView, this.indexSidebarMode);
         const shouldShowResolvedChip = showListOnlyToolbarChips
             && !options.isAgentMode
@@ -797,6 +811,18 @@ export default class SideNote2View extends ItemView {
                 active: showNestedComments,
                 onClick: () => {
                     void this.plugin.setShowNestedComments(!showNestedComments);
+                },
+            });
+        }
+
+        if (!options.isAllCommentsView) {
+            this.renderToolbarIconButton(filterGroup, {
+                icon: "trash-2",
+                ariaLabel: showDeletedComments ? "Hide deleted comments" : "Show deleted comments",
+                active: showDeletedComments,
+                disabled: !options.hasDeletedComments && !showDeletedComments,
+                onClick: () => {
+                    void this.plugin.setShowDeletedComments(!showDeletedComments);
                 },
             });
         }
@@ -1067,7 +1093,6 @@ export default class SideNote2View extends ItemView {
         agentRun: ReturnType<SideNote2["getLatestAgentRunForThread"]>,
         agentStream: ReturnType<SideNote2["getActiveAgentStreamForThread"]>,
         threadAgentRuns: AgentRunRecord[],
-        showAgentRetryAction: boolean,
         appendDraftComment: DraftComment | null = null,
     ) {
         const currentFilePath = this.file?.path ?? null;
@@ -1078,6 +1103,7 @@ export default class SideNote2View extends ItemView {
             currentFilePath,
             currentUserLabel: "You",
             showSourceRedirectAction: isIndexView,
+            enableSoftDeleteActions: !isIndexView,
             showNestedComments: this.plugin.shouldShowNestedComments(),
             enableManualReorder: !isIndexView,
             enableThreadReorder,
@@ -1085,7 +1111,6 @@ export default class SideNote2View extends ItemView {
             agentRun,
             agentStream,
             threadAgentRuns,
-            showAgentRetryAction,
             getEventTargetElement: (target) => this.interactionController.getEventTargetElement(target),
             isSelectionInsideSidebarContent: (selection) => this.interactionController.isSelectionInsideSidebarContent(selection),
             claimSidebarInteractionOwnership: (focusTarget) => this.interactionController.claimSidebarInteractionOwnership(focusTarget),
@@ -1115,21 +1140,25 @@ export default class SideNote2View extends ItemView {
             unresolveComment: (commentId) => {
                 void this.plugin.unresolveComment(commentId);
             },
+            restoreComment: async (commentId) => {
+                await this.plugin.restoreComment(commentId);
+                if (this.plugin.shouldShowDeletedComments()) {
+                    await this.plugin.setShowDeletedComments(false);
+                }
+            },
             startEditDraft: (commentId, hostFilePath) => {
                 void this.plugin.startEditDraft(commentId, hostFilePath);
             },
             startAppendEntryDraft: (commentId, hostFilePath) => {
                 void this.plugin.startAppendEntryDraft(commentId, hostFilePath);
             },
-            retryAgentRun: (threadId) => {
-                void this.plugin.retryAgentRun(threadId);
+            retryAgentRun: (runId) => {
+                void this.plugin.retryAgentRun(runId);
             },
             reanchorCommentThreadToCurrentSelection: (commentId) => {
                 void this.plugin.reanchorCommentThreadToCurrentSelection(commentId);
             },
-            deleteCommentWithConfirm: (commentId) => {
-                void this.deleteCommentWithConfirm(commentId);
-            },
+            deleteCommentWithConfirm: (commentId) => this.deleteCommentWithConfirm(commentId),
             renderAppendDraft: (container, comment) => {
                 this.renderDraftComment(container, comment);
             },
@@ -1576,13 +1605,20 @@ export default class SideNote2View extends ItemView {
     }
 
     private async deleteCommentWithConfirm(commentId: string) {
-        if (await this.plugin.shouldConfirmDelete()) {
-            new ConfirmDeleteModal(this.app, () => {
-                void this.plugin.deleteComment(commentId);
-            }).open();
-            return;
+        console.log("[SideNote2] sidebar.delete.begin", {
+            commentId,
+            showDeletedBefore: this.plugin.shouldShowDeletedComments(),
+            filePath: this.file?.path ?? null,
+        });
+        if (this.plugin.shouldShowDeletedComments()) {
+            await this.plugin.setShowDeletedComments(false);
+            console.log("[SideNote2] sidebar.delete.hideDeletedToggle", {
+                commentId,
+            });
         }
-
         await this.plugin.deleteComment(commentId);
+        console.log("[SideNote2] sidebar.delete.end", {
+            commentId,
+        });
     }
 }

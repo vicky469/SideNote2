@@ -14,7 +14,7 @@ export default class ConfirmDeleteModal extends Modal {
         contentEl.addClass("sidenote2-confirm-modal");
 
         contentEl.createEl("h2", { text: "Delete comment" });
-        contentEl.createEl("p", { text: "Are you sure you want to delete this comment? This action cannot be undone." });
+        contentEl.createEl("p", { text: "Move this comment to trash? You can restore it from the sidebar for 1 day." });
 
         const footer = contentEl.createDiv("sidenote2-modal-footer");
 

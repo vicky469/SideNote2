@@ -21,6 +21,7 @@ import {
     serializeNoteCommentThreads,
     type ParsedNoteComments,
 } from "../core/storage/noteCommentStorage";
+import { purgeExpiredDeletedThreads } from "../core/rules/deletedCommentVisibility";
 import { remapSelectionOffsetAfterManagedSectionEdit } from "../core/text/editOffsets";
 import type { AggregateCommentIndex } from "../index/AggregateCommentIndex";
 import { shouldSkipAggregateViewRefresh } from "./commentPersistencePlanner";
@@ -343,10 +344,12 @@ export class CommentPersistenceController {
             normalizedThreads.push(thread);
         }
 
+        const retainedThreads = purgeExpiredDeletedThreads(normalizedThreads);
+
         return {
             mainContent: parsed.mainContent,
-            threads: normalizedThreads,
-            comments: normalizedThreads.map((thread) => threadToComment(thread)),
+            threads: retainedThreads,
+            comments: retainedThreads.map((thread) => threadToComment(thread)),
         };
     }
 
@@ -377,7 +380,8 @@ export class CommentPersistenceController {
 
     private async writeCommentsForFile(file: TFile, options: PersistOptions = {}): Promise<string> {
         this.clearPendingCommentPersistTimer(file.path);
-        const threads = this.host.getCommentManager().getThreadsForFile(file.path);
+        this.host.getCommentManager().purgeExpiredDeletedComments();
+        const threads = this.host.getCommentManager().getThreadsForFile(file.path, { includeDeleted: true });
         void this.host.log?.("info", "persistence", "storage.note.write.begin", {
             filePath: file.path,
             threadCount: threads.length,

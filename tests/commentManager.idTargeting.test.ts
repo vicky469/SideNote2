@@ -19,7 +19,7 @@ function createComment(id: string, timestamp: number, text: string): Comment {
 }
 
 test("CommentManager edits/deletes/resolves by id under timestamp collision", () => {
-    const sameTimestamp = 1710000000000;
+    const sameTimestamp = Date.now();
     const first = createComment("id-1", sameTimestamp, "first");
     const second = createComment("id-2", sameTimestamp, "second");
 
@@ -39,18 +39,20 @@ test("CommentManager edits/deletes/resolves by id under timestamp collision", ()
     comments = manager.getCommentsForFile("note.md");
     assert.equal(comments.find((comment) => comment.id === "id-1")?.resolved, false);
 
-    manager.deleteComment("id-1");
+    manager.deleteComment("id-1", sameTimestamp + 5);
     const remaining = manager.getCommentsForFile("note.md");
     assert.equal(remaining.length, 1);
     assert.equal(remaining[0].id, "id-2");
+    assert.equal(manager.getCommentById("id-1")?.deletedAt, sameTimestamp + 5);
 });
 
 test("CommentManager targets child thread entries by id", () => {
-    const thread = commentToThread(createComment("thread-1", 1710000000000, "parent"));
+    const baseTimestamp = Date.now();
+    const thread = commentToThread(createComment("thread-1", baseTimestamp, "parent"));
     thread.entries.push({
         id: "entry-2",
         body: "child",
-        timestamp: 1710000001000,
+        timestamp: baseTimestamp + 1000,
     });
 
     const manager = new CommentManager([thread]);
@@ -64,13 +66,17 @@ test("CommentManager targets child thread entries by id", () => {
     manager.appendEntry("entry-2", {
         id: "entry-3",
         body: "grandchild",
-        timestamp: 1710000002000,
+        timestamp: baseTimestamp + 2000,
     });
     assert.equal(manager.getCommentById("entry-3")?.comment, "grandchild");
 
-    manager.deleteComment("entry-2");
-    assert.equal(manager.getCommentById("entry-2"), undefined);
-    assert.equal(manager.getThreadById("entry-3")?.entries.length, 2);
+    manager.deleteComment("entry-2", baseTimestamp + 3000);
+    assert.equal(manager.getCommentById("entry-2")?.deletedAt, baseTimestamp + 3000);
+    assert.equal(manager.getThreadById("entry-3")?.entries.length, 3);
+    assert.deepEqual(
+        manager.getThreadsForFile("note.md")[0]?.entries.map((entry) => entry.id),
+        ["thread-1", "entry-3"],
+    );
 });
 
 test("CommentManager reorders root threads within the same file", () => {

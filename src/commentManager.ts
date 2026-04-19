@@ -1,5 +1,10 @@
 import { resolveAnchorRange } from "./core/anchors/anchorResolver";
 import { getPageCommentLabel, isPageComment } from "./core/anchors/commentAnchors";
+import {
+    isSoftDeleted,
+    normalizeDeletedAt,
+    purgeExpiredDeletedThreads,
+} from "./core/rules/deletedCommentVisibility";
 
 export type CommentAnchorKind = "selection" | "page";
 
@@ -7,6 +12,7 @@ export interface CommentThreadEntry {
     id: string;
     body: string;
     timestamp: number;
+    deletedAt?: number;
 }
 
 export interface CommentThread {
@@ -21,6 +27,7 @@ export interface CommentThread {
     anchorKind?: CommentAnchorKind;
     orphaned?: boolean;
     resolved?: boolean;
+    deletedAt?: number;
     entries: CommentThreadEntry[];
     createdAt: number;
     updatedAt: number;
@@ -40,7 +47,12 @@ export interface Comment {
     anchorKind?: CommentAnchorKind;
     orphaned?: boolean;
     resolved?: boolean;
+    deletedAt?: number;
     entryCount?: number;
+}
+
+export interface CommentQueryOptions {
+    includeDeleted?: boolean;
 }
 
 export type ReorderPlacement = "before" | "after";
@@ -86,10 +98,12 @@ function compareThreadsByPosition(left: CommentThread, right: CommentThread): nu
 }
 
 function cloneThreadEntry(entry: CommentThreadEntry): CommentThreadEntry {
+    const deletedAt = normalizeDeletedAt(entry.deletedAt);
     return {
         id: entry.id,
         body: entry.body,
         timestamp: entry.timestamp,
+        ...(deletedAt !== undefined ? { deletedAt } : {}),
     };
 }
 
@@ -136,6 +150,7 @@ function normalizeThread(thread: CommentThread): CommentThread {
         anchorKind: thread.anchorKind === "page" ? "page" : "selection",
         orphaned: thread.anchorKind === "page" ? false : thread.orphaned === true,
         resolved: thread.resolved === true,
+        deletedAt: normalizeDeletedAt(thread.deletedAt),
         entries,
         createdAt: thread.createdAt || firstEntry.timestamp,
         updatedAt: thread.updatedAt || latestEntry.timestamp,
@@ -155,10 +170,12 @@ export function commentToThread(comment: Comment): CommentThread {
         anchorKind: comment.anchorKind === "page" ? "page" : "selection",
         orphaned: comment.orphaned === true,
         resolved: comment.resolved === true,
+        deletedAt: normalizeDeletedAt(comment.deletedAt),
         entries: [{
             id: comment.id,
             body: comment.comment,
             timestamp: comment.timestamp,
+            deletedAt: normalizeDeletedAt(comment.deletedAt),
         }],
         createdAt: comment.timestamp,
         updatedAt: comment.timestamp,
@@ -176,6 +193,7 @@ export function threadToComment(thread: CommentThread): Comment {
 
 export function threadEntryToComment(thread: CommentThread, entry: CommentThreadEntry): Comment {
     const normalized = normalizeThread(thread);
+    const deletedAt = normalizeDeletedAt(entry.deletedAt) ?? normalized.deletedAt;
 
     return {
         id: entry.id,
@@ -191,6 +209,7 @@ export function threadEntryToComment(thread: CommentThread, entry: CommentThread
         anchorKind: normalized.anchorKind,
         orphaned: normalized.orphaned === true,
         resolved: normalized.resolved === true,
+        ...(deletedAt !== undefined ? { deletedAt } : {}),
         entryCount: normalized.entries.length,
     };
 }
@@ -234,31 +253,38 @@ export class CommentManager {
 
     constructor(items: Array<Comment | CommentThread>) {
         this.threads = items.map((item) => normalizeThread(isThreadLike(item) ? item : commentToThread(item)));
+        this.purgeExpiredDeletedComments();
     }
 
-    getThreadsForFile(filePath: string): CommentThread[] {
+    getThreadsForFile(filePath: string, options: CommentQueryOptions = {}): CommentThread[] {
+        this.purgeExpiredDeletedComments();
         return this.threads
             .filter((thread) => thread.filePath === filePath)
-            .map((thread) => cloneCommentThread(thread));
+            .map((thread) => cloneThreadForVisibility(thread, options))
+            .filter((thread): thread is CommentThread => thread !== null);
     }
 
     getThreadById(id: string): CommentThread | undefined {
+        this.purgeExpiredDeletedComments();
         const thread = this.threads.find((candidate) =>
             candidate.id === id || candidate.entries.some((entry) => entry.id === id));
         return thread ? cloneCommentThread(thread) : undefined;
     }
 
-    getAllThreads(): CommentThread[] {
-        return this.threads.map((thread) => cloneCommentThread(thread));
+    getAllThreads(options: CommentQueryOptions = {}): CommentThread[] {
+        this.purgeExpiredDeletedComments();
+        return this.threads
+            .map((thread) => cloneThreadForVisibility(thread, options))
+            .filter((thread): thread is CommentThread => thread !== null);
     }
 
-    getCommentsForFile(filePath: string): Comment[] {
-        return this.threads
-            .filter((thread) => thread.filePath === filePath)
+    getCommentsForFile(filePath: string, options: CommentQueryOptions = {}): Comment[] {
+        return this.getThreadsForFile(filePath, options)
             .map((thread) => threadToComment(thread));
     }
 
     getCommentById(id: string): Comment | undefined {
+        this.purgeExpiredDeletedComments();
         const thread = this.threads.find((candidate) =>
             candidate.id === id || candidate.entries.some((entry) => entry.id === id));
         if (!thread) {
@@ -269,8 +295,8 @@ export class CommentManager {
         return threadEntryToComment(thread, entry);
     }
 
-    getAllComments(): Comment[] {
-        return this.threads.map((thread) => threadToComment(thread));
+    getAllComments(options: CommentQueryOptions = {}): Comment[] {
+        return this.getAllThreads(options).map((thread) => threadToComment(thread));
     }
 
     replaceCommentsForFile(filePath: string, nextComments: Comment[]) {
@@ -284,6 +310,7 @@ export class CommentManager {
         this.threads = this.threads
             .filter((thread) => thread.filePath !== filePath)
             .concat(nextThreads.map((thread) => normalizeThread(thread)));
+        this.purgeExpiredDeletedComments();
     }
 
     addComment(newComment: Comment) {
@@ -389,29 +416,72 @@ export class CommentManager {
         matchingEntry.body = newCommentText;
     }
 
-    deleteComment(id: string) {
+    deleteComment(id: string, deletedAt: number = Date.now()) {
+        console.log("[SideNote2] manager.delete.begin", {
+            id,
+            deletedAt,
+        });
+        this.purgeExpiredDeletedComments(deletedAt);
         const indexToDelete = this.threads.findIndex((thread) =>
             thread.id === id || thread.entries.some((entry) => entry.id === id));
         if (indexToDelete === -1) {
+            console.log("[SideNote2] manager.delete.not-found", {
+                id,
+            });
             return;
         }
 
         const thread = this.threads[indexToDelete];
         if (thread.id === id) {
-            this.threads.splice(indexToDelete, 1);
+            thread.deletedAt = deletedAt;
+            thread.updatedAt = Math.max(thread.updatedAt, deletedAt);
+            console.log("[SideNote2] manager.delete.thread-marked", {
+                id,
+                threadId: thread.id,
+                entryCount: thread.entries.length,
+            });
             return;
         }
 
-        thread.entries = thread.entries.filter((entry) => entry.id !== id);
-        if (!thread.entries.length) {
-            this.threads.splice(indexToDelete, 1);
+        const entry = thread.entries.find((candidate) => candidate.id === id);
+        if (!entry) {
+            console.log("[SideNote2] manager.delete.entry-missing", {
+                id,
+                threadId: thread.id,
+            });
             return;
         }
 
-        thread.updatedAt = Math.max(
-            thread.createdAt,
-            ...thread.entries.map((entry) => entry.timestamp),
-        );
+        entry.deletedAt = deletedAt;
+        thread.updatedAt = Math.max(thread.updatedAt, deletedAt);
+        console.log("[SideNote2] manager.delete.entry-marked", {
+            id,
+            threadId: thread.id,
+            remainingEntries: thread.entries.length,
+        });
+    }
+
+    restoreComment(id: string, restoredAt: number = Date.now()) {
+        this.purgeExpiredDeletedComments(restoredAt);
+        const thread = this.threads.find((candidate) =>
+            candidate.id === id || candidate.entries.some((entry) => entry.id === id));
+        if (!thread) {
+            return;
+        }
+
+        if (thread.id === id) {
+            delete thread.deletedAt;
+            thread.updatedAt = Math.max(thread.updatedAt, restoredAt);
+            return;
+        }
+
+        const entry = thread.entries.find((candidate) => candidate.id === id);
+        if (!entry) {
+            return;
+        }
+
+        delete entry.deletedAt;
+        thread.updatedAt = Math.max(thread.updatedAt, restoredAt);
     }
 
     resolveComment(id: string) {
@@ -543,4 +613,32 @@ export class CommentManager {
             }
         }
     }
+
+    purgeExpiredDeletedComments(now: number = Date.now()): void {
+        this.threads = purgeExpiredDeletedThreads(this.threads, now)
+            .map((thread) => normalizeThread(thread));
+    }
+}
+
+function cloneThreadForVisibility(
+    thread: CommentThread,
+    options: CommentQueryOptions,
+): CommentThread | null {
+    if (!options.includeDeleted && isSoftDeleted(thread)) {
+        return null;
+    }
+
+    const cloned = cloneCommentThread(thread);
+    if (!options.includeDeleted) {
+        cloned.entries = cloned.entries.filter((entry) => !isSoftDeleted(entry));
+    }
+    if (!cloned.entries.length) {
+        return null;
+    }
+
+    cloned.updatedAt = Math.max(
+        cloned.createdAt,
+        ...cloned.entries.map((entry) => entry.timestamp),
+    );
+    return cloned;
 }

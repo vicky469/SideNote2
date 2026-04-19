@@ -56,7 +56,7 @@ export class IndexNoteSettingsController {
         const persistedAttachmentThreads = parseAttachmentCommentThreads(loaded?.attachmentComments);
         const existingAttachmentCommentPaths = new Set(
             this.host.getCommentManager()
-                .getAllThreads()
+                .getAllThreads({ includeDeleted: true })
                 .filter((thread) => isAttachmentCommentablePath(thread.filePath))
                 .map((thread) => thread.filePath),
         );
@@ -69,7 +69,7 @@ export class IndexNoteSettingsController {
                 continue;
             }
 
-            const nextThreads = this.host.getCommentManager().getThreadsForFile(thread.filePath).concat(thread);
+            const nextThreads = this.host.getCommentManager().getThreadsForFile(thread.filePath, { includeDeleted: true }).concat(thread);
             this.host.getCommentManager().replaceThreadsForFile(thread.filePath, nextThreads);
         }
 
@@ -82,7 +82,7 @@ export class IndexNoteSettingsController {
         await this.writePersistedPluginData({
             ...this.persistedPluginData,
             ...this.host.getSettings(),
-            attachmentComments: buildAttachmentCommentThreads(this.host.getCommentManager().getAllThreads()),
+            attachmentComments: buildAttachmentCommentThreads(this.host.getCommentManager().getAllThreads({ includeDeleted: true })),
         });
     }
 

@@ -77,6 +77,16 @@ export function getLatestAgentRunForThread(
     return getAgentRunsForThread(runs, threadId)[0] ?? null;
 }
 
+export function getLatestAgentRunForTriggerEntry(
+    runs: readonly AgentRunRecord[],
+    triggerEntryId: string,
+): AgentRunRecord | null {
+    return runs
+        .filter((run) => run.triggerEntryId === triggerEntryId)
+        .slice()
+        .sort(compareAgentRunsByRecencyDesc)[0] ?? null;
+}
+
 export function getLatestAgentRunForCommentThread(
     runs: readonly AgentRunRecord[],
     thread: Pick<CommentThread, "id" | "entries">,

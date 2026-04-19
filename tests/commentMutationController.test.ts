@@ -265,7 +265,7 @@ test("comment mutation controller dispatches saved append entries to the agent h
     }]);
 });
 
-test("comment mutation controller dispatches edited entries to the agent hook", async () => {
+test("comment mutation controller does not dispatch edited entries to the agent hook", async () => {
     const existing = createComment({ id: "thread-1", comment: "@codex original" });
     const draft = toDraft(existing, {
         comment: "@codex edited",
@@ -280,12 +280,7 @@ test("comment mutation controller dispatches edited entries to the agent hook", 
 
     await host.controller.saveDraft(draft.id);
 
-    assert.deepEqual(host.savedUserEntryEvents, [{
-        threadId: existing.id,
-        entryId: existing.id,
-        filePath: existing.filePath,
-        body: "@codex edited",
-    }]);
+    assert.deepEqual(host.savedUserEntryEvents, []);
 });
 
 test("comment mutation controller keeps child edit drafts attached to their parent thread", async () => {
@@ -307,12 +302,7 @@ test("comment mutation controller keeps child edit drafts attached to their pare
     host.getDraftComment()!.comment = "@codex child after";
     await host.controller.saveDraft("entry-2");
 
-    assert.deepEqual(host.savedUserEntryEvents, [{
-        threadId: parent.id,
-        entryId: "entry-2",
-        filePath: parent.filePath,
-        body: "@codex child after",
-    }]);
+    assert.deepEqual(host.savedUserEntryEvents, []);
 });
 
 test("comment mutation controller stores shortened markdown links when saving a draft", async () => {
@@ -529,6 +519,44 @@ test("comment mutation controller exits resolved-only mode after reopening a com
     }]);
     assert.deepEqual(host.setShowResolvedCalls, [false]);
     assert.equal(host.getShowResolvedComments(), false);
+});
+
+test("comment mutation controller soft deletes an existing comment and persists the change", async () => {
+    const comment = createComment({ resolved: false });
+    const deletedAt = Date.now();
+    const host = createHost({
+        knownComments: [comment],
+        loadedComments: [comment],
+        now: deletedAt,
+    });
+
+    await host.controller.deleteComment(comment.id);
+
+    assert.equal(host.manager.getCommentById(comment.id)?.deletedAt, deletedAt);
+    assert.deepEqual(host.manager.getCommentsForFile(comment.filePath), []);
+    assert.deepEqual(host.persistedFiles, [{
+        path: comment.filePath,
+        immediateAggregateRefresh: true,
+    }]);
+});
+
+test("comment mutation controller restores a soft deleted comment", async () => {
+    const deletedAt = Date.now();
+    const comment = createComment({ deletedAt });
+    const host = createHost({
+        knownComments: [comment],
+        loadedComments: [comment],
+        now: deletedAt + 1_000,
+    });
+
+    await host.controller.restoreComment(comment.id);
+
+    assert.equal(host.manager.getCommentById(comment.id)?.deletedAt, undefined);
+    assert.equal(host.manager.getCommentsForFile(comment.filePath)[0]?.id, comment.id);
+    assert.deepEqual(host.persistedFiles, [{
+        path: comment.filePath,
+        immediateAggregateRefresh: true,
+    }]);
 });
 
 test("comment mutation controller re-anchors an orphaned thread to the current selection", async () => {

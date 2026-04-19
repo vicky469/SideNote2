@@ -31,7 +31,7 @@ Use this skill when the user:
 - SideNote2 stores comments in exactly one trailing `<!-- SideNote2 comments -->` block in that note.
 - `SideNote2 index.md` is derived output. Use it to discover a note path, not as canonical storage.
 - In this skill, a `page note` or `anchored note` normally means a simple SideNote2 note/thread inside the current markdown note.
-- Only create a separate wiki page when the user explicitly asks for one.
+- Only create a separate wiki page when the user explicitly asks for one, or when the best useful reply would exceed the 250-word side-note limit.
 
 ## Working Rules
 
@@ -50,11 +50,15 @@ Use this skill when the user:
      mark the targeted thread resolved
 4. Prefer the installed `sidenote2` CLI over hand-editing JSON.
 5. Preserve all existing thread entries unless the user explicitly asked to replace one.
-6. Keep each SideNote2 comment body at or under 120 words.
-7. If the best response would exceed 120 words:
-   - prefer shortening it to a concise side note
-   - or split the continuation into child thread entries when the detail belongs inside the same discussion
-8. Do not create a separate wiki page or markdown file unless the user explicitly asks for one.
+6. Keep each SideNote2 comment body at or under 250 words.
+7. Keep the formatting compact:
+   - plain paragraphs or one simple list
+   - no headings
+   - no long multi-section layout
+   - no excess blank lines
+8. If the best response would exceed 250 words:
+   - keep the side note concise
+   - create or update a linked wiki page with the fuller detail when needed
 9. Do not cram oversized detail into one side note just to avoid splitting it.
 
 ## Preferred CLI Shapes

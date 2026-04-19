@@ -21,6 +21,17 @@ export class StreamedAgentReplyController {
     private labelEl: HTMLSpanElement | null = null;
     private statusEl: HTMLSpanElement | null = null;
     private runId: string | null = null;
+    private ownsCard = false;
+    private borrowedSnapshot: {
+        metaText: string;
+        labelClassName: string;
+        labelText: string;
+        statusClassName: string;
+        statusInnerHTML: string;
+        statusAriaLabel: string | null;
+        statusTitle: string | null;
+        contentInnerHTML: string;
+    } | null = null;
 
     constructor(private readonly threadId: string) {}
 
@@ -32,7 +43,7 @@ export class StreamedAgentReplyController {
         }
 
         const repliesEl = this.ensureRepliesContainer(threadEl);
-        const cardEl = this.ensureCard(repliesEl);
+        const cardEl = this.ensureCard(threadEl, repliesEl, stream.outputEntryId ?? null);
         const metaValueEl = this.metaValueEl;
         const labelEl = this.labelEl;
         const statusEl = this.statusEl;
@@ -71,13 +82,22 @@ export class StreamedAgentReplyController {
     }
 
     public clear(): void {
-        this.cardEl?.remove();
+        if (this.ownsCard) {
+            this.cardEl?.remove();
+        } else {
+            this.restoreBorrowedCard();
+            this.cardEl?.classList.remove("sidenote2-agent-stream-active", "is-empty");
+            this.cardEl?.removeAttribute("data-agent-run-id");
+            this.cardEl?.removeAttribute("data-agent-output-entry-id");
+        }
         this.cardEl = null;
         this.metaValueEl = null;
         this.contentEl = null;
         this.labelEl = null;
         this.statusEl = null;
         this.runId = null;
+        this.ownsCard = false;
+        this.borrowedSnapshot = null;
     }
 
     private syncStatus(statusEl: HTMLSpanElement, label: string, stream: AgentRunStreamState): void {
@@ -117,18 +137,55 @@ export class StreamedAgentReplyController {
         return repliesEl;
     }
 
-    private ensureCard(repliesEl: HTMLDivElement): HTMLDivElement {
-        if (
-            this.cardEl?.isConnected
-            && this.cardEl.parentElement === repliesEl
-        ) {
-            return this.cardEl;
+    private ensureCard(
+        threadEl: HTMLDivElement,
+        repliesEl: HTMLDivElement,
+        outputEntryId: string | null,
+    ): HTMLDivElement {
+        const isCardConnected = this.cardEl?.isConnected
+            && (
+                this.cardEl.parentElement === repliesEl
+                || this.cardEl.closest(`.sidenote2-thread-stack[data-thread-id="${this.threadId}"]`) === threadEl
+            );
+        if (isCardConnected) {
+            // Verify this card still matches the stream's target. If the stream now targets a
+            // different outputEntryId (e.g. regenerating a different entry), we must re-attach.
+            const cardCommentId = this.cardEl!.getAttribute("data-comment-id");
+            const cardRunId = this.cardEl!.getAttribute("data-agent-run-id");
+            const targetMatches = outputEntryId
+                ? cardCommentId === outputEntryId
+                : cardRunId === this.runId;
+            if (targetMatches) {
+                return this.cardEl!;
+            }
+            // Card doesn't match — fall through to find/create the correct one.
+            this.clear();
+        }
+
+        if (outputEntryId) {
+            const persisted = threadEl.querySelector(`.sidenote2-thread-entry-item[data-comment-id="${outputEntryId}"]`);
+            if (persisted instanceof HTMLDivElement) {
+                this.cardEl = persisted;
+                this.ownsCard = false;
+                const metaValueEl = persisted.querySelector(".sidenote2-comment-meta-value");
+                const labelEl = persisted.querySelector(".sidenote2-comment-author-indicator");
+                const statusEl = persisted.querySelector(".sidenote2-agent-run-status");
+                const contentEl = persisted.querySelector(".sidenote2-comment-content");
+                this.metaValueEl = metaValueEl instanceof HTMLSpanElement ? metaValueEl : null;
+                this.labelEl = labelEl instanceof HTMLSpanElement ? labelEl : null;
+                this.statusEl = statusEl instanceof HTMLSpanElement ? statusEl : null;
+                this.contentEl = contentEl instanceof HTMLDivElement ? contentEl : null;
+                this.captureBorrowedCardSnapshot();
+                persisted.classList.add("sidenote2-agent-stream-active");
+                return persisted;
+            }
         }
 
         if (this.runId) {
             const existing = repliesEl.querySelector(`.sidenote2-agent-stream-item[data-agent-run-id="${this.runId}"]`);
             if (existing instanceof HTMLDivElement) {
                 this.cardEl = existing;
+                this.ownsCard = true;
                 const metaValueEl = existing.querySelector(".sidenote2-agent-stream-meta-value");
                 const labelEl = existing.querySelector(".sidenote2-agent-stream-author");
                 const statusEl = existing.querySelector(".sidenote2-agent-run-status");
@@ -168,10 +225,60 @@ export class StreamedAgentReplyController {
         repliesEl.appendChild(cardEl);
 
         this.cardEl = cardEl;
+        this.ownsCard = true;
         this.metaValueEl = metaValueEl;
         this.labelEl = labelEl;
         this.statusEl = statusEl;
         this.contentEl = contentEl;
         return cardEl;
+    }
+
+    private captureBorrowedCardSnapshot(): void {
+        if (this.ownsCard) {
+            this.borrowedSnapshot = null;
+            return;
+        }
+
+        this.borrowedSnapshot = {
+            metaText: this.metaValueEl?.textContent ?? "",
+            labelClassName: this.labelEl?.className ?? "",
+            labelText: this.labelEl?.textContent ?? "",
+            statusClassName: this.statusEl?.className ?? "",
+            statusInnerHTML: this.statusEl?.innerHTML ?? "",
+            statusAriaLabel: this.statusEl?.getAttribute("aria-label") ?? null,
+            statusTitle: this.statusEl?.getAttribute("title") ?? null,
+            contentInnerHTML: this.contentEl?.innerHTML ?? "",
+        };
+    }
+
+    private restoreBorrowedCard(): void {
+        if (this.ownsCard || !this.borrowedSnapshot) {
+            return;
+        }
+
+        if (this.metaValueEl) {
+            this.metaValueEl.textContent = this.borrowedSnapshot.metaText;
+        }
+        if (this.labelEl) {
+            this.labelEl.className = this.borrowedSnapshot.labelClassName;
+            this.labelEl.textContent = this.borrowedSnapshot.labelText;
+        }
+        if (this.statusEl) {
+            this.statusEl.className = this.borrowedSnapshot.statusClassName;
+            this.statusEl.innerHTML = this.borrowedSnapshot.statusInnerHTML;
+            if (this.borrowedSnapshot.statusAriaLabel) {
+                this.statusEl.setAttribute("aria-label", this.borrowedSnapshot.statusAriaLabel);
+            } else {
+                this.statusEl.removeAttribute("aria-label");
+            }
+            if (this.borrowedSnapshot.statusTitle) {
+                this.statusEl.setAttribute("title", this.borrowedSnapshot.statusTitle);
+            } else {
+                this.statusEl.removeAttribute("title");
+            }
+        }
+        if (this.contentEl) {
+            this.contentEl.innerHTML = this.borrowedSnapshot.contentInnerHTML;
+        }
     }
 }
