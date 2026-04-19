@@ -25,9 +25,20 @@
   </a>
 </p>
 <p align="center">
-  <img src="./assets/demo-preview.gif" alt="SideNote2 demo preview" width="900">
+  Same workflow in both Obsidian themes.
 </p>
-
+<table>
+  <tr>
+    <td align="center" valign="top" width="50%">
+      <strong>Light theme</strong><br>
+      <img src="./assets/demo.gif" alt="SideNote2 demo preview in Obsidian dark theme" width="100%">
+    </td>
+    <td align="center" valign="top" width="50%">
+      <strong>Dark theme</strong><br>
+      <img src="./assets/demo2.gif" alt="SideNote2 demo preview in Obsidian light theme" width="100%">
+    </td>
+  </tr>
+</table>
 SideNote2 is an [Obsidian](https://obsidian.md) plugin for side comments that stay attached to the note. Inspired by [mofukuru/SideNote](https://github.com/mofukuru/SideNote).
 
 It is built for a minimal workflow: both humans and agents can work in the sidebar or the main markdown file. 
