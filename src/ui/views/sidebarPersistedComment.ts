@@ -9,11 +9,15 @@ import { normalizeCommentMarkdownForRender } from "../editor/commentMarkdownRend
 import { decorateRenderedCommentMentions } from "../editor/commentEditorStyling";
 import { SIDE_NOTE2_REGENERATE_ICON_ID } from "../sideNote2Icon";
 import { shouldActivateSidebarComment } from "./commentPointerAction";
-import { formatSidebarCommentMeta } from "./sidebarCommentSections";
+import {
+    formatSidebarCommentMeta,
+    formatSidebarCommentSelectedTextPreview,
+} from "./sidebarCommentSections";
 
 interface BasePersistedCommentPresentation {
     classes: string[];
     metaText: string;
+    metaPreviewText: string | null;
 }
 
 export interface PersistedCommentPresentation extends BasePersistedCommentPresentation {
@@ -146,6 +150,15 @@ export function formatSidebarCommentSourceFileLabel(filePath: string): string {
     return fileName.replace(/\.md$/i, "");
 }
 
+export function formatSidebarCommentIndexLeadLabel(comment: Pick<Comment, "anchorKind" | "selectedText" | "filePath">): string {
+    if (isPageComment(comment)) {
+        return formatSidebarCommentSourceFileLabel(comment.filePath);
+    }
+
+    return formatSidebarCommentSelectedTextPreview(comment)
+        ?? formatSidebarCommentSourceFileLabel(comment.filePath);
+}
+
 function renderObsidianExternalLinkIcon(container: HTMLElement): void {
     const svgNamespace = "http://www.w3.org/2000/svg";
     const svgEl = document.createElementNS(svgNamespace, "svg");
@@ -198,6 +211,7 @@ function buildBasePersistedCommentPresentation(
     return {
         classes,
         metaText: formatSidebarCommentMeta(comment),
+        metaPreviewText: formatSidebarCommentSelectedTextPreview(comment),
     };
 }
 
@@ -247,9 +261,13 @@ export function buildPersistedThreadEntryPresentation(
     activeCommentId: string | null,
 ): PersistedThreadEntryPresentation {
     const comment = threadEntryToComment(thread, entry);
-    return buildBasePersistedCommentPresentation(comment, activeCommentId, [
+    const presentation = buildBasePersistedCommentPresentation(comment, activeCommentId, [
         "sidenote2-thread-entry-item",
     ]);
+    return {
+        ...presentation,
+        metaPreviewText: null,
+    };
 }
 
 async function renderThreadEntryContent(
@@ -370,7 +388,7 @@ export function shouldRenderSidebarCommentAuthor(author: SidebarCommentAuthorPre
 function renderCommentMeta(
     headerEl: HTMLElement,
     comment: Comment,
-    metaText: string,
+    meta: Pick<BasePersistedCommentPresentation, "metaText" | "metaPreviewText">,
     host: SidebarPersistedCommentHost,
 ): void {
     const metaEl = headerEl.createEl("small", {
@@ -378,16 +396,34 @@ function renderCommentMeta(
     });
 
     if (host.showSourceRedirectAction) {
+        const leadLabel = formatSidebarCommentIndexLeadLabel(comment);
         const sourceLabelEl = metaEl.createSpan({
             cls: "sidenote2-comment-source-label",
-            text: formatSidebarCommentSourceFileLabel(comment.filePath),
+            text: leadLabel,
         });
-        sourceLabelEl.setAttribute("title", comment.filePath);
+        sourceLabelEl.setAttribute(
+            "title",
+            isPageComment(comment)
+                ? comment.filePath
+                : `${leadLabel}\n${comment.filePath}`,
+        );
+        metaEl.createSpan({
+            cls: "sidenote2-comment-meta-value",
+            text: meta.metaText,
+        });
+        return;
+    }
+
+    if (meta.metaPreviewText) {
+        metaEl.createSpan({
+            cls: "sidenote2-comment-meta-preview",
+            text: meta.metaPreviewText,
+        });
     }
 
     metaEl.createSpan({
         cls: "sidenote2-comment-meta-value",
-        text: metaText,
+        text: meta.metaText,
     });
 }
 
@@ -553,7 +589,7 @@ function renderPersistedEntryCard(
 
     const headerEl = commentEl.createDiv("sidenote2-comment-header");
     const headerMainEl = headerEl.createDiv("sidenote2-comment-header-main");
-    renderCommentMeta(headerMainEl, options.comment, options.presentation.metaText, options.host);
+    renderCommentMeta(headerMainEl, options.comment, options.presentation, options.host);
     const actionsEl = headerEl.createDiv("sidenote2-comment-actions");
 
     const contentWrapper = commentEl.createDiv("sidenote2-comment-content");

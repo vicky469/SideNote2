@@ -5,6 +5,7 @@ import type { AgentRunRecord } from "../src/core/agents/agentRuns";
 import {
     buildPersistedCommentPresentation,
     buildPersistedThreadEntryPresentation,
+    formatSidebarCommentIndexLeadLabel,
     formatSidebarCommentSourceFileLabel,
     getRenderableThreadEntries,
     getAgentRunStatusPresentation,
@@ -142,6 +143,7 @@ test("buildPersistedCommentPresentation shows the parent entry time without a no
         presentation.metaText,
         formatSidebarCommentMeta({ timestamp: 100 }),
     );
+    assert.equal(presentation.metaPreviewText, "comment");
 });
 
 test("buildPersistedThreadEntryPresentation gives child entries their own indented card styling", () => {
@@ -175,6 +177,16 @@ test("buildPersistedThreadEntryPresentation gives child entries their own indent
             resolved: true,
         }),
     );
+    assert.equal(presentation.metaPreviewText, null);
+});
+
+test("buildPersistedCommentPresentation omits anchored preview text for page notes", () => {
+    const presentation = buildPersistedCommentPresentation(createThread({
+        anchorKind: "page",
+        selectedText: "Architecture",
+    }), null);
+
+    assert.equal(presentation.metaPreviewText, null);
 });
 
 test("shouldRenderNestedThreadEntries hides stored child comments when nested comments are off", () => {
@@ -274,6 +286,25 @@ test("formatSidebarCommentSourceFileLabel keeps the basename without md, even fo
             "docs/thoughts/very/deeply/nested/this-is-a-deliberately-extremely-long-file-name-to-check-how-the-sidebar-header-allocates-space-for-the-source-label.md",
         ),
         "this-is-a-deliberately-extremely-long-file-name-to-check-how-the-sidebar-header-allocates-space-for-the-source-label",
+    );
+});
+
+test("formatSidebarCommentIndexLeadLabel uses page name for page notes and selected text for anchored notes", () => {
+    assert.equal(
+        formatSidebarCommentIndexLeadLabel(createComment({
+            anchorKind: "page",
+            filePath: "docs/architecture.md",
+            selectedText: "Ignored page label",
+        })),
+        "architecture",
+    );
+    assert.equal(
+        formatSidebarCommentIndexLeadLabel(createComment({
+            anchorKind: "selection",
+            selectedText: "First line\nsecond line",
+            filePath: "docs/architecture.md",
+        })),
+        "First line second line",
     );
 });
 

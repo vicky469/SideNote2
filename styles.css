@@ -661,15 +661,10 @@
     transition: background-color 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease, opacity 0.15s ease;
 }
 
-.sidenote2-comment-item:hover {
-    background: var(--background-modifier-hover);
-    border-color: var(--background-modifier-border-hover, var(--interactive-accent-hover));
-}
-
 .sidenote2-comment-item.active {
     background: var(--background-modifier-active-hover);
-    border-color: var(--interactive-accent);
-    box-shadow: 0 0 0 1px var(--interactive-accent-translucent);
+    border-color: var(--background-modifier-border-hover, var(--background-modifier-border));
+    box-shadow: none;
 }
 
 .sidenote2-comment-item.orphaned {
@@ -783,6 +778,14 @@
 .sidenote2-comment-meta-value {
     flex: 0 0 auto;
     font-size: 0.9em;
+    white-space: nowrap;
+}
+
+.sidenote2-comment-meta-preview {
+    flex: 1 1 auto;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
     white-space: nowrap;
 }
 
@@ -1103,19 +1106,16 @@
         display: none;
     }
 
-    .sidenote2-comment-item:not(.sidenote2-agent-stream-item):hover .sidenote2-comment-actions,
     .sidenote2-comment-item:not(.sidenote2-agent-stream-item):focus-within .sidenote2-comment-actions,
     .sidenote2-comment-item:not(.sidenote2-agent-stream-item).active .sidenote2-comment-actions {
         display: flex;
     }
 
-    .sidenote2-comment-item:not(.sidenote2-agent-stream-item):hover .sidenote2-thread-footer,
     .sidenote2-comment-item:not(.sidenote2-agent-stream-item):focus-within .sidenote2-thread-footer,
     .sidenote2-comment-item:not(.sidenote2-agent-stream-item).active .sidenote2-thread-footer {
         display: flex;
     }
 
-    .sidenote2-comment-item:not(.sidenote2-agent-stream-item):hover .sidenote2-thread-reanchor,
     .sidenote2-comment-item:not(.sidenote2-agent-stream-item):focus-within .sidenote2-thread-reanchor,
     .sidenote2-comment-item:not(.sidenote2-agent-stream-item).active .sidenote2-thread-reanchor {
         display: flex;
