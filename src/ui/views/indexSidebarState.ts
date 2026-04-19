@@ -16,6 +16,13 @@ export function scopeIndexThreadsByFilePaths(
     };
 }
 
+export function filterIndexThreadsByExistingSourceFiles(
+    threads: CommentThread[],
+    hasSourceFile: (filePath: string) => boolean,
+): CommentThread[] {
+    return threads.filter((thread) => hasSourceFile(thread.filePath));
+}
+
 export function shouldShowResolvedToolbarChip(hasResolvedComments: boolean, showResolved: boolean): boolean {
     return hasResolvedComments || showResolved;
 }

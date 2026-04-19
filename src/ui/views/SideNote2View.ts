@@ -59,6 +59,7 @@ import {
 import { extractThoughtTrailClickTargets, parseThoughtTrailOpenFilePath, resolveThoughtTrailNodeId } from "./thoughtTrailNodeLinks";
 import { parseTrustedMermaidSvg } from "./thoughtTrailSvg";
 import {
+    filterIndexThreadsByExistingSourceFiles,
     scopeIndexThreadsByFilePaths,
     shouldShowIndexListToolbarChips,
     shouldShowNestedToolbarChip,
@@ -336,8 +337,15 @@ export default class SideNote2View extends ItemView {
             this.containerEl.empty();
             this.containerEl.addClass("sidenote2-view-container");
             const showDeleted = this.plugin.shouldShowDeletedComments();
+            const hasExistingSourceFile = (filePath: string): boolean => {
+                const sourceFile = this.app.vault.getAbstractFileByPath(filePath);
+                return sourceFile instanceof TFile;
+            };
             const persistedThreads = isAllCommentsView
-                ? this.plugin.getAllIndexedThreads()
+                ? filterIndexThreadsByExistingSourceFiles(
+                    this.plugin.getAllIndexedThreads(),
+                    hasExistingSourceFile,
+                )
                 : this.plugin.getThreadsForFile(file.path, { includeDeleted: showDeleted });
             const pageThreadsWithDeleted = isAllCommentsView
                 ? []

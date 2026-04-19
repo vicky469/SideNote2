@@ -2,6 +2,7 @@ import * as assert from "node:assert/strict";
 import test from "node:test";
 import { commentToThread, type Comment } from "../src/commentManager";
 import {
+    filterIndexThreadsByExistingSourceFiles,
     scopeIndexThreadsByFilePaths,
     shouldShowIndexListToolbarChips,
     shouldShowNestedToolbarChip,
@@ -55,6 +56,21 @@ test("scopeIndexThreadsByFilePaths filters both visible and total threads by the
 
     assert.deepEqual(scoped.scopedVisibleThreads.map((thread) => thread.id), ["b"]);
     assert.deepEqual(scoped.scopedAllThreads.map((thread) => thread.id), ["b", "c"]);
+});
+
+test("filterIndexThreadsByExistingSourceFiles drops threads whose source file no longer exists", () => {
+    const threads = [
+        commentToThread(createComment({ id: "a", filePath: "docs/a.md" })),
+        commentToThread(createComment({ id: "b", filePath: "docs/missing.md" })),
+        commentToThread(createComment({ id: "c", filePath: "docs/c.pdf" })),
+    ];
+
+    const filtered = filterIndexThreadsByExistingSourceFiles(
+        threads,
+        (filePath) => filePath !== "docs/missing.md",
+    );
+
+    assert.deepEqual(filtered.map((thread) => thread.id), ["a", "c"]);
 });
 
 test("shouldShowResolvedToolbarChip keeps the resolved toggle visible while resolved mode is active", () => {
