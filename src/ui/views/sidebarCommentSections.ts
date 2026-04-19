@@ -1,8 +1,5 @@
 import type { CommentAnchorKind } from "../../commentManager";
-import * as momentNamespace from "moment";
 import { isOrphanedComment } from "../../core/anchors/commentAnchors";
-
-const moment = ((momentNamespace as { default?: unknown }).default ?? momentNamespace) as typeof import("moment");
 
 export interface SidebarCommentPresentationLike {
     timestamp: number;
@@ -13,24 +10,59 @@ export interface SidebarCommentPresentationLike {
     selectedText?: string;
 }
 
+const compactTimeFormatter = new Intl.DateTimeFormat(undefined, {
+    hour: "numeric",
+    minute: "2-digit",
+});
+
+const compactWeekdayTimeFormatter = new Intl.DateTimeFormat(undefined, {
+    weekday: "short",
+    hour: "numeric",
+    minute: "2-digit",
+});
+
+const compactMonthDayFormatter = new Intl.DateTimeFormat(undefined, {
+    month: "short",
+    day: "numeric",
+});
+
+function resolveValidDate(value: number): Date | null {
+    const date = new Date(value);
+    return Number.isFinite(date.getTime()) ? date : null;
+}
+
+function getLocalDayOrdinal(date: Date): number {
+    return Math.floor(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()) / 86_400_000);
+}
+
 export function formatSidebarCommentTimestamp(
     timestamp: number,
     referenceNow: number = Date.now(),
 ): string {
-    const date = moment(timestamp);
-    if (!date.isValid()) {
+    const date = resolveValidDate(timestamp);
+    const now = resolveValidDate(referenceNow);
+    if (!date || !now) {
         return "";
     }
 
-    const now = moment(referenceNow);
-    return date.calendar(now, {
-        sameDay: "LT",
-        lastDay: "[Yesterday]",
-        lastWeek: "ddd LT",
-        nextDay: "LT",
-        nextWeek: "ddd LT",
-        sameElse: date.isSame(now, "year") ? "MMM D" : "YYYY-MM-DD",
-    });
+    const dayDiff = getLocalDayOrdinal(date) - getLocalDayOrdinal(now);
+    if (dayDiff === 0) {
+        return compactTimeFormatter.format(date);
+    }
+    if (dayDiff === -1) {
+        return "Yesterday";
+    }
+    if (dayDiff >= -6 && dayDiff <= 6) {
+        return compactWeekdayTimeFormatter.format(date);
+    }
+    if (date.getFullYear() === now.getFullYear()) {
+        return compactMonthDayFormatter.format(date);
+    }
+
+    const year = String(date.getFullYear()).padStart(4, "0");
+    const month = String(date.getMonth() + 1).padStart(2, "0");
+    const day = String(date.getDate()).padStart(2, "0");
+    return `${year}-${month}-${day}`;
 }
 
 export function formatSidebarCommentSelectedTextPreview(
