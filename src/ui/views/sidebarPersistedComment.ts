@@ -353,10 +353,18 @@ function renderCommentAuthorIndicator(
     metaEl: HTMLElement,
     author: SidebarCommentAuthorPresentation,
 ): void {
+    if (!shouldRenderSidebarCommentAuthor(author)) {
+        return;
+    }
+
     metaEl.createSpan({
         cls: `sidenote2-comment-author-indicator is-${author.kind}`,
         text: author.label,
     });
+}
+
+export function shouldRenderSidebarCommentAuthor(author: SidebarCommentAuthorPresentation): boolean {
+    return author.kind !== "user";
 }
 
 function renderCommentMeta(

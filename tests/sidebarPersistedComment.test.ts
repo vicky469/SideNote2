@@ -9,6 +9,7 @@ import {
     getRenderableThreadEntries,
     getAgentRunStatusPresentation,
     resolveSidebarCommentAuthor,
+    shouldRenderSidebarCommentAuthor,
     shouldRenderNestedThreadEntries,
 } from "../src/ui/views/sidebarPersistedComment";
 import { formatSidebarCommentMeta } from "../src/ui/views/sidebarCommentSections";
@@ -281,6 +282,17 @@ test("resolveSidebarCommentAuthor labels user-written entries as the current use
         kind: "user",
         label: "You",
     });
+});
+
+test("shouldRenderSidebarCommentAuthor hides the current user badge but keeps agent badges", () => {
+    assert.equal(shouldRenderSidebarCommentAuthor({
+        kind: "user",
+        label: "You",
+    }), false);
+    assert.equal(shouldRenderSidebarCommentAuthor({
+        kind: "codex",
+        label: "Codex",
+    }), true);
 });
 
 test("resolveSidebarCommentAuthor labels agent-produced replies from their output run", () => {
