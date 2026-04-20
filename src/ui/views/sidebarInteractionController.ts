@@ -112,7 +112,11 @@ export class SidebarInteractionController {
         void copyTextToClipboard(selectedText);
     };
 
-    public readonly sidebarClickHandler = async (event: MouseEvent) => {
+    public readonly sidebarClickHandler = (event: MouseEvent) => {
+        void this.handleSidebarClick(event);
+    };
+
+    private async handleSidebarClick(event: MouseEvent): Promise<void> {
         const file = this.host.getCurrentFile();
         if (!file) {
             return;
@@ -163,7 +167,7 @@ export class SidebarInteractionController {
             this.clearActiveState();
             this.host.clearRevealedCommentSelection();
         }
-    };
+    }
 
     public getActiveCommentId(): string | null {
         return this.activeCommentId;
