@@ -311,12 +311,12 @@ export class StreamedAgentReplyController {
             labelHidden: this.labelEl?.hidden ?? false,
             labelDisplay: this.labelEl?.style.display ?? "",
             statusClassName: this.statusEl?.className ?? "",
-            statusNodes: Array.from(this.statusEl?.childNodes ?? []).map((node) => node.cloneNode(true)),
+            statusNodes: Array.from(this.statusEl?.childNodes ?? []),
             statusAriaLabel: this.statusEl?.getAttribute("aria-label") ?? null,
             statusTitle: this.statusEl?.getAttribute("title") ?? null,
-            contentNodes: Array.from(this.contentEl?.childNodes ?? []).map((node) => node.cloneNode(true)),
+            contentNodes: Array.from(this.contentEl?.childNodes ?? []),
             actionsClassName: this.actionsEl?.className ?? "",
-            actionsNodes: Array.from(this.actionsEl?.childNodes ?? []).map((node) => node.cloneNode(true)),
+            actionsNodes: Array.from(this.actionsEl?.childNodes ?? []),
         };
     }
 
@@ -336,7 +336,7 @@ export class StreamedAgentReplyController {
         }
         if (this.statusEl) {
             this.statusEl.className = this.borrowedSnapshot.statusClassName;
-            this.statusEl.replaceChildren(...this.borrowedSnapshot.statusNodes.map((node) => node.cloneNode(true)));
+            this.statusEl.replaceChildren(...this.borrowedSnapshot.statusNodes);
             if (this.borrowedSnapshot.statusAriaLabel) {
                 this.statusEl.setAttribute("aria-label", this.borrowedSnapshot.statusAriaLabel);
             } else {
@@ -349,11 +349,11 @@ export class StreamedAgentReplyController {
             }
         }
         if (this.contentEl) {
-            this.contentEl.replaceChildren(...this.borrowedSnapshot.contentNodes.map((node) => node.cloneNode(true)));
+            this.contentEl.replaceChildren(...this.borrowedSnapshot.contentNodes);
         }
         if (this.actionsEl) {
             this.actionsEl.className = this.borrowedSnapshot.actionsClassName;
-            this.actionsEl.replaceChildren(...this.borrowedSnapshot.actionsNodes.map((node) => node.cloneNode(true)));
+            this.actionsEl.replaceChildren(...this.borrowedSnapshot.actionsNodes);
         }
     }
 }
