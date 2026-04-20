@@ -688,8 +688,8 @@
 
 .sidenote2-comment-item.active {
     background: var(--sidenote2-comment-background);
-    border-color: var(--background-modifier-border-hover, var(--background-modifier-border));
-    box-shadow: none;
+    border-color: var(--interactive-accent);
+    box-shadow: 0 0 0 1px var(--interactive-accent-translucent);
 }
 
 .sidenote2-comment-item.orphaned {
