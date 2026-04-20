@@ -10,9 +10,8 @@ export interface SidebarCommentPointerActionState {
     selectionInsideSidebarCommentContent: boolean;
 }
 
-export interface SidebarCommentDoubleClickEditState {
+export interface SidebarCommentDoubleClickOpenState {
     clickedInteractiveElement: boolean;
-    commentDeleted: boolean;
 }
 
 export function shouldActivateSidebarComment(
@@ -33,8 +32,8 @@ export function shouldActivateSidebarComment(
     return state.selection.isCollapsed && state.selection.toString().length === 0;
 }
 
-export function shouldStartSidebarCommentEditOnDoubleClick(
-    state: SidebarCommentDoubleClickEditState,
+export function shouldOpenSidebarCommentOnDoubleClick(
+    state: SidebarCommentDoubleClickOpenState,
 ): boolean {
-    return !state.clickedInteractiveElement && !state.commentDeleted;
+    return !state.clickedInteractiveElement;
 }

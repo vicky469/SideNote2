@@ -2,7 +2,7 @@ import * as assert from "node:assert/strict";
 import test from "node:test";
 import {
     shouldActivateSidebarComment,
-    shouldStartSidebarCommentEditOnDoubleClick,
+    shouldOpenSidebarCommentOnDoubleClick,
 } from "../src/ui/views/commentPointerAction";
 
 test("shouldActivateSidebarComment allows plain clicks with no selection", () => {
@@ -74,20 +74,14 @@ test("shouldActivateSidebarComment allows clicks when selection is outside the s
     );
 });
 
-test("shouldStartSidebarCommentEditOnDoubleClick allows plain card double clicks", () => {
-    assert.equal(shouldStartSidebarCommentEditOnDoubleClick({
+test("shouldOpenSidebarCommentOnDoubleClick allows plain card double clicks", () => {
+    assert.equal(shouldOpenSidebarCommentOnDoubleClick({
         clickedInteractiveElement: false,
-        commentDeleted: false,
     }), true);
 });
 
-test("shouldStartSidebarCommentEditOnDoubleClick blocks interactive targets and deleted comments", () => {
-    assert.equal(shouldStartSidebarCommentEditOnDoubleClick({
+test("shouldOpenSidebarCommentOnDoubleClick blocks interactive targets", () => {
+    assert.equal(shouldOpenSidebarCommentOnDoubleClick({
         clickedInteractiveElement: true,
-        commentDeleted: false,
-    }), false);
-    assert.equal(shouldStartSidebarCommentEditOnDoubleClick({
-        clickedInteractiveElement: false,
-        commentDeleted: true,
     }), false);
 });

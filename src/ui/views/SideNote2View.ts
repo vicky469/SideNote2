@@ -1543,6 +1543,9 @@ export default class SideNote2View extends ItemView {
             openSidebarInternalLink: (href, sourcePath, focusTarget) =>
                 this.interactionController.openSidebarInternalLink(href, sourcePath, focusTarget),
             activateComment: async (persistedComment) => {
+                this.interactionController.setActiveComment(persistedComment.id);
+            },
+            openCommentFromCard: async (persistedComment) => {
                 if (isIndexView && currentFilePath) {
                     this.interactionController.setActiveComment(persistedComment.id);
                     await this.plugin.revealIndexCommentFromSidebar(persistedComment.id, currentFilePath);

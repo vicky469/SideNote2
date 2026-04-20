@@ -10,7 +10,7 @@ import { decorateRenderedCommentMentions } from "../editor/commentEditorStyling"
 import { SIDE_NOTE2_REGENERATE_ICON_ID } from "../sideNote2Icon";
 import {
     shouldActivateSidebarComment,
-    shouldStartSidebarCommentEditOnDoubleClick,
+    shouldOpenSidebarCommentOnDoubleClick,
 } from "./commentPointerAction";
 import {
     formatSidebarCommentMeta,
@@ -69,6 +69,7 @@ export interface SidebarPersistedCommentHost {
     renderMarkdown(markdown: string, container: HTMLElement, sourcePath: string): Promise<void>;
     openSidebarInternalLink(href: string, sourcePath: string, focusTarget: HTMLElement): Promise<void>;
     activateComment(comment: Comment): Promise<void>;
+    openCommentFromCard(comment: Comment): Promise<void>;
     openCommentInEditor(comment: Comment): Promise<void>;
     shareComment(comment: Comment): Promise<void>;
     saveVisibleDraftIfPresent(): Promise<boolean>;
@@ -348,19 +349,17 @@ function attachSidebarCommentCardInteractions(
     comment: Comment,
     host: SidebarPersistedCommentHost,
 ): void {
-    const startEditDraftOnDoubleClick = (event: MouseEvent): boolean => {
+    const openCommentOnDoubleClick = (event: MouseEvent): boolean => {
         const target = host.getEventTargetElement(event.target);
-        if (!shouldStartSidebarCommentEditOnDoubleClick({
+        if (!shouldOpenSidebarCommentOnDoubleClick({
             clickedInteractiveElement: !!target?.closest("button, a"),
-            commentDeleted: !!comment.deletedAt,
         })) {
             return false;
         }
 
-        host.claimSidebarInteractionOwnership(contentWrapper);
         event.preventDefault();
         event.stopPropagation();
-        host.startEditDraft(comment.id, host.currentFilePath);
+        void host.openCommentFromCard(comment);
         return true;
     };
 
@@ -378,7 +377,7 @@ function attachSidebarCommentCardInteractions(
 
         void host.activateComment(comment);
     });
-    commentEl.addEventListener("dblclick", startEditDraftOnDoubleClick);
+    commentEl.addEventListener("dblclick", openCommentOnDoubleClick);
 
     const focusContentWrapper = () => {
         host.claimSidebarInteractionOwnership(contentWrapper);
@@ -392,10 +391,6 @@ function attachSidebarCommentCardInteractions(
     contentWrapper.addEventListener("mouseup", stopContentPointerPropagation);
     contentWrapper.addEventListener("dblclick", (event: MouseEvent) => {
         focusContentWrapper();
-        if (startEditDraftOnDoubleClick(event)) {
-            return;
-        }
-
         event.stopPropagation();
     });
     contentWrapper.addEventListener("click", (event: MouseEvent) => {
