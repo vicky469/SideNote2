@@ -29,3 +29,19 @@ test("normalizeCommentMarkdownForRender shortens legacy bare urls for rendering"
         "Check [shipmonk.com/resources/.../dropshipping-with-a-fulfillment-company](https://www.shipmonk.com/resources/content-hub/dropshipping-with-a-fulfillment-company?utm_source=google&utm_medium=cpc&utm_campaign=summer)",
     );
 });
+
+test("normalizeCommentMarkdownForRender keeps follow-up paragraphs inside bullet items", () => {
+    assert.equal(
+        normalizeCommentMarkdownForRender(
+            "- cost-effective purchasing? ❌\nA seven-month inventory of stainless steel sheet? All kinds of stuff.\n\nNo, put it that way, and economical purchasing is definitely not the goal of this plant.\n\n- supplying jobs to people? ❌\nthe plant wasn't built for the purpose of paying wages and giving people something to do.\n\n- produce products？❌ \n   quality products? ❌ \n\n- low-cost production? efficiency + quality products? ❌\nBut can that goal keep the plant working?",
+        ),
+        "- cost-effective purchasing? ❌\nA seven-month inventory of stainless steel sheet? All kinds of stuff.\n\n  No, put it that way, and economical purchasing is definitely not the goal of this plant.\n\n- supplying jobs to people? ❌\nthe plant wasn't built for the purpose of paying wages and giving people something to do.\n\n- produce products？❌ \n   quality products? ❌ \n\n- low-cost production? efficiency + quality products? ❌\nBut can that goal keep the plant working?",
+    );
+});
+
+test("normalizeCommentMarkdownForRender leaves top-level headings outside a list after a blank line", () => {
+    assert.equal(
+        normalizeCommentMarkdownForRender("- item\n\n## next section"),
+        "- item\n\n## next section",
+    );
+});

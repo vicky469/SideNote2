@@ -865,10 +865,6 @@
     margin-block: 0.35rem;
 }
 
-.sidenote2-comment-content :is(p, li) {
-    white-space: pre-wrap;
-}
-
 .sidenote2-comment-content :is(ul, ol) {
     margin-inline: 0;
     padding-inline-start: 2ch;
