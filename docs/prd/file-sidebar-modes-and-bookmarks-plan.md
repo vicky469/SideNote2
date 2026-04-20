@@ -1,0 +1,500 @@
+# File Sidebar Modes And Bookmarks Plan
+
+Implementation spec for the first shipped slice:
+
+- [bookmark-and-sidebar-filters-spec.md](bookmark-and-sidebar-filters-spec.md)
+- [file-sidebar-thought-trail-spec.md](file-sidebar-thought-trail-spec.md)
+
+## Goal
+
+Extend the normal per-file sidebar so it can support richer modes, not only the current thread list, while also introducing a lightweight "bookmark" or "idea" capture flow for selected text.
+
+This plan covers two related product questions:
+
+1. Should individual file sidebars get top tabs like the index sidebar:
+   `List`, `Thought Trail`, and `Agent`?
+2. Should SideNote2 support a bookmark-style capture for selected text, rendered more like a saved highlight or idea marker than a full written side note?
+
+The goal is to improve discovery and review without making ordinary file sidebars feel heavy, slow, or over-designed.
+
+## Current System
+
+Current rendering already separates index sidebars from normal file sidebars:
+
+- normal file sidebars load the current file and render the file-local thread list in [src/ui/views/SideNote2View.ts](../../src/ui/views/SideNote2View.ts:340)
+- file-local rendering goes through `renderPageSidebar(...)` in [src/ui/views/SideNote2View.ts](../../src/ui/views/SideNote2View.ts:672)
+- index-only tabs are rendered in `renderIndexModeControl(...)` in [src/ui/views/SideNote2View.ts](../../src/ui/views/SideNote2View.ts:1310)
+- the current Thought Trail view is index-scoped and built from cross-file comment links in [src/ui/views/SideNote2View.ts](../../src/ui/views/SideNote2View.ts:1814) and [src/core/derived/thoughtTrail.ts](../../src/core/derived/thoughtTrail.ts:303)
+- the current Agent sidebar planner filters threads that have agent runs in [src/ui/views/agentSidebarPlanner.ts](../../src/ui/views/agentSidebarPlanner.ts:15)
+
+Current draft saving also assumes a saved side note has non-empty text:
+
+- empty draft bodies are rejected in [src/control/commentMutationController.ts](../../src/control/commentMutationController.ts:81)
+
+That matters for bookmark capture, because an icon-only or empty-body bookmark does not fit the current persistence rules.
+
+## Product Assessment
+
+### File-Level Modes
+
+Adding modes to the normal file sidebar is reasonable, but the three candidate modes are not equally strong.
+
+#### `List`
+
+This is already the default and should remain the default.
+
+Reason:
+
+- it is the most common mode
+- it matches current user expectations
+- it preserves the current lightweight feel for normal files
+
+#### `Agent`
+
+This is worth adding to normal file sidebars.
+
+Reason:
+
+- the data is already file-local once comments for that file are loaded
+- the planner is already simple: keep only threads with a latest agent run
+- this is likely useful for users who want to review agent interactions in the current note without leaving the file
+
+Expected UX:
+
+- `List | Agent` at the top of the normal file sidebar
+- `Agent` shows only threads in the current file with agent history
+- empty state should be explicit and calm:
+  "No agent threads for this file yet."
+
+Revised near-term note:
+
+- for normal file sidebars, a top-toolbar `bot` filter inside the existing list may be a better first move than a dedicated `Agent` tab
+- that keeps the sidebar lighter and aligns better with the bookmark filter direction below
+
+#### `Thought Trail`
+
+This gets much stronger once it is framed as contextual graph navigation from the current file, not just "another mode."
+
+The core user need is:
+
+- start from the current note
+- see the connected note neighborhood around it
+- move up to broader context, down to more specific notes, and sideways to related neighbors
+- keep the whole picture in view while traversing
+
+That is meaningfully different from Obsidian's default related-file patterns, which are usually one level deep and flat.
+
+The current Thought Trail is fundamentally cross-file. It builds a graph from wiki links mentioned inside comments and renders connected note nodes. That already points toward a graph-navigation product, not just a filtered list.
+
+For a normal file sidebar, there are still two possible implementations:
+
+1. local outgoing trail
+   Show only links mentioned by side notes in the current file.
+2. rooted connected graph
+   Start from the current file and show the connected note neighborhood so users can traverse outward in multiple directions.
+
+The second meaning is the stronger one and better matches the reason for the feature. The first may be too weak to justify a dedicated mode.
+
+Recommendation:
+
+- do not ship file-level `Thought Trail` in the first pass
+- add file-level `Agent` first
+- if file-level `Thought Trail` is revisited, treat it as a rooted connected graph around the current file, not just a compact local-outgoing preview
+
+If shipped too early, the risk is less "bad idea" and more "good idea with fuzzy framing." It can sound like a clever alternate view instead of an immediately useful way to see and traverse the connected note neighborhood around the current file.
+
+## Performance Assessment
+
+### File-Level `Agent`
+
+Performance risk is low.
+
+Reason:
+
+- normal file sidebars already load the file's comments before rendering
+- filtering those loaded threads to agent-backed threads is cheap
+- no cross-file graph build is required
+
+This should feel effectively instant for normal note sizes.
+
+### File-Level `Thought Trail`
+
+Performance risk is still manageable, but it depends on scope.
+
+If the mode is local-outgoing-only:
+
+- risk is low to medium
+- the work is mostly parsing already loaded thread bodies and rendering a small Mermaid graph
+- this is cheaper, but it likely undershoots the main user value
+
+If the mode is rooted connected graph:
+
+- risk is medium
+- it starts pushing the normal file sidebar toward index-style aggregate behavior
+- the expensive-feeling part is more likely the Mermaid render and graph expansion than raw thread filtering
+- this is also the more compelling product direction, because it supports actual neighborhood traversal around the current file
+
+The main concern is not absolute runtime alone. It is whether opening a normal note sidebar starts to feel like it is doing index-grade work.
+
+### UX Performance Concern
+
+The larger risk is perceived performance and mode overhead:
+
+- more tabs in a normal file sidebar increase cognitive load
+- empty modes can make the sidebar feel sparse or unfinished
+- remembering the wrong last-used mode can make ordinary note browsing feel off
+
+## Recommendation
+
+Ship this in two stages.
+
+### Stage 1
+
+Keep the normal file sidebar in `List` mode and add top-toolbar quick filters:
+
+- `lightbulb` for bookmarks
+- `bot` for agent threads
+
+Keep:
+
+- default mode = `List`
+- current file scope only
+- no file-level Thought Trail yet
+- no dedicated file-level `Agent` tab in the first pass
+
+This gives a meaningful gain with low implementation and UX risk.
+
+### Stage 2
+
+Explore file-level `Thought Trail` only after the rooted-graph interaction is clear:
+
+- how far the graph expands by default
+- how users traverse or refocus it
+- how to keep it legible in a narrow sidebar
+
+Do not add it just for tab symmetry with the index, and do not reduce it to a weak one-hop preview if the real goal is neighborhood traversal.
+
+## Bookmark / Idea Capture
+
+## Problem
+
+There is a valid use case for saving selected text without wanting a full written side note.
+
+Examples:
+
+- "this passage matters"
+- "come back to this later"
+- "this is an idea seed"
+- "this should surface in review filters"
+
+That is close to a bookmark, highlight, or idea marker.
+
+## Current Constraint
+
+Today SideNote2 treats saved content as a normal side note thread with text content. Empty bodies are rejected at save time in [src/control/commentMutationController.ts](../../src/control/commentMutationController.ts:81).
+
+That means a pure icon-only bookmark does not fit cleanly right now.
+
+## Model Options
+
+### Option A: Tag-Based Prototype
+
+Use a reserved semantic tag, for example:
+
+- `#idea`
+- `#bookmark`
+
+and render it specially in the UI.
+
+Pros:
+
+- lowest schema risk
+- can piggyback on existing comment text, tag extraction, and index filtering
+- fastest way to test whether users actually use the feature
+
+Cons:
+
+- type is implicit, not explicit
+- body text remains overloaded with system meaning
+- future UI branching becomes harder
+- emoji-only or magic-text conventions are brittle
+
+### Option B: Explicit Thread Kind
+
+Add a first-class field on the stored thread model, for example:
+
+- `kind: "note" | "bookmark"`
+
+Bookmarks would still be side notes structurally, but the UI and filtering could treat them differently.
+
+Pros:
+
+- clean semantics
+- better filtering
+- better future extensibility
+- avoids encoding product meaning in comment body text
+
+Cons:
+
+- requires schema and migration thought
+- touches storage, rendering, creation flows, and derived index output
+
+## Recommendation
+
+Prefer Option B if this feature is expected to last.
+
+Reason:
+
+- bookmark capture feels like a real product concept, not just a cosmetic variation
+- users will likely want filtering, distinct rendering, and possibly different default actions later
+- the current model already has enough complexity that adding another hidden text convention would age poorly
+
+Do not model bookmarks as:
+
+- literal `💡` body text
+- empty comment bodies
+- magic text that the renderer silently interprets
+
+That is acceptable only for a throwaway prototype, not for a product feature that should be reliable and queryable.
+
+## Closed Product Decisions
+
+The bookmark product decision should now be treated as closed enough to drive a follow-up implementation spec.
+
+### Bookmark Model
+
+Bookmarks should be a first-class thread kind:
+
+- `kind: "note" | "bookmark"`
+
+They should not be inferred from:
+
+- literal emoji body text
+- reserved filler text
+- empty comment bodies
+
+### Toolbar Filters
+
+The top sidebar toolbar should gain two new Obsidian-style icon filters:
+
+- `lightbulb` for bookmarks
+- `bot` for agent threads
+
+Placement:
+
+- both should sit to the left of the current resolved `check` icon
+
+Recommended left-to-right order:
+
+- `lightbulb`
+- `bot`
+- `check`
+
+This keeps bookmark and agent filtering close to the existing resolved filter instead of introducing a separate control pattern.
+
+### Filter Semantics
+
+The sidebar should use one primary content filter dimension plus the existing resolved dimension.
+
+Recommended model:
+
+- `contentFilter: "all" | "bookmarks" | "agents"`
+- `showResolvedOnly: boolean`
+
+Rules:
+
+- `lightbulb` and `bot` are mutually exclusive
+- clicking an inactive icon activates that content filter
+- clicking the active icon clears it back to `all`
+- `check` remains independent and can combine with any content filter
+
+Examples:
+
+- no icon active: all active threads
+- `lightbulb` active: bookmark threads only
+- `bot` active: agent threads only
+- `lightbulb` + `check`: resolved bookmark threads only
+- `bot` + `check`: resolved agent threads only
+
+### Agent Filter Meaning
+
+The `bot` filter should be derived from existing agent-run state, not modeled as a new stored thread kind.
+
+That means:
+
+- bookmarks are explicit persisted type
+- agent threads are derived behavior
+
+This is the cleaner split.
+
+### Obsidian Style Requirement
+
+These controls should use the same visual language as the rest of the toolbar:
+
+- Obsidian/Lucide icons, not literal emoji glyphs in the toolbar chrome
+- existing icon-button treatment
+- existing hover, active, and disabled states
+- no custom chip-heavy treatment in the first version
+
+So even if the product idea is "💡 bookmarks," the toolbar control should render as an Obsidian-style `lightbulb` icon button, not a raw emoji.
+
+## Recommended Bookmark UX
+
+Bookmarks should still behave like SideNote2 threads:
+
+- anchored to a text selection or page
+- stored in the same note-backed comment block
+- visible in the sidebar and index
+
+But they should differ in presentation:
+
+- lighter card chrome
+- compact icon-forward representation
+- optional text instead of required longer note text
+- visible bookmark affordance using the same lightbulb icon family
+
+Suggested user-facing language:
+
+- `Bookmark`
+- or `Idea`
+
+`Idea` fits the lightbulb concept better than `Bookmark`, but `Bookmark` is clearer as a generic action.
+
+## Filtering
+
+If bookmarks ship, the index and sidebar should support a simple icon-based filter model.
+
+Recommended first filter shape:
+
+- `contentFilter: all | bookmarks | agents`
+- resolved as an independent existing filter
+- toolbar icons instead of text chips
+
+This is more durable than filtering by emoji or reserved tag, and more consistent with the current toolbar direction.
+
+## Proposed Rollout
+
+### Phase 1: File Sidebar Modes
+
+Ship:
+
+- normal file `List` mode with top-toolbar `lightbulb` and `bot` filters
+
+Do not ship:
+
+- dedicated file-level `Agent` tab
+- file-level `Thought Trail`
+- bookmark capture
+
+Success criteria:
+
+- the new toolbar filters feel instant
+- the default `List` flow remains unchanged and lightweight
+- the added toolbar controls do not create noisy empty-state clutter
+
+### Phase 2: Bookmark Product Decision
+
+Closed decisions from this phase:
+
+- bookmarks should be a first-class thread kind
+- the sidebar should add `lightbulb` and `bot` icon filters
+- those filters should use Obsidian-style icon buttons
+- `lightbulb` and `bot` should be mutually exclusive and sit to the left of resolved
+- bookmark text may be optional, but bookmark kind must be explicit
+
+Expected output of this phase:
+
+- a dedicated bookmark spec, likely with storage implications
+
+### Phase 3: Bookmark Implementation
+
+If Phase 2 confirms demand:
+
+- add explicit thread kind support
+- add creation entrypoint from selected text
+- add sidebar and index kind filters
+- add lighter bookmark rendering
+
+### Phase 4: Revisit File-Level Thought Trail
+
+Only after the above settles:
+
+- define the rooted-graph interaction clearly
+- test whether users actually want graph context in single-note mode
+
+## Open Questions
+
+1. Should file-level mode selection be remembered globally, per note, or not remembered at all?
+2. If the `bot` filter is empty for the current file, should the icon still be shown disabled or should it hide entirely?
+3. Should bookmark capture require any text at creation time, or allow pure capture with optional later annotation?
+4. Should bookmarks be visible in the same list by default, or only when filtered in?
+5. If file-level Thought Trail is added later, what default depth or expansion limit keeps the rooted connected graph useful without overwhelming the sidebar?
+
+## Final Recommendation
+
+Worth adding now:
+
+- bookmark and agent quick filters in the existing top toolbar
+- explicit bookmark thread kind planning
+
+Worth planning but not shipping yet:
+
+- file-level `Thought Trail` as a rooted connected graph around the current note
+- actual bookmark capture flow and card treatment
+- any dedicated file-level `Agent` tab
+
+Not recommended:
+
+- shipping all three file-level tabs immediately just for symmetry
+- modeling bookmarks as a literal `💡` comment body
+- relying on hidden text conventions instead of explicit bookmark semantics
+
+<!-- SideNote2 comments
+[
+  {
+    "id": "0eb5e2bd-9d84-4502-89b6-194333ad8426",
+    "startLine": 86,
+    "startChar": 0,
+    "endLine": 86,
+    "endChar": 61,
+    "selectedText": "If shipped too early, it risks feeling interesting but vague.",
+    "selectedTextHash": "260474de9b795374403af71fa30e52012227a7b9432db1122fba3248f681cf04",
+    "orphaned": true,
+    "deletedAt": 1776713441741,
+    "entries": [
+      {
+        "id": "0eb5e2bd-9d84-4502-89b6-194333ad8426",
+        "body": "@codex why?",
+        "timestamp": 1776712870405
+      },
+      {
+        "id": "04319ce5-0cfa-4183-9093-42208ef6cc4a",
+        "body": "Because “interesting” usually means users can see the idea, but “vague” means they still can’t predict how it helps them day to day.\n\nIf this ships too early:\n- the modes may feel conceptually clever, but not clearly tied to a specific job\n- users may not know when to switch modes, bookmark something, or ignore it\n- overlap with existing sidebar/navigation patterns can make the value feel fuzzy\n- without a few strong examples, defaults, and visible wins, it reads as possibility rather than payoff\n\nSo the risk isn’t that the idea is bad — it’s that the first impression becomes “maybe useful” instead of “I immediately get why this belongs here.”",
+        "timestamp": 1776712876496
+      },
+      {
+        "id": "d27fe9e7-0c88-4cb2-a54a-31b99062ae6e",
+        "body": "@codex so why i added that feature in index sidebar at the first place is, i want to see all connected files, not just starting this file as root, but be able to traverse up and down, so i can see the whole picture, like the bottom of the Wikipedia, but in a graph view. obsidian only has one level deep, flat, that is not enough. why do you think?",
+        "timestamp": 1776712936627
+      },
+      {
+        "id": "c03e9a47-2fa5-43de-a197-07283b2d613c",
+        "body": "I think that’s a strong reason, and it’s more concrete than “interesting but vague.”\n\nWhat you’re really solving is: when I’m on one note, I want to see its local knowledge graph and walk it in all directions, not just read a flat list of one-hop links.\n\nThat’s meaningfully different from Obsidian’s default sidebar because the default is mostly:\n- one level deep\n- flat\n- not great for seeing structure\n\nYour version is closer to “Wikipedia category/navigation at the bottom, but for notes”:\n- go up to broader context\n- go down to more specific notes\n- move sideways to related neighbors\n- keep the whole picture in view while traversing\n\nSo I wouldn’t describe the feature as just “index sidebar modes.” The real value is “contextual graph navigation from the current note.”\n\nThe only risk is positioning: if you present it as a clever view mode, it can feel vague. If you present it as “see and traverse the connected note neighborhood around this file,” it becomes immediately understandable.\n\nA sharper line for the doc could be:\n“Users need more than flat backlinks—they need a navigable local graph around the current note, so they can move up, down, and across related files to understand the whole topic.”",
+        "timestamp": 1776713037158
+      },
+      {
+        "id": "7ba4a46d-e4e8-42a0-956b-937d82c48fe2",
+        "body": "@codex yes, can you based on this update the source markdown",
+        "timestamp": 1776713314272
+      },
+      {
+        "id": "93ce16d2-b878-4fe9-af75-9f92e39baa12",
+        "body": "Updated. I changed the doc to:\n- reframe `Thought Trail` as “see and traverse the connected note neighborhood around the current file,” with up/down/sideways movement beyond Obsidian’s flat one-hop view\n- treat the rooted connected graph as the real target, and position the local-outgoing version as the weaker fallback in the performance, rollout, and open-questions sections",
+        "timestamp": 1776713330575
+      }
+    ],
+    "createdAt": 1776712870405,
+    "updatedAt": 1776713330575
+  }
+]
+-->
