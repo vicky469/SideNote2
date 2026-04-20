@@ -217,6 +217,60 @@ test("comment mutation controller saves a new draft by trimming and persisting i
     assert.deepEqual(host.notices, []);
 });
 
+test("comment mutation controller saves an empty bookmarked draft without requiring body text", async () => {
+    const draft = toDraft(createComment({
+        id: "draft-bookmark-1",
+        comment: "   ",
+        isBookmark: true,
+    }), {
+        isBookmark: true,
+    });
+    const host = createHost({
+        draftComment: draft,
+        knownComments: [draft],
+        loadedComments: [],
+        currentNoteContentByPath: {
+            [draft.filePath]: "# Title\n\nAlpha beta gamma.\n",
+        },
+    });
+
+    await host.controller.saveDraft(draft.id);
+
+    assert.equal(host.manager.getAllComments().length, 1);
+    assert.equal(host.manager.getAllComments()[0].comment, "");
+    assert.equal(host.manager.getAllComments()[0].isBookmark, true);
+    assert.deepEqual(host.savedUserEntryEvents, []);
+    assert.deepEqual(host.persistedFiles, [{
+        path: draft.filePath,
+        immediateAggregateRefresh: true,
+    }]);
+    assert.equal(host.getDraftComment(), null);
+    assert.deepEqual(host.notices, []);
+});
+
+test("comment mutation controller still rejects empty non-bookmark drafts", async () => {
+    const draft = toDraft(createComment({
+        id: "draft-empty-1",
+        comment: "   ",
+        isBookmark: false,
+    }));
+    const host = createHost({
+        draftComment: draft,
+        knownComments: [draft],
+        loadedComments: [],
+        currentNoteContentByPath: {
+            [draft.filePath]: "# Title\n\nAlpha beta gamma.\n",
+        },
+    });
+
+    await host.controller.saveDraft(draft.id);
+
+    assert.equal(host.manager.getAllComments().length, 0);
+    assert.equal(host.getDraftComment()?.id, draft.id);
+    assert.deepEqual(host.persistedFiles, []);
+    assert.deepEqual(host.notices, ["Please enter a comment before saving."]);
+});
+
 test("comment mutation controller can skip the pre-save rerender for quick draft saves", async () => {
     const draft = toDraft(createComment({
         id: "draft-1",

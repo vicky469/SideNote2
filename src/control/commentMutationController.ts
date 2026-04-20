@@ -89,7 +89,7 @@ export class CommentMutationController {
         }
 
         const commentBody = shortenBareUrlsInMarkdown(draft.comment).trim();
-        if (!commentBody) {
+        if (!commentBody && draft.isBookmark !== true) {
             this.host.showNotice("Please enter a comment before saving.");
             return;
         }
@@ -152,7 +152,7 @@ export class CommentMutationController {
                     draftMode: preparedDraft.mode,
                     filePath: preparedDraft.filePath,
                 });
-                if (preparedDraft.mode !== "edit") {
+                if (preparedDraft.mode !== "edit" && preparedDraft.comment.trim().length > 0) {
                     try {
                         await this.host.handleSavedUserEntry?.({
                             threadId: preparedDraft.threadId ?? preparedDraft.id,
