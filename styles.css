@@ -827,6 +827,7 @@
 
 .sidenote2-comment-meta-value {
     flex: 0 0 auto;
+    margin-left: auto;
     font-size: 0.9em;
     white-space: nowrap;
 }
@@ -1209,7 +1210,20 @@
     height: 14px;
 }
 
-.sidenote2-comment-item:not(.sidenote2-agent-stream-item) .sidenote2-comment-actions,
+.sidenote2-comment-item:not(.sidenote2-agent-stream-item) .sidenote2-comment-actions {
+    display: none;
+    opacity: 0;
+    visibility: hidden;
+    pointer-events: none;
+}
+
+.sidenote2-comment-item:not(.sidenote2-agent-stream-item).active .sidenote2-comment-actions {
+    display: flex;
+    opacity: 1;
+    visibility: visible;
+    pointer-events: auto;
+}
+
 .sidenote2-comment-item:not(.sidenote2-agent-stream-item) .sidenote2-thread-footer-actions,
 .sidenote2-comment-item:not(.sidenote2-agent-stream-item) .sidenote2-thread-reanchor-button {
     opacity: 0;
@@ -1217,7 +1231,6 @@
     pointer-events: none;
 }
 
-.sidenote2-comment-item:not(.sidenote2-agent-stream-item).active .sidenote2-comment-actions,
 .sidenote2-comment-item:not(.sidenote2-agent-stream-item).active .sidenote2-thread-footer-actions,
 .sidenote2-comment-item:not(.sidenote2-agent-stream-item).active .sidenote2-thread-reanchor-button {
     opacity: 1;
