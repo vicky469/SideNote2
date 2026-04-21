@@ -83,7 +83,7 @@ export interface CommentAgentHost {
         promptText: string;
         metadata: Record<string, unknown>;
     }): Promise<RemoteRuntimeResponseEnvelope>;
-    pollRemoteRuntimeRun(runId: string, afterCursor?: string | null): Promise<RemoteRuntimeResponseEnvelope>;
+    pollRemoteRuntimeRun(runId: string, afterCursor?: string | null, waitMs?: number): Promise<RemoteRuntimeResponseEnvelope>;
     cancelRemoteRuntimeRun(runId: string): Promise<RemoteRuntimeResponseEnvelope>;
     showNotice(message: string): void;
     log?(level: "info" | "warn" | "error", area: string, event: string, payload?: Record<string, unknown>): Promise<void>;
@@ -98,8 +98,14 @@ const AGENT_REMOTE_RESUME_FAILED_NOTICE = "The previous remote run could not be 
 const AGENT_REGENERATE_REPLACE_FAILED_NOTICE = "Unable to replace the previous agent reply.";
 const AGENT_CANCELLED_NOTICE = "Cancelled.";
 const AGENT_STATUS_CANCELLED = "Cancelled";
-const REMOTE_POLL_INTERVAL_MS = 700;
-const REMOTE_FAST_POLL_INTERVAL_MS = 200;
+const REMOTE_POLL_INTERVAL_MS = 350;
+const REMOTE_FAST_POLL_INTERVAL_MS = 120;
+const REMOTE_EAGER_POLL_INTERVAL_MS = 150;
+const REMOTE_EAGER_EMPTY_POLL_LIMIT = 6;
+const REMOTE_LONG_POLL_WAIT_MS = 1_500;
+const LOCAL_MAX_CONCURRENT_RUNS = 3;
+const REMOTE_MAX_CONCURRENT_RUNS = 3;
+const UTF8_ENCODER = new TextEncoder();
 
 interface ActiveRunExecution {
     runId: string;
@@ -129,6 +135,7 @@ export class CommentAgentController {
     private readonly runStreamPruneTimers = new Map<string, ReturnType<typeof setTimeout>>();
     private readonly streamListeners = new Set<AgentStreamListener>();
     private readonly activeRunExecutions = new Map<string, ActiveRunExecution>();
+    private readonly dispatchingRunIds = new Set<string>();
 
     constructor(
         private readonly host: CommentAgentHost,
@@ -219,6 +226,7 @@ export class CommentAgentController {
             execution.abortController.abort();
         }
         this.activeRunExecutions.clear();
+        this.dispatchingRunIds.clear();
         this.runStreams.clear();
     }
 
@@ -397,16 +405,63 @@ export class CommentAgentController {
         this.processingQueue = true;
         try {
             while (true) {
-                const nextRun = getQueuedAgentRuns(this.store.getRuns())[0];
+                const nextRun = this.getNextStartableQueuedRun();
                 if (!nextRun) {
                     break;
                 }
 
-                await this.executeRun(nextRun.id);
+                this.dispatchingRunIds.add(nextRun.id);
+                void this.executeRun(nextRun.id).finally(() => {
+                    this.dispatchingRunIds.delete(nextRun.id);
+                    void this.processQueue();
+                });
             }
         } finally {
             this.processingQueue = false;
         }
+    }
+
+    private getRuntimeConcurrencyLimit(runtime: AgentRunRuntime): number {
+        return runtime === "openclaw-acp"
+            ? REMOTE_MAX_CONCURRENT_RUNS
+            : LOCAL_MAX_CONCURRENT_RUNS;
+    }
+
+    private getInFlightRuns(): AgentRunRecord[] {
+        const inFlightRunIds = new Set<string>([
+            ...this.dispatchingRunIds,
+            ...this.activeRunExecutions.keys(),
+        ]);
+
+        return Array.from(inFlightRunIds)
+            .map((runId) => this.store.getRunById(runId))
+            .filter((run): run is AgentRunRecord => !!run);
+    }
+
+    private getNextStartableQueuedRun(): AgentRunRecord | null {
+        const queuedRuns = getQueuedAgentRuns(this.store.getRuns());
+        const inFlightRuns = this.getInFlightRuns();
+
+        for (const run of queuedRuns) {
+            if (this.dispatchingRunIds.has(run.id)) {
+                continue;
+            }
+
+            if (inFlightRuns.some((activeRun) => activeRun.threadId === run.threadId)) {
+                continue;
+            }
+
+            const matchingRuntimeCount = inFlightRuns
+                .filter((activeRun) => activeRun.runtime === run.runtime)
+                .length;
+            if (matchingRuntimeCount >= this.getRuntimeConcurrencyLimit(run.runtime)) {
+                continue;
+            }
+
+            return run;
+        }
+
+        return null;
     }
 
     private async executeRun(runId: string): Promise<void> {
@@ -480,6 +535,8 @@ export class CommentAgentController {
             threadId: runningRun.threadId,
             requestedAgent: runningRun.requestedAgent,
             runtime: runningRun.runtime,
+            contextScope: runtimeContext.scope,
+            contextBytes: runtimeContext.byteLength,
         });
 
         try {
@@ -630,10 +687,11 @@ export class CommentAgentController {
         let remoteExecutionId = options.run.remoteExecutionId ?? null;
         let remoteCursor = options.run.remoteCursor ?? null;
         let partialText = this.runStreams.get(options.run.id)?.partialText ?? "";
+        let consecutiveEmptyPolls = 0;
 
         let response: RemoteRuntimeResponseEnvelope;
         if (remoteExecutionId) {
-            response = await this.host.pollRemoteRuntimeRun(remoteExecutionId, remoteCursor);
+            response = await this.host.pollRemoteRuntimeRun(remoteExecutionId, remoteCursor, REMOTE_LONG_POLL_WAIT_MS);
         } else {
             response = await this.host.startRemoteRuntimeRun({
                 agent: options.run.requestedAgent,
@@ -641,6 +699,7 @@ export class CommentAgentController {
                 metadata: {
                     notePath: options.run.filePath,
                     contextScope: options.runtimeContext.scope,
+                    contextBytes: options.runtimeContext.byteLength,
                     pluginVersion: this.host.getPluginVersion(),
                     capability: "workspace-aware",
                 },
@@ -750,11 +809,18 @@ export class CommentAgentController {
                 return;
             }
 
-            const nextPollDelayMs = response.events.length > 0
+            const hasNewEvents = response.events.length > 0;
+            consecutiveEmptyPolls = hasNewEvents
+                ? 0
+                : consecutiveEmptyPolls + 1;
+
+            const nextPollDelayMs = hasNewEvents
                 ? REMOTE_FAST_POLL_INTERVAL_MS
-                : REMOTE_POLL_INTERVAL_MS;
+                : (!options.run.remoteExecutionId && consecutiveEmptyPolls <= REMOTE_EAGER_EMPTY_POLL_LIMIT)
+                    ? REMOTE_EAGER_POLL_INTERVAL_MS
+                    : REMOTE_POLL_INTERVAL_MS;
             await sleep(nextPollDelayMs);
-            response = await this.host.pollRemoteRuntimeRun(remoteExecutionId, remoteCursor);
+            response = await this.host.pollRemoteRuntimeRun(remoteExecutionId, remoteCursor, REMOTE_LONG_POLL_WAIT_MS);
         }
     }
 
@@ -832,9 +898,11 @@ export class CommentAgentController {
     ): Promise<AgentPromptContext> {
         const thread = this.host.getCommentManager().getThreadById(run.threadId);
         if (!thread) {
+            const promptText = run.promptText;
             return {
                 scope: "section",
-                promptText: run.promptText,
+                promptText,
+                byteLength: UTF8_ENCODER.encode(promptText).length,
             };
         }
 
@@ -864,6 +932,7 @@ export class CommentAgentController {
             runId: run.id,
             threadId: run.threadId,
             scope: context.scope,
+            contextBytes: context.byteLength,
             hasNoteContext: !!noteContent,
         });
         return context;

@@ -307,6 +307,45 @@ test("DGX bridge starts, streams, completes, and honors cursors", async (t) => {
     assert.equal(afterCursorResponse.json.cursor, completedResponse.json.cursor);
 });
 
+test("DGX bridge long-polls until the next event when waitMs is provided", async (t) => {
+    const { baseUrl, token } = await startBridge(t, {
+        executeRun: async ({ onProgressText }) => {
+            await sleep(120);
+            onProgressText?.("Preparing context");
+            await sleep(120);
+            return { replyText: "Done" };
+        },
+    });
+
+    const startResponse = await requestJson({
+        method: "POST",
+        url: `${baseUrl}/v1/sidenote2/runs`,
+        token,
+        body: {
+            agent: "codex",
+            promptText: "Wait for me.",
+            metadata: {
+                contextBytes: 128,
+            },
+        },
+    });
+
+    const runUrl = `${baseUrl}/v1/sidenote2/runs/${encodeURIComponent(startResponse.json.runId)}`;
+    const startedAt = Date.now();
+    const pollResponse = await requestJson({
+        method: "GET",
+        url: `${runUrl}?after=${encodeURIComponent(startResponse.json.cursor ?? "")}&waitMs=400`,
+        token,
+    });
+    const elapsedMs = Date.now() - startedAt;
+
+    assert.equal(pollResponse.statusCode, 200);
+    assert.ok(elapsedMs >= 90, `expected waitMs poll to block briefly, got ${elapsedMs}ms`);
+    assert.ok(elapsedMs < 380, `expected waitMs poll to return before the full timeout once an event arrives, got ${elapsedMs}ms`);
+    assert.equal(pollResponse.json.status, "running");
+    assert.ok(pollResponse.json.events.some((event) => event.type === "progress"));
+});
+
 test("DGX bridge responds to CORS preflight and includes CORS headers", async (t) => {
     const { baseUrl } = await startBridge(t, {
         executeRun: async () => ({ replyText: "Done" }),

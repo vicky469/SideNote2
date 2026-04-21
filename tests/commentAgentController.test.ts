@@ -72,7 +72,7 @@ function createHarness(options: {
         promptText: string;
         metadata: Record<string, unknown>;
     }) => Promise<RemoteRuntimeResponseEnvelope>;
-    pollRemoteRuntimeRun?: (runId: string, afterCursor?: string | null) => Promise<RemoteRuntimeResponseEnvelope>;
+    pollRemoteRuntimeRun?: (runId: string, afterCursor?: string | null, waitMs?: number) => Promise<RemoteRuntimeResponseEnvelope>;
     cancelRemoteRuntimeRun?: (runId: string) => Promise<RemoteRuntimeResponseEnvelope>;
 } = {}) {
     let persistedData: PersistedPluginData = options.initialPersistedData ?? {};
@@ -82,6 +82,8 @@ function createHarness(options: {
     const editedEntries: Array<{ commentId: string; body: string }> = [];
     const notices: string[] = [];
     const runtimeCalls: Array<{ target: "codex" | "claude"; prompt: string; cwd: string }> = [];
+    const remoteStartCalls: Array<{ agent: "codex" | "claude"; promptText: string; metadata: Record<string, unknown> }> = [];
+    const remotePollCalls: Array<{ runId: string; afterCursor?: string | null; waitMs?: number }> = [];
     let refreshCount = 0;
     let idCounter = 1;
     let now = 100;
@@ -160,6 +162,7 @@ function createHarness(options: {
             ownershipMessage: "Using your local Codex setup",
         },
         startRemoteRuntimeRun: async (remoteOptions) => {
+            remoteStartCalls.push(remoteOptions);
             if (options.startRemoteRuntimeRun) {
                 return options.startRemoteRuntimeRun(remoteOptions);
             }
@@ -173,9 +176,10 @@ function createHarness(options: {
                 error: null,
             };
         },
-        pollRemoteRuntimeRun: async (runId, afterCursor) => {
+        pollRemoteRuntimeRun: async (runId, afterCursor, waitMs) => {
+            remotePollCalls.push({ runId, afterCursor, waitMs });
             if (options.pollRemoteRuntimeRun) {
-                return options.pollRemoteRuntimeRun(runId, afterCursor);
+                return options.pollRemoteRuntimeRun(runId, afterCursor, waitMs);
             }
             return {
                 httpStatus: 200,
@@ -215,6 +219,8 @@ function createHarness(options: {
         editedEntries,
         notices,
         runtimeCalls,
+        remoteStartCalls,
+        remotePollCalls,
         getRefreshCount: () => refreshCount,
         getPersistedData: () => persistedData,
     };
@@ -359,6 +365,150 @@ test("comment agent controller can run through the remote bridge and persist res
     assert.equal(latestRun?.remoteExecutionId, "remote-run-1");
     assert.equal(latestRun?.remoteCursor, "evt-3");
     assert.equal(harness.editedEntries.at(-1)?.body, "Hello world");
+    assert.equal(harness.remoteStartCalls[0]?.metadata.contextScope, "section");
+    assert.equal(typeof harness.remoteStartCalls[0]?.metadata.contextBytes, "number");
+    assert.match(harness.remoteStartCalls[0]?.promptText ?? "", /Request:\n<<<\n@codex say hi\n>>>/);
+    assert.deepEqual(
+        harness.remotePollCalls.map((call) => call.waitMs),
+        [1_500, 1_500],
+    );
+});
+
+test("comment agent controller runs remote jobs in parallel across different threads", async () => {
+    const pollResolvers = new Map<string, () => void>();
+    let nextRunIndex = 0;
+    const harness = createHarness({
+        initialComments: [
+            createComment({
+                id: "thread-1",
+                filePath: "Folder/Note.md",
+                comment: "@codex review the first thread",
+            }),
+            createComment({
+                id: "thread-2",
+                filePath: "Folder/Note.md",
+                comment: "@codex review the second thread",
+                selectedText: "Beta",
+            }),
+        ],
+        runtimeSelection: {
+            kind: "resolved",
+            runtime: "openclaw-acp",
+            modePreference: "remote",
+            ownershipMessage: "Using remote runtime",
+        },
+        startRemoteRuntimeRun: async () => ({
+            httpStatus: 200,
+            status: "queued",
+            cursor: null,
+            runId: `remote-run-${++nextRunIndex}`,
+            events: [],
+            replyText: null,
+            error: null,
+        }),
+        pollRemoteRuntimeRun: async (runId) => {
+            await new Promise<void>((resolve) => {
+                pollResolvers.set(runId, resolve);
+            });
+            return {
+                httpStatus: 200,
+                status: "completed",
+                cursor: `${runId}-done`,
+                runId,
+                events: [],
+                replyText: `Done ${runId}`,
+                error: null,
+            };
+        },
+    });
+
+    await harness.controller.handleSavedUserEntry({
+        threadId: "thread-1",
+        entryId: "thread-1",
+        filePath: "Folder/Note.md",
+        body: "@codex review the first thread",
+    });
+    await harness.controller.handleSavedUserEntry({
+        threadId: "thread-2",
+        entryId: "thread-2",
+        filePath: "Folder/Note.md",
+        body: "@codex review the second thread",
+    });
+
+    for (let attempt = 0; attempt < 40 && harness.remoteStartCalls.length < 2; attempt += 1) {
+        await new Promise((resolve) => setTimeout(resolve, 10));
+    }
+    for (let attempt = 0; attempt < 40 && pollResolvers.size < 2; attempt += 1) {
+        await new Promise((resolve) => setTimeout(resolve, 10));
+    }
+
+    assert.equal(harness.remoteStartCalls.length, 2);
+    assert.equal(harness.controller.getLatestAgentRunForThread("thread-1")?.status, "running");
+    assert.equal(harness.controller.getLatestAgentRunForThread("thread-2")?.status, "running");
+
+    pollResolvers.get("remote-run-1")?.();
+    pollResolvers.get("remote-run-2")?.();
+    await waitForAgentQueueToDrain(harness.controller);
+
+    assert.equal(harness.controller.getLatestAgentRunForThread("thread-1")?.status, "succeeded");
+    assert.equal(harness.controller.getLatestAgentRunForThread("thread-2")?.status, "succeeded");
+});
+
+test("comment agent controller runs local jobs in parallel across different threads", async () => {
+    const runtimeResolvers: Array<() => void> = [];
+    let replyIndex = 0;
+    const harness = createHarness({
+        initialComments: [
+            createComment({
+                id: "thread-1",
+                filePath: "Folder/Note.md",
+                comment: "@codex review the first local thread",
+            }),
+            createComment({
+                id: "thread-2",
+                filePath: "Folder/Note.md",
+                comment: "@codex review the second local thread",
+                selectedText: "Beta",
+            }),
+        ],
+        customRunAgentRuntime: async () => {
+            await new Promise<void>((resolve) => {
+                runtimeResolvers.push(resolve);
+            });
+            replyIndex += 1;
+            return {
+                runtime: "direct-cli",
+                replyText: `Local reply ${replyIndex}`,
+            };
+        },
+    });
+
+    await harness.controller.handleSavedUserEntry({
+        threadId: "thread-1",
+        entryId: "thread-1",
+        filePath: "Folder/Note.md",
+        body: "@codex review the first local thread",
+    });
+    await harness.controller.handleSavedUserEntry({
+        threadId: "thread-2",
+        entryId: "thread-2",
+        filePath: "Folder/Note.md",
+        body: "@codex review the second local thread",
+    });
+
+    for (let attempt = 0; attempt < 40 && harness.runtimeCalls.length < 2; attempt += 1) {
+        await new Promise((resolve) => setTimeout(resolve, 10));
+    }
+
+    assert.equal(harness.runtimeCalls.length, 2);
+    assert.equal(harness.controller.getLatestAgentRunForThread("thread-1")?.status, "running");
+    assert.equal(harness.controller.getLatestAgentRunForThread("thread-2")?.status, "running");
+
+    runtimeResolvers.splice(0).forEach((resolve) => resolve());
+    await waitForAgentQueueToDrain(harness.controller);
+
+    assert.equal(harness.controller.getLatestAgentRunForThread("thread-1")?.status, "succeeded");
+    assert.equal(harness.controller.getLatestAgentRunForThread("thread-2")?.status, "succeeded");
 });
 
 test("comment agent controller inserts child-triggered replies after the triggering child entry", async () => {
@@ -532,11 +682,11 @@ test("comment agent controller packs note path, section context, and transcript 
     await waitForAgentQueueToDrain(harness.controller);
 
     const prompt = harness.runtimeCalls[0]?.prompt ?? "";
-    assert.match(prompt, /Current note path: Folder\/Note\.md/);
-    assert.match(prompt, /Context scope: section/);
-    assert.match(prompt, /Local section:\n<<<\n## Focus\n\nAlpha detail\nBeta detail\n>>>/);
-    assert.match(prompt, /Thread transcript:\n- You \(current\): @codex summarize the focus section/);
-    assert.match(prompt, /Current request:\n<<<\n@codex summarize the focus section\n>>>/);
+    assert.match(prompt, /Note path: Folder\/Note\.md/);
+    assert.match(prompt, /Scope: section/);
+    assert.match(prompt, /Section:\n<<<\n## Focus\n\nAlpha detail\nBeta detail\n>>>/);
+    assert.match(prompt, /Thread:\n- You \(current\): @codex summarize the focus section/);
+    assert.match(prompt, /Request:\n<<<\n@codex summarize the focus section\n>>>/);
     assert.doesNotMatch(prompt, /Gamma detail/);
 });
 

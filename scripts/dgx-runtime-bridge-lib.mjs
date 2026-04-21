@@ -1042,14 +1042,19 @@ function defaultLog(level, message, payload) {
     console.log(parts.join(" "));
 }
 
-function buildEnvelope(run, afterCursor = null) {
+function resolveEventSliceStartIndex(run, afterCursor = null) {
     const allEvents = run.events ?? [];
-    const startIndex = !afterCursor
+    return !afterCursor
         ? 0
         : (() => {
             const index = allEvents.findIndex((event) => event.cursor === afterCursor);
             return index === -1 ? 0 : index + 1;
         })();
+}
+
+function buildEnvelope(run, afterCursor = null) {
+    const allEvents = run.events ?? [];
+    const startIndex = resolveEventSliceStartIndex(run, afterCursor);
 
     return {
         status: run.status,
@@ -1059,6 +1064,35 @@ function buildEnvelope(run, afterCursor = null) {
         replyText: run.replyText ?? null,
         error: run.error ?? null,
     };
+}
+
+function hasEventsAfterCursor(run, afterCursor = null) {
+    const allEvents = run.events ?? [];
+    const startIndex = resolveEventSliceStartIndex(run, afterCursor);
+    return startIndex < allEvents.length;
+}
+
+function notifyRunWaiters(run) {
+    const waiters = Array.from(run.waiters ?? []);
+    run.waiters?.clear();
+    for (const waiter of waiters) {
+        waiter();
+    }
+}
+
+async function waitForRunUpdate(run, waitMs) {
+    await new Promise((resolve) => {
+        const timeoutId = setTimeout(() => {
+            run.waiters?.delete(onSettled);
+            resolve(undefined);
+        }, waitMs);
+        const onSettled = () => {
+            clearTimeout(timeoutId);
+            run.waiters?.delete(onSettled);
+            resolve(undefined);
+        };
+        run.waiters?.add(onSettled);
+    });
 }
 
 async function readJsonBody(request, maxBytes) {
@@ -1127,6 +1161,7 @@ export function createDgxRuntimeBridge(options) {
     const log = options.log ?? defaultLog;
     const runs = new Map();
     const allowanceBuckets = new Map();
+    const maxPollWaitMs = 2_000;
 
     const recordRunStartAllowance = (identity) => {
         if (!config.freeAllowanceEnabled) {
@@ -1169,6 +1204,7 @@ export function createDgxRuntimeBridge(options) {
             cursor: nextCursorId,
             payload,
         });
+        notifyRunWaiters(run);
     };
 
     const finalizeRun = (run, status, payload) => {
@@ -1364,6 +1400,7 @@ export function createDgxRuntimeBridge(options) {
                 events: [],
                 lastCursor: null,
                 nextCursorId: 0,
+                waiters: new Set(),
                 abortController: new AbortController(),
             };
             runs.set(runId, run);
@@ -1384,7 +1421,17 @@ export function createDgxRuntimeBridge(options) {
         const run = runId ? runs.get(runId) ?? null : null;
 
         if (method === "GET" && run && requestUrl.pathname === `/v1/sidenote2/runs/${encodeURIComponent(runId)}`) {
-            sendJson(response, 200, buildEnvelope(run, requestUrl.searchParams.get("after")));
+            const afterCursor = requestUrl.searchParams.get("after");
+            const requestedWaitMs = Math.max(0, Math.min(
+                parseInteger(requestUrl.searchParams.get("waitMs"), 0),
+                maxPollWaitMs,
+            ));
+            if (requestedWaitMs > 0
+                && (run.status === "queued" || run.status === "running")
+                && !hasEventsAfterCursor(run, afterCursor)) {
+                await waitForRunUpdate(run, requestedWaitMs);
+            }
+            sendJson(response, 200, buildEnvelope(run, afterCursor));
             return;
         }
 

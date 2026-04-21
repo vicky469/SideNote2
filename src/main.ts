@@ -304,7 +304,7 @@ export default class SideNote2 extends Plugin {
         runAgentRuntime: (invocation) => runAgentRuntime(invocation),
         resolveAgentRuntimeSelection: () => this.resolveAgentRuntimeSelection(),
         startRemoteRuntimeRun: (options) => this.startRemoteRuntimeRun(options),
-        pollRemoteRuntimeRun: (runId, afterCursor) => this.pollRemoteRuntimeRun(runId, afterCursor),
+        pollRemoteRuntimeRun: (runId, afterCursor, waitMs) => this.pollRemoteRuntimeRun(runId, afterCursor, waitMs),
         cancelRemoteRuntimeRun: (runId) => this.cancelRemoteRuntimeRun(runId),
         showNotice: (message) => {
             this.showNotice(message, "agents", "agents.notice");
@@ -623,12 +623,13 @@ export default class SideNote2 extends Plugin {
         });
     }
 
-    public async pollRemoteRuntimeRun(runId: string, afterCursor?: string | null): Promise<RemoteRuntimeResponseEnvelope> {
+    public async pollRemoteRuntimeRun(runId: string, afterCursor?: string | null, waitMs?: number): Promise<RemoteRuntimeResponseEnvelope> {
         return pollRemoteRuntimeRun(this.remoteRuntimeRequester, {
             baseUrl: this.getRemoteRuntimeBaseUrl(),
             bearerToken: this.getRemoteRuntimeBearerToken(),
             runId,
             afterCursor,
+            waitMs,
         });
     }
 

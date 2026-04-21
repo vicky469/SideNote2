@@ -266,11 +266,15 @@ export async function pollRemoteRuntimeRun(
     options: RemoteRuntimeBridgeRequest & {
         runId: string;
         afterCursor?: string | null;
+        waitMs?: number;
     },
 ): Promise<RemoteRuntimeResponseEnvelope> {
     const query = new URLSearchParams();
     if (options.afterCursor) {
         query.set("after", options.afterCursor);
+    }
+    if (typeof options.waitMs === "number" && Number.isFinite(options.waitMs) && options.waitMs > 0) {
+        query.set("waitMs", String(Math.max(1, Math.floor(options.waitMs))));
     }
     try {
         const response = await requester(buildRequest(

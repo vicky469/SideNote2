@@ -106,7 +106,7 @@ test("startRemoteRuntimeRun posts the SideNote2 prompt contract with bearer auth
     });
 });
 
-test("pollRemoteRuntimeRun appends the cursor query when provided", async () => {
+test("pollRemoteRuntimeRun appends cursor and wait params when provided", async () => {
     let lastRequestUrl = "";
     await pollRemoteRuntimeRun(async (request) => {
         lastRequestUrl = request.url;
@@ -129,9 +129,10 @@ test("pollRemoteRuntimeRun appends the cursor query when provided", async () => 
         bearerToken: "secret-token",
         runId: "remote-run-1",
         afterCursor: "evt-9",
+        waitMs: 1500,
     });
 
-    assert.equal(lastRequestUrl, "https://remote.example.com/v1/sidenote2/runs/remote-run-1?after=evt-9");
+    assert.equal(lastRequestUrl, "https://remote.example.com/v1/sidenote2/runs/remote-run-1?after=evt-9&waitMs=1500");
 });
 
 test("cancelRemoteRuntimeRun calls the cancel endpoint", async () => {
