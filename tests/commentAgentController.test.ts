@@ -6,7 +6,10 @@ import { AgentRunStore } from "../src/control/agentRunStore";
 import { CommentAgentController } from "../src/control/commentAgentController";
 import type { PersistedPluginData } from "../src/control/indexNoteSettingsPlanner";
 import type { AgentRuntimeSelection } from "../src/control/agentRuntimeSelection";
-import type { RemoteRuntimeResponseEnvelope } from "../src/control/openclawRuntimeBridge";
+import {
+    hashRemoteRuntimeNoteContent,
+    type RemoteRuntimeResponseEnvelope,
+} from "../src/control/openclawRuntimeBridge";
 
 function createFile(path: string): TFile {
     return {
@@ -82,6 +85,11 @@ function createHarness(options: {
     const editedEntries: Array<{ commentId: string; body: string }> = [];
     const notices: string[] = [];
     const runtimeCalls: Array<{ target: "codex" | "claude"; prompt: string; cwd: string }> = [];
+    const remoteRuntimeCalls: Array<{
+        agent: "codex" | "claude";
+        promptText: string;
+        metadata: Record<string, unknown>;
+    }> = [];
     let refreshCount = 0;
     let idCounter = 1;
     let now = 100;
@@ -98,6 +106,7 @@ function createHarness(options: {
         createCommentId: () => `generated-${idCounter++}`,
         now: () => ++now,
         getPluginVersion: () => "2.0.39",
+        getVaultName: () => "SharedVault",
         refreshCommentViews: async () => {
             refreshCount += 1;
             options.onRefreshCommentViews?.(controller);
@@ -160,6 +169,7 @@ function createHarness(options: {
             ownershipMessage: "Using your local Codex setup",
         },
         startRemoteRuntimeRun: async (remoteOptions) => {
+            remoteRuntimeCalls.push(remoteOptions);
             if (options.startRemoteRuntimeRun) {
                 return options.startRemoteRuntimeRun(remoteOptions);
             }
@@ -215,6 +225,7 @@ function createHarness(options: {
         editedEntries,
         notices,
         runtimeCalls,
+        remoteRuntimeCalls,
         getRefreshCount: () => refreshCount,
         getPersistedData: () => persistedData,
     };
@@ -319,6 +330,7 @@ test("comment agent controller can run through the remote bridge and persist res
         error: null,
     }];
     const harness = createHarness({
+        currentNoteContent: "# Remote\n\nBridge note",
         runtimeSelection: {
             kind: "resolved",
             runtime: "openclaw-acp",
@@ -359,6 +371,52 @@ test("comment agent controller can run through the remote bridge and persist res
     assert.equal(latestRun?.remoteExecutionId, "remote-run-1");
     assert.equal(latestRun?.remoteCursor, "evt-3");
     assert.equal(harness.editedEntries.at(-1)?.body, "Hello world");
+    assert.deepEqual(harness.remoteRuntimeCalls[0]?.metadata, {
+        vaultName: "SharedVault",
+        vaultRelativePath: "Folder/Note.md",
+        contextScope: "section",
+        pluginVersion: "2.0.39",
+        capability: "workspace-aware-vault",
+        noteHash: await hashRemoteRuntimeNoteContent("# Remote\n\nBridge note"),
+        noteHashAlgorithm: "sha256",
+        triggerEntryId: "thread-1",
+        notePath: "Folder/Note.md",
+    });
+});
+
+test("comment agent controller surfaces immediate remote start failures without a run id", async () => {
+    const harness = createHarness({
+        currentNoteContent: "# Remote\n\nBridge note",
+        runtimeSelection: {
+            kind: "resolved",
+            runtime: "openclaw-acp",
+            modePreference: "remote",
+            ownershipMessage: "Using remote runtime",
+        },
+        startRemoteRuntimeRun: async () => ({
+            httpStatus: 409,
+            status: "failed",
+            cursor: null,
+            runId: null,
+            events: [],
+            replyText: null,
+            error: "The DGX vault copy is not yet in sync with this note on this device.",
+        }),
+    });
+
+    await harness.controller.handleSavedUserEntry({
+        threadId: "thread-1",
+        entryId: "thread-1",
+        filePath: "Folder/Note.md",
+        body: "@codex review this",
+    });
+    await waitForAgentQueueToDrain(harness.controller);
+
+    const latestRun = harness.controller.getLatestAgentRunForThread("thread-1");
+    assert.equal(latestRun?.status, "failed");
+    assert.match(latestRun?.error ?? "", /not yet in sync/i);
+    assert.equal(harness.editedEntries.at(-1)?.commentId, "generated-2");
+    assert.match(harness.editedEntries.at(-1)?.body ?? "", /not yet in sync/i);
 });
 
 test("comment agent controller inserts child-triggered replies after the triggering child entry", async () => {

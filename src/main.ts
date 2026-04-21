@@ -278,6 +278,7 @@ export default class SideNote2 extends Plugin {
         createCommentId: () => generateCommentId(),
         now: () => Date.now(),
         getPluginVersion: () => this.manifest.version,
+        getVaultName: () => this.app.vault.getName(),
         refreshCommentViews: () => this.workspaceViewController.refreshCommentViews(),
         getRuntimeWorkingDirectory: (filePath: string) => this.getRuntimeWorkingDirectory(filePath),
         getCommentManager: () => this.commentManager,

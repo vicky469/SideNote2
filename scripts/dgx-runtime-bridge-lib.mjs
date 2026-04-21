@@ -1,7 +1,7 @@
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { createServer as createHttpServer } from "node:http";
 import { createServer as createHttpsServer } from "node:https";
-import { readFileSync, existsSync } from "node:fs";
+import { readFileSync, existsSync, statSync } from "node:fs";
 import { mkdir } from "node:fs/promises";
 import { homedir as getOsHomeDir } from "node:os";
 import path from "node:path";
@@ -87,6 +87,16 @@ function assertExistingFile(filePath, label) {
     }
 }
 
+function assertExistingDirectory(directoryPath, label) {
+    if (!existsSync(directoryPath)) {
+        throw new Error(`${label} was not found: ${directoryPath}`);
+    }
+
+    if (!statSync(directoryPath).isDirectory()) {
+        throw new Error(`${label} is not a directory: ${directoryPath}`);
+    }
+}
+
 export function getBridgeTransportProtocol(config) {
     return config.tlsEnabled
         ? "https"
@@ -103,6 +113,7 @@ export function createBridgeConfig(options = {}) {
     const workspaceRootInput = typeof env.SIDENOTE2_DGX_WORKSPACE_ROOT === "string" && env.SIDENOTE2_DGX_WORKSPACE_ROOT.trim()
         ? env.SIDENOTE2_DGX_WORKSPACE_ROOT.trim()
         : ".dgx-workspace";
+    const vaultRoot = resolveOptionalPath(env.SIDENOTE2_DGX_VAULT_ROOT, rootDir);
     const bridgeBearerToken = typeof env.SIDENOTE2_DGX_BRIDGE_BEARER_TOKEN === "string"
         ? env.SIDENOTE2_DGX_BRIDGE_BEARER_TOKEN.trim()
         : "";
@@ -123,6 +134,9 @@ export function createBridgeConfig(options = {}) {
     if (tlsCaPath) {
         assertExistingFile(tlsCaPath, "SIDENOTE2_DGX_TLS_CA_FILE");
     }
+    if (vaultRoot) {
+        assertExistingDirectory(vaultRoot, "SIDENOTE2_DGX_VAULT_ROOT");
+    }
 
     return {
         bindHost: typeof env.SIDENOTE2_DGX_BIND_HOST === "string" && env.SIDENOTE2_DGX_BIND_HOST.trim()
@@ -137,6 +151,7 @@ export function createBridgeConfig(options = {}) {
         tlsCertPath,
         tlsCaPath,
         workspaceRoot: path.resolve(rootDir, workspaceRootInput),
+        vaultRoot,
         bridgeBearerToken,
         freeAllowanceEnabled: parseBoolean(env.SIDENOTE2_DGX_FREE_ALLOWANCE_ENABLED, false),
         freeAllowanceRunsPerDay: parseInteger(env.SIDENOTE2_DGX_FREE_ALLOWANCE_RUNS_PER_DAY, 0),
@@ -169,6 +184,127 @@ function buildSideNotePrompt(promptText) {
         "",
         promptText,
     ].join("\n");
+}
+
+function normalizeVaultNoteContent(value) {
+    return String(value ?? "").replace(/\r\n/g, "\n");
+}
+
+function hashVaultNoteContent(value) {
+    return createHash("sha256")
+        .update(normalizeVaultNoteContent(value), "utf8")
+        .digest("hex");
+}
+
+function isPathWithinRoot(rootPath, targetPath) {
+    const relativePath = path.relative(rootPath, targetPath);
+    return relativePath === ""
+        || (!relativePath.startsWith("..") && !path.isAbsolute(relativePath));
+}
+
+function normalizeVaultRelativePath(value) {
+    if (typeof value !== "string" || !value.trim()) {
+        throw new Error("vaultRelativePath is required for workspace-aware-vault runs.");
+    }
+
+    const normalizedInput = value.trim().replace(/\\/g, "/");
+    if (normalizedInput.startsWith("/") || /^[A-Za-z]:\//u.test(normalizedInput)) {
+        throw new Error("vaultRelativePath must be relative to SIDENOTE2_DGX_VAULT_ROOT.");
+    }
+
+    const normalizedPath = path.posix.normalize(normalizedInput);
+    if (!normalizedPath || normalizedPath === "." || normalizedPath.startsWith("../")) {
+        throw new Error("vaultRelativePath must stay inside SIDENOTE2_DGX_VAULT_ROOT.");
+    }
+
+    return normalizedPath;
+}
+
+function resolveVaultAbsolutePath(vaultRoot, vaultRelativePath) {
+    const normalizedRelativePath = normalizeVaultRelativePath(vaultRelativePath);
+    const resolvedPath = path.resolve(vaultRoot, ...normalizedRelativePath.split("/"));
+    if (!isPathWithinRoot(vaultRoot, resolvedPath)) {
+        throw new Error("vaultRelativePath must stay inside SIDENOTE2_DGX_VAULT_ROOT.");
+    }
+
+    return {
+        normalizedRelativePath,
+        resolvedPath,
+    };
+}
+
+function resolveVaultWorkingDirectory(noteAbsolutePath, vaultRoot) {
+    let currentPath = path.dirname(noteAbsolutePath);
+    while (isPathWithinRoot(vaultRoot, currentPath)) {
+        if (existsSync(path.join(currentPath, ".git"))) {
+            return currentPath;
+        }
+
+        if (currentPath === vaultRoot) {
+            break;
+        }
+
+        const parentPath = path.dirname(currentPath);
+        if (parentPath === currentPath) {
+            break;
+        }
+        currentPath = parentPath;
+    }
+
+    return path.dirname(noteAbsolutePath) || vaultRoot;
+}
+
+function resolveRunExecutionContext(config, metadata) {
+    const capability = typeof metadata?.capability === "string"
+        ? metadata.capability
+        : null;
+    if (capability !== "workspace-aware-vault") {
+        return {
+            cwd: config.workspaceRoot,
+            resolvedVaultAbsoluteNotePath: null,
+            resolvedVaultRelativePath: null,
+        };
+    }
+
+    if (!config.vaultRoot) {
+        throw new Error("SIDENOTE2_DGX_VAULT_ROOT is required for workspace-aware-vault runs.");
+    }
+
+    const { normalizedRelativePath, resolvedPath } = resolveVaultAbsolutePath(
+        config.vaultRoot,
+        metadata?.vaultRelativePath,
+    );
+    if (!existsSync(resolvedPath)) {
+        throw new Error(`The synced DGX vault copy does not contain ${normalizedRelativePath}.`);
+    }
+    if (!statSync(resolvedPath).isFile()) {
+        throw new Error(`The synced DGX vault target is not a file: ${normalizedRelativePath}.`);
+    }
+
+    const noteHashAlgorithm = typeof metadata?.noteHashAlgorithm === "string"
+        ? metadata.noteHashAlgorithm.trim().toLowerCase()
+        : "";
+    if (noteHashAlgorithm !== "sha256") {
+        throw new Error("noteHashAlgorithm must be sha256 for workspace-aware-vault runs.");
+    }
+
+    const expectedNoteHash = typeof metadata?.noteHash === "string"
+        ? metadata.noteHash.trim().toLowerCase()
+        : "";
+    if (!expectedNoteHash) {
+        throw new Error("noteHash is required for workspace-aware-vault runs.");
+    }
+
+    const actualNoteHash = hashVaultNoteContent(readFileSync(resolvedPath, "utf8"));
+    if (actualNoteHash !== expectedNoteHash) {
+        throw new Error("The DGX vault copy is not yet in sync with this note on this device.");
+    }
+
+    return {
+        cwd: resolveVaultWorkingDirectory(resolvedPath, config.vaultRoot),
+        resolvedVaultAbsoluteNotePath: resolvedPath,
+        resolvedVaultRelativePath: normalizedRelativePath,
+    };
 }
 
 function normalizeNarrationSegment(value) {
@@ -1215,8 +1351,14 @@ export function createDgxRuntimeBridge(options) {
             const result = await executeRun({
                 codexBin: config.codexBin,
                 promptText: run.promptText,
-                metadata: run.metadata,
-                cwd: config.workspaceRoot,
+                metadata: {
+                    ...run.metadata,
+                    ...(run.resolvedVaultAbsoluteNotePath ? {
+                        resolvedVaultAbsoluteNotePath: run.resolvedVaultAbsoluteNotePath,
+                        resolvedVaultRelativePath: run.resolvedVaultRelativePath,
+                    } : {}),
+                },
+                cwd: run.cwd,
                 signal: run.abortController.signal,
                 clientVersion: typeof run.metadata?.pluginVersion === "string"
                     ? run.metadata.pluginVersion
@@ -1351,11 +1493,22 @@ export function createDgxRuntimeBridge(options) {
                 return;
             }
 
+            let executionContext;
+            try {
+                executionContext = resolveRunExecutionContext(config, metadata);
+            } catch (error) {
+                sendJson(response, 409, createFailedEnvelope(summarizeError(error)));
+                return;
+            }
+
             const run = {
                 runId,
                 status: "queued",
                 promptText,
                 metadata,
+                cwd: executionContext.cwd,
+                resolvedVaultAbsoluteNotePath: executionContext.resolvedVaultAbsoluteNotePath,
+                resolvedVaultRelativePath: executionContext.resolvedVaultRelativePath,
                 replyText: null,
                 error: null,
                 createdAt: now(),
@@ -1372,6 +1525,7 @@ export function createDgxRuntimeBridge(options) {
             log("info", "run.started", {
                 runId,
                 capability: typeof metadata.capability === "string" ? metadata.capability : null,
+                vaultRelativePath: executionContext.resolvedVaultRelativePath,
                 remainingAllowance: allowance.remaining,
             });
 

@@ -25,7 +25,11 @@ import {
     buildAgentPromptContext,
     type AgentPromptContext,
 } from "./agentPromptContextPlanner";
-import type { RemoteRuntimeResponseEnvelope } from "./openclawRuntimeBridge";
+import {
+    hashRemoteRuntimeNoteContent,
+    type RemoteRuntimeResponseEnvelope,
+    type VaultBackedRemoteRuntimeMetadata,
+} from "./openclawRuntimeBridge";
 
 export interface SavedUserEntryEvent {
     threadId: string;
@@ -48,6 +52,7 @@ export interface CommentAgentHost {
     createCommentId(): string;
     now(): number;
     getPluginVersion(): string;
+    getVaultName(): string;
     refreshCommentViews?(): Promise<void>;
     getRuntimeWorkingDirectory(filePath: string): string | null;
     getCommentManager(): CommentManager;
@@ -638,17 +643,9 @@ export class CommentAgentController {
             response = await this.host.startRemoteRuntimeRun({
                 agent: options.run.requestedAgent,
                 promptText: options.runtimeContext.promptText,
-                metadata: {
-                    notePath: options.run.filePath,
-                    contextScope: options.runtimeContext.scope,
-                    pluginVersion: this.host.getPluginVersion(),
-                    capability: "workspace-aware",
-                },
+                metadata: await this.buildRemoteRuntimeMetadata(options.run, options.runtimeContext),
             });
-            remoteExecutionId = response.runId;
-            if (!remoteExecutionId) {
-                throw new Error("Remote runtime did not return a run id.");
-            }
+            remoteExecutionId = response.runId ?? null;
         }
 
         while (true) {
@@ -658,9 +655,6 @@ export class CommentAgentController {
 
             remoteExecutionId = response.runId ?? remoteExecutionId;
             remoteCursor = response.cursor ?? remoteCursor;
-            if (!remoteExecutionId) {
-                throw new Error("Remote runtime did not return a run id.");
-            }
 
             const updatedRun = await this.store.updateRun(options.run.id, (currentRun) => ({
                 ...currentRun,
@@ -750,12 +744,39 @@ export class CommentAgentController {
                 return;
             }
 
+            if (!remoteExecutionId) {
+                throw new Error("Remote runtime did not return a run id.");
+            }
+
             const nextPollDelayMs = response.events.length > 0
                 ? REMOTE_FAST_POLL_INTERVAL_MS
                 : REMOTE_POLL_INTERVAL_MS;
             await sleep(nextPollDelayMs);
             response = await this.host.pollRemoteRuntimeRun(remoteExecutionId, remoteCursor);
         }
+    }
+
+    private async buildRemoteRuntimeMetadata(
+        run: Pick<AgentRunRecord, "filePath" | "triggerEntryId">,
+        runtimeContext: AgentPromptContext,
+    ): Promise<VaultBackedRemoteRuntimeMetadata> {
+        const file = this.host.getFileByPath(run.filePath);
+        if (!file || !this.host.isCommentableFile(file) || !/\.md$/i.test(file.path)) {
+            throw new Error("Remote vault-backed execution requires an active markdown note.");
+        }
+
+        const noteContent = await this.host.getCurrentNoteContent(file);
+        return {
+            vaultName: this.host.getVaultName(),
+            vaultRelativePath: run.filePath.replace(/\\/g, "/"),
+            contextScope: runtimeContext.scope,
+            pluginVersion: this.host.getPluginVersion(),
+            capability: "workspace-aware-vault",
+            noteHash: await hashRemoteRuntimeNoteContent(noteContent),
+            noteHashAlgorithm: "sha256",
+            triggerEntryId: run.triggerEntryId,
+            notePath: run.filePath,
+        };
     }
 
     private async completeRunWithReply(options: {
