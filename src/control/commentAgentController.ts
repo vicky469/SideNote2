@@ -98,7 +98,8 @@ const AGENT_REMOTE_RESUME_FAILED_NOTICE = "The previous remote run could not be 
 const AGENT_REGENERATE_REPLACE_FAILED_NOTICE = "Unable to replace the previous agent reply.";
 const AGENT_CANCELLED_NOTICE = "Cancelled.";
 const AGENT_STATUS_CANCELLED = "Cancelled";
-const REMOTE_POLL_INTERVAL_MS = 1200;
+const REMOTE_POLL_INTERVAL_MS = 700;
+const REMOTE_FAST_POLL_INTERVAL_MS = 200;
 
 interface ActiveRunExecution {
     runId: string;
@@ -641,7 +642,7 @@ export class CommentAgentController {
                     notePath: options.run.filePath,
                     contextScope: options.runtimeContext.scope,
                     pluginVersion: this.host.getPluginVersion(),
-                    capability: "reply-only",
+                    capability: "workspace-aware",
                 },
             });
             remoteExecutionId = response.runId;
@@ -749,7 +750,10 @@ export class CommentAgentController {
                 return;
             }
 
-            await sleep(REMOTE_POLL_INTERVAL_MS);
+            const nextPollDelayMs = response.events.length > 0
+                ? REMOTE_FAST_POLL_INTERVAL_MS
+                : REMOTE_POLL_INTERVAL_MS;
+            await sleep(nextPollDelayMs);
             response = await this.host.pollRemoteRuntimeRun(remoteExecutionId, remoteCursor);
         }
     }

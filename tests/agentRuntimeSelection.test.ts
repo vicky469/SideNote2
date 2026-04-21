@@ -8,7 +8,7 @@ import {
     resolveAgentRuntimeSelection,
 } from "../src/control/agentRuntimeSelection";
 
-test("resolveAgentRuntimeSelection prefers local on desktop when Codex is available", () => {
+test("resolveAgentRuntimeSelection prefers remote in auto mode when both runtimes are available", () => {
     assert.deepEqual(resolveAgentRuntimeSelection({
         modePreference: "auto",
         localDiagnostics: {
@@ -19,9 +19,9 @@ test("resolveAgentRuntimeSelection prefers local on desktop when Codex is availa
         remoteRuntimeBearerToken: "secret",
     }), {
         kind: "resolved",
-        runtime: "direct-cli",
+        runtime: "openclaw-acp",
         modePreference: "auto",
-        ownershipMessage: "Using your local Codex setup",
+        ownershipMessage: "Using remote runtime",
     });
 });
 
@@ -38,32 +38,33 @@ test("resolveAgentRuntimeSelection uses remote on mobile when a remote runtime i
         kind: "resolved",
         runtime: "openclaw-acp",
         modePreference: "auto",
-        ownershipMessage: "Using your remote runtime",
+        ownershipMessage: "Using remote runtime",
     });
 });
 
-test("resolveAgentRuntimeSelection blocks on desktop when local Codex is unavailable", () => {
+test("resolveAgentRuntimeSelection falls back to local in auto mode when remote is unavailable", () => {
+    assert.deepEqual(resolveAgentRuntimeSelection({
+        modePreference: "auto",
+        localDiagnostics: {
+            status: "available",
+            message: "Codex is available.",
+        },
+        remoteRuntimeBaseUrl: "",
+        remoteRuntimeBearerToken: "",
+    }), {
+        kind: "resolved",
+        runtime: "direct-cli",
+        modePreference: "auto",
+        ownershipMessage: "Using your local Codex setup",
+    });
+});
+
+test("resolveAgentRuntimeSelection blocks in auto mode when neither runtime is available", () => {
     assert.deepEqual(resolveAgentRuntimeSelection({
         modePreference: "auto",
         localDiagnostics: {
             status: "missing",
             message: "Codex was not found on PATH.",
-        },
-        remoteRuntimeBaseUrl: "https://remote.example.com",
-        remoteRuntimeBearerToken: "secret",
-    }), {
-        kind: "blocked",
-        modePreference: "auto",
-        notice: "Local desktop runtime is unavailable on this device.",
-    });
-});
-
-test("resolveAgentRuntimeSelection blocks on mobile when the remote runtime is not configured", () => {
-    assert.deepEqual(resolveAgentRuntimeSelection({
-        modePreference: "auto",
-        localDiagnostics: {
-            status: "unsupported",
-            message: "Built-in @codex requires desktop Obsidian.",
         },
         remoteRuntimeBaseUrl: "",
         remoteRuntimeBearerToken: "",
@@ -74,13 +75,97 @@ test("resolveAgentRuntimeSelection blocks on mobile when the remote runtime is n
     });
 });
 
-test("getRemoteRuntimeAvailability enforces https or localhost http", () => {
+test("resolveAgentRuntimeSelection honors explicit remote mode", () => {
+    assert.deepEqual(resolveAgentRuntimeSelection({
+        modePreference: "remote",
+        localDiagnostics: {
+            status: "available",
+            message: "Codex is available.",
+        },
+        remoteRuntimeBaseUrl: "https://remote.example.com",
+        remoteRuntimeBearerToken: "secret",
+    }), {
+        kind: "resolved",
+        runtime: "openclaw-acp",
+        modePreference: "remote",
+        ownershipMessage: "Using remote runtime",
+    });
+});
+
+test("resolveAgentRuntimeSelection blocks in explicit remote mode when remote is unavailable", () => {
+    assert.deepEqual(resolveAgentRuntimeSelection({
+        modePreference: "remote",
+        localDiagnostics: {
+            status: "available",
+            message: "Codex is available.",
+        },
+        remoteRuntimeBaseUrl: "",
+        remoteRuntimeBearerToken: "",
+    }), {
+        kind: "blocked",
+        modePreference: "remote",
+        notice: "Remote bridge is not configured.",
+    });
+});
+
+test("resolveAgentRuntimeSelection honors explicit local mode", () => {
+    assert.deepEqual(resolveAgentRuntimeSelection({
+        modePreference: "local",
+        localDiagnostics: {
+            status: "available",
+            message: "Codex is available.",
+        },
+        remoteRuntimeBaseUrl: "https://remote.example.com",
+        remoteRuntimeBearerToken: "secret",
+    }), {
+        kind: "resolved",
+        runtime: "direct-cli",
+        modePreference: "local",
+        ownershipMessage: "Using your local Codex setup",
+    });
+});
+
+test("resolveAgentRuntimeSelection blocks in explicit local mode when local is unavailable", () => {
+    assert.deepEqual(resolveAgentRuntimeSelection({
+        modePreference: "local",
+        localDiagnostics: {
+            status: "unsupported",
+            message: "Built-in @codex requires desktop Obsidian.",
+        },
+        remoteRuntimeBaseUrl: "https://remote.example.com",
+        remoteRuntimeBearerToken: "secret",
+    }), {
+        kind: "blocked",
+        modePreference: "local",
+        notice: "Local desktop runtime is unavailable on this device.",
+    });
+});
+
+test("getRemoteRuntimeAvailability allows HTTP for localhost and private LAN addresses only", () => {
     assert.deepEqual(getRemoteRuntimeAvailability({
         remoteRuntimeBaseUrl: "http://192.168.1.9:3000",
         remoteRuntimeBearerToken: "secret",
     }), {
+        status: "available",
+        message: "Using remote runtime",
+        originHost: "192.168.1.9:3000",
+    });
+
+    assert.deepEqual(getRemoteRuntimeAvailability({
+        remoteRuntimeBaseUrl: "http://10.0.0.8:4215",
+        remoteRuntimeBearerToken: "secret",
+    }), {
+        status: "available",
+        message: "Using remote runtime",
+        originHost: "10.0.0.8:4215",
+    });
+
+    assert.deepEqual(getRemoteRuntimeAvailability({
+        remoteRuntimeBaseUrl: "http://8.8.8.8:3000",
+        remoteRuntimeBearerToken: "secret",
+    }), {
         status: "disallowed-url",
-        message: "Remote bridge must use HTTPS, or HTTP only for localhost development.",
+        message: "Remote bridge must use HTTPS, or HTTP only for localhost and private LAN development.",
         originHost: null,
     });
 
@@ -89,16 +174,16 @@ test("getRemoteRuntimeAvailability enforces https or localhost http", () => {
         remoteRuntimeBearerToken: "secret",
     }), {
         status: "available",
-        message: "Using your remote runtime",
+        message: "Using remote runtime",
         originHost: "localhost:3000",
     });
 });
 
 test("agent runtime labels stay ownership-explicit", () => {
     assert.equal(getAgentRuntimeOwnershipMessage("direct-cli"), "Using your local Codex setup");
-    assert.equal(getAgentRuntimeOwnershipMessage("openclaw-acp"), "Using your remote runtime");
+    assert.equal(getAgentRuntimeOwnershipMessage("openclaw-acp"), "Using remote runtime");
     assert.equal(getAgentRuntimeStatusLabel("direct-cli"), "Runtime: Local desktop");
     assert.equal(getAgentRuntimeStatusLabel("openclaw-acp"), "Runtime: Your remote runtime");
     assert.equal(getAgentRuntimeCapabilityLabel("direct-cli"), "Capability: Workspace-aware");
-    assert.equal(getAgentRuntimeCapabilityLabel("openclaw-acp"), "Capability: Reply only");
+    assert.equal(getAgentRuntimeCapabilityLabel("openclaw-acp"), "Capability: Workspace-aware");
 });

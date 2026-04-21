@@ -1,4 +1,5 @@
 import type { CodexRuntimeDiagnostics } from "../../control/agentRuntimeAdapter";
+import type { AgentRuntimeSelection } from "../../control/agentRuntimeSelection";
 
 export interface CodexRuntimeStatusPresentation {
     title: string;
@@ -30,6 +31,22 @@ export function getCodexRuntimeStatusPresentation(
                 description: diagnostics.message || CHECKING_MESSAGE,
             };
     }
+}
+
+export function getCodexRuntimeStatusPresentationForSelection(
+    selection: AgentRuntimeSelection,
+): CodexRuntimeStatusPresentation {
+    if (selection.kind === "resolved") {
+        return {
+            title: "Codex runtime: Available",
+            description: selection.ownershipMessage,
+        };
+    }
+
+    return {
+        title: "Codex runtime: Unavailable",
+        description: selection.notice,
+    };
 }
 
 export function createCheckingCodexRuntimeDiagnostics(): CodexRuntimeDiagnostics {

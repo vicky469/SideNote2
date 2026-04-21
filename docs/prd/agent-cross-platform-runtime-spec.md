@@ -12,33 +12,33 @@ Draft implementation spec based on:
 
 Implement the first cross-platform `@codex` runtime layer so that:
 
-1. SideNote2 can resolve between local desktop and BYO remote before dispatch.
+1. SideNote2 can resolve between local desktop and remote runtime before dispatch.
 2. Desktop keeps the current local path.
-3. Desktop and mobile can use a user-owned remote path for reply generation.
+3. Desktop and mobile can use a configured remote path for Codex execution against a bridge-managed workspace.
 4. Compute ownership is always explicit and SideNote2 never uses author-paid compute.
 
 ## Final Decisions
 
 - Phase 1 ships exactly two backends:
   - `direct-cli` = local desktop Codex runtime
-  - `openclaw-acp` = BYO remote bridge runtime
+  - `openclaw-acp` = remote bridge runtime
 - User-facing mode setting is `auto | local | remote`.
-- `Auto` prefers local when available, otherwise uses configured BYO remote, otherwise blocks.
+- `Auto` prefers configured remote when available, otherwise uses local, otherwise blocks.
 - `Local` never falls through to remote.
 - `Remote` never falls through to local.
-- BYO remote v1 means a user-managed HTTPS bridge endpoint plus bearer token. SideNote2 does not accept raw provider API keys in plugin settings and does not host compute.
-- Remote v1 is reply-only and note-context-only. It may stream text, support cancel, and write the final reply back into the thread, but it does not perform arbitrary workspace edits.
-- SideNote2 continues to own note writes. Both local and remote runtimes return reply text only.
-- Product copy must say `Using your local Codex setup` or `Using your remote runtime` before and during a run.
+- Remote runtime v1 means an HTTPS bridge endpoint plus bearer token. SideNote2 does not accept raw provider API keys in plugin settings and does not host compute.
+- Remote v1 is a bridge-managed Codex runtime. It may stream text, support cancel, inspect or modify the configured bridge workspace, and return reply text back into the thread.
+- SideNote2 continues to own note writes. Both local and remote runtimes return reply text only to the plugin, even when they edit workspace files.
+- Product copy must say `Using your local Codex setup` or `Using remote runtime` before and during a run.
 
 ## Scope
 
 In scope:
 
 - runtime abstraction layer and resolved-runtime selection
-- settings for explicit mode selection and BYO remote config
+- settings for explicit mode selection and remote-runtime config
 - desktop local runtime preservation
-- mobile-compatible BYO remote reply generation
+- mobile-compatible remote runtime execution
 - remote progress, partial text, cancel, and retry
 - persisted remote execution ids for reconnect after app restart
 - ownership/status copy in settings and thread UI
@@ -49,7 +49,7 @@ Out of scope:
 - SideNote2-hosted runtime
 - raw provider API key entry
 - OAuth/account linking
-- arbitrary file edits or repo-aware coding through remote runtime
+- arbitrary access outside the configured bridge workspace
 - background cross-device sync across different devices
 - multi-provider UI
 - multiple concurrent runs
@@ -73,7 +73,7 @@ No author-owned or SideNote2-hosted compute may appear anywhere in settings, fal
 ### Rule 3: Auto Is The Only Allowed Fallback Mode
 
 Automatic switching is allowed only inside `Auto`.
-If the user explicitly picks `Local desktop` or `Bring your own remote`, unavailable mode selection blocks with setup guidance instead of rerouting.
+If the user explicitly picks `Local desktop` or `Remote runtime`, unavailable mode selection blocks with setup guidance instead of rerouting.
 
 ### Rule 4: Remote Capability Is Reply-Only
 
@@ -105,22 +105,22 @@ Add an `Agent runtime` section with:
 - `Runtime mode` dropdown:
   - `Auto`
   - `Local desktop`
-  - `Bring your own remote`
+  - `Remote runtime`
 - `Local runtime` status row
 - `Remote runtime base URL`
 - `Remote runtime token`
 - optional `Test connection` button
 - capability copy:
   - local: `Best for workspace-aware coding on desktop`
-  - remote: `Reply generation for desktop and mobile`
+  - remote: `Best for remote Codex runs on desktop and mobile`
 
 ### Availability Copy
 
 Use concise, ownership-explicit copy:
 
 - `Using your local Codex setup`
-- `Using your remote runtime`
-- `Bring your own remote is not configured`
+- `Using remote runtime`
+- `Remote runtime is not configured`
 - `Local desktop runtime is unavailable on this device`
 
 ### Pre-Dispatch Gating
@@ -138,7 +138,7 @@ While queued or running, show the resolved runtime label on the run card or stat
 - `Runtime: Local desktop`
 - `Runtime: Your remote runtime`
 
-Remote v1 should also show `Capability: Reply only` in settings, not necessarily on every run card.
+Remote v1 should also show `Capability: Workspace-aware` for the blessed DGX-backed route until negotiated bridge capabilities exist.
 
 ## Runtime Resolution Spec
 
@@ -170,18 +170,18 @@ if modePreference === "remote":
   runtime = "openclaw-acp"
 
 if modePreference === "auto":
-  if localAvailable:
-    runtime = "direct-cli"
-  else if remoteConfigured:
+  if remoteConfigured:
     runtime = "openclaw-acp"
+  else if localAvailable:
+    runtime = "direct-cli"
   else:
     block
 ```
 
 Notes:
 
-- desktop `Auto` prefers local
-- mobile `Auto` normally resolves to remote when configured
+- `Auto` prefers remote on both desktop and mobile when configured
+- local remains available as explicit `Local desktop` mode and as fallback when remote is not configured
 - `Auto` does not imply any author-paid fallback
 
 ## Runtime Abstraction
@@ -212,7 +212,7 @@ Behavior:
 
 ## Remote Bridge Contract
 
-Phase 1 BYO remote is a simple user-managed bridge contract, not provider-specific API wiring inside the plugin.
+Phase 1 remote runtime is a simple bridge contract, not provider-specific API wiring inside the plugin.
 
 ### Authentication
 
@@ -234,7 +234,7 @@ Request body:
     "notePath": "docs/prd/agent-cross-platform-runtime-plan.md",
     "contextScope": "anchor",
     "pluginVersion": "x.y.z",
-    "capability": "reply-only"
+    "capability": "workspace-aware"
   }
 }
 ```
@@ -417,7 +417,7 @@ Add or update tests for:
 - remote config gating notices
 - remote start / poll / cancel happy path
 - remote restart reconciliation
-- no silent fallback when `Local desktop` or `Bring your own remote` is explicitly selected
+- no silent fallback when `Local desktop` or `Remote runtime` is explicitly selected
 - run record persistence for `openclaw-acp`
 - log redaction of remote credentials
 
@@ -434,9 +434,10 @@ Add or update tests for:
 
 This spec is successful when:
 
-- desktop `Auto` keeps using local when local is available
-- mobile can run `@codex` through BYO remote
-- explicit `Local desktop` and `Bring your own remote` modes never silently reroute
+- `Auto` uses remote when remote is configured and available
+- mobile can run `@codex` through remote runtime
+- local desktop still works as explicit local mode and as fallback when remote is unavailable
+- explicit `Local desktop` and `Remote runtime` modes never silently reroute
 - the user can tell which runtime owns the run before and during execution
 - remote runs can stream partial text, cancel, and recover after app restart
 - SideNote2 never uses author-paid compute in this rollout

@@ -33,8 +33,11 @@ import {
 } from "./control/agentRuntimeSelection";
 import {
     cancelRemoteRuntimeRun,
+    createRemoteRuntimeRequester,
     pollRemoteRuntimeRun,
+    probeRemoteRuntimeBridge,
     startRemoteRuntimeRun,
+    type RemoteRuntimeHealthEnvelope,
     type RemoteRuntimeResponseEnvelope,
 } from "./control/openclawRuntimeBridge";
 import { buildLocalSecretStorageKey, LocalSecretStore } from "./control/localSecretStore";
@@ -110,6 +113,12 @@ export default class SideNote2 extends Plugin {
     private logService: SideNote2LogService | null = null;
     private supportLogLocationAvailable: boolean | null = null;
     private runtime: "local" | "release" = "release";
+    private readonly remoteRuntimeRequester = createRemoteRuntimeRequester({
+        primaryRequester: requestUrl,
+        fetcher: typeof globalThis.fetch === "function"
+            ? globalThis.fetch.bind(globalThis)
+            : undefined,
+    });
     private readonly localSecretStore = new LocalSecretStore(
         buildLocalSecretStorageKey(this.manifest.id, this.app.vault.getName()),
         getSafeLocalStorage(),
@@ -604,7 +613,7 @@ export default class SideNote2 extends Plugin {
         promptText: string;
         metadata: Record<string, unknown>;
     }): Promise<RemoteRuntimeResponseEnvelope> {
-        return startRemoteRuntimeRun(requestUrl, {
+        return startRemoteRuntimeRun(this.remoteRuntimeRequester, {
             baseUrl: this.getRemoteRuntimeBaseUrl(),
             bearerToken: this.getRemoteRuntimeBearerToken(),
             agent: options.agent,
@@ -614,7 +623,7 @@ export default class SideNote2 extends Plugin {
     }
 
     public async pollRemoteRuntimeRun(runId: string, afterCursor?: string | null): Promise<RemoteRuntimeResponseEnvelope> {
-        return pollRemoteRuntimeRun(requestUrl, {
+        return pollRemoteRuntimeRun(this.remoteRuntimeRequester, {
             baseUrl: this.getRemoteRuntimeBaseUrl(),
             bearerToken: this.getRemoteRuntimeBearerToken(),
             runId,
@@ -623,10 +632,17 @@ export default class SideNote2 extends Plugin {
     }
 
     public async cancelRemoteRuntimeRun(runId: string): Promise<RemoteRuntimeResponseEnvelope> {
-        return cancelRemoteRuntimeRun(requestUrl, {
+        return cancelRemoteRuntimeRun(this.remoteRuntimeRequester, {
             baseUrl: this.getRemoteRuntimeBaseUrl(),
             bearerToken: this.getRemoteRuntimeBearerToken(),
             runId,
+        });
+    }
+
+    public async probeRemoteRuntimeBridge(): Promise<RemoteRuntimeHealthEnvelope> {
+        return probeRemoteRuntimeBridge(this.remoteRuntimeRequester, {
+            baseUrl: this.getRemoteRuntimeBaseUrl(),
+            bearerToken: this.getRemoteRuntimeBearerToken(),
         });
     }
 

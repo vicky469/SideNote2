@@ -1,4 +1,4 @@
-import { App, PluginSettingTab, Setting } from "obsidian";
+import { App, Notice, PluginSettingTab, Setting } from "obsidian";
 import {
     normalizeAgentRuntimeModePreference,
     normalizeRemoteRuntimeBaseUrl,
@@ -13,6 +13,7 @@ import type { CodexRuntimeDiagnostics } from "../../control/agentRuntimeAdapter"
 import {
     createCheckingCodexRuntimeDiagnostics,
     getCodexRuntimeStatusPresentation,
+    getCodexRuntimeStatusPresentationForSelection,
 } from "./codexRuntimeStatus";
 import type SideNote2 from "../../main";
 
@@ -58,12 +59,23 @@ export default class SideNote2SettingTab extends PluginSettingTab {
         const refreshCodexStatus = async () => {
             const refreshToken = ++this.codexStatusRefreshToken;
             applyCodexStatus(createCheckingCodexRuntimeDiagnostics());
-            const diagnostics = await this.plugin.getCodexRuntimeDiagnostics();
-            if (refreshToken !== this.codexStatusRefreshToken) {
-                return;
-            }
+            try {
+                const selection = await this.plugin.resolveAgentRuntimeSelection();
+                if (refreshToken !== this.codexStatusRefreshToken) {
+                    return;
+                }
 
-            applyCodexStatus(diagnostics);
+                const presentation = getCodexRuntimeStatusPresentationForSelection(selection);
+                codexStatusSetting.setName(presentation.title);
+                codexStatusSetting.setDesc(presentation.description);
+            } catch {
+                const diagnostics = await this.plugin.getCodexRuntimeDiagnostics();
+                if (refreshToken !== this.codexStatusRefreshToken) {
+                    return;
+                }
+
+                applyCodexStatus(diagnostics);
+            }
         };
         codexStatusSetting.addButton((button) =>
             button
@@ -81,27 +93,9 @@ export default class SideNote2SettingTab extends PluginSettingTab {
         }
 
         remoteBridgeDetails.createEl("summary", { text: "Advanced Remote Bridge" });
-        remoteBridgeDetails.createEl("p", {
-            text: "Use this only for developer-managed remote testing. This is not OpenAI account sign-in or subscription detection.",
-        });
-
-        const remoteStatusSetting = new Setting(remoteBridgeDetails)
-            .setName("Remote bridge: Not configured")
-            .setDesc("Remote bridge is not configured.");
-        const applyRemoteStatus = () => {
-            const availability = this.plugin.getRemoteRuntimeAvailability();
-            remoteStatusSetting.setName(
-                availability.status === "available"
-                    ? "Remote bridge: Available"
-                    : "Remote bridge: Not configured",
-            );
-            remoteStatusSetting.setDesc(availability.message);
-        };
-        applyRemoteStatus();
-
         new Setting(remoteBridgeDetails)
             .setName("Remote bridge base URL")
-            .setDesc("Developer-managed bridge endpoint. Use HTTPS, or HTTP only for localhost development.")
+            .setDesc("Developer-managed bridge endpoint. Use HTTPS, or HTTP only for localhost and private LAN development.")
             .addText((text) =>
                 text
                     .setPlaceholder("https://remote.example.com")
@@ -109,7 +103,6 @@ export default class SideNote2SettingTab extends PluginSettingTab {
                     .onChange(async (value) => {
                         await this.plugin.setRemoteRuntimeBaseUrl(value);
                         text.setValue(this.plugin.getRemoteRuntimeBaseUrl());
-                        applyRemoteStatus();
                     })
             );
 
@@ -124,9 +117,34 @@ export default class SideNote2SettingTab extends PluginSettingTab {
                     .onChange(async (value) => {
                         await this.plugin.setRemoteRuntimeBearerToken(value);
                         text.setValue(this.plugin.getRemoteRuntimeBearerToken());
-                        applyRemoteStatus();
                     });
             });
+
+        new Setting(remoteBridgeDetails)
+            .setName("Test remote bridge")
+            .setDesc("Checks the bridge from inside Obsidian on this device.")
+            .addButton((button) =>
+                button
+                    .setButtonText("Test connection")
+                    .onClick(async () => {
+                        button.setDisabled(true);
+                        try {
+                            const result = await this.plugin.probeRemoteRuntimeBridge();
+                            if (result.ok) {
+                                new Notice(`Remote bridge reachable: ${result.publicBaseUrl ?? result.status ?? "ok"}`);
+                            } else {
+                                new Notice(`Remote bridge responded with HTTP ${result.httpStatus}.`);
+                            }
+                        } catch (error) {
+                            const message = error instanceof Error && error.message.trim()
+                                ? error.message.trim()
+                                : "Remote bridge test failed.";
+                            new Notice(message, 10000);
+                        } finally {
+                            button.setDisabled(false);
+                        }
+                    })
+            );
 
         containerEl.createEl("h2", { text: "Index Note" });
 

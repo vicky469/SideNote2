@@ -1,4 +1,4 @@
-import type { RequestUrlParam, RequestUrlResponse } from "obsidian";
+import type { RequestUrlParam } from "obsidian";
 
 export type RemoteRuntimeTerminalStatus = "completed" | "failed" | "cancelled";
 export type RemoteRuntimeStatus = "queued" | "running" | RemoteRuntimeTerminalStatus;
@@ -25,7 +25,31 @@ export interface RemoteRuntimeBridgeRequest {
     bearerToken: string;
 }
 
-export type RemoteRuntimeRequester = (request: RequestUrlParam) => Promise<RequestUrlResponse>;
+export interface RemoteRuntimeRequesterResponse {
+    status: number;
+    json: unknown;
+}
+
+export type RemoteRuntimeRequester = (request: RequestUrlParam) => Promise<RemoteRuntimeRequesterResponse>;
+
+type FetchLike = (
+    input: string,
+    init?: {
+        method?: string;
+        headers?: Record<string, string>;
+        body?: string;
+    },
+) => Promise<{
+    status: number;
+    text(): Promise<string>;
+}>;
+
+export interface RemoteRuntimeHealthEnvelope {
+    httpStatus: number;
+    ok: boolean;
+    status: string | null;
+    publicBaseUrl: string | null;
+}
 
 function isRecord(value: unknown): value is Record<string, unknown> {
     return !!value && typeof value === "object" && !Array.isArray(value);
@@ -141,6 +165,82 @@ function buildRequest(
     };
 }
 
+function shouldAttemptFetchFallback(url: string): boolean {
+    try {
+        const protocol = new URL(url).protocol;
+        return protocol === "http:" || protocol === "https:";
+    } catch {
+        return false;
+    }
+}
+
+async function requestViaFetch(fetcher: FetchLike, request: RequestUrlParam): Promise<RemoteRuntimeRequesterResponse> {
+    const response = await fetcher(request.url, {
+        method: request.method,
+        headers: request.headers,
+        body: typeof request.body === "string" ? request.body : undefined,
+    });
+    const text = await response.text();
+    let json: unknown = {};
+    if (text.trim()) {
+        try {
+            json = JSON.parse(text);
+        } catch {
+            json = {};
+        }
+    }
+
+    return {
+        status: response.status,
+        json,
+    };
+}
+
+export function createRemoteRuntimeRequester(options: {
+    primaryRequester: RemoteRuntimeRequester;
+    fetcher?: FetchLike;
+}): RemoteRuntimeRequester {
+    return async (request) => {
+        try {
+            return await options.primaryRequester(request);
+        } catch (primaryError) {
+            if (!options.fetcher || !shouldAttemptFetchFallback(request.url)) {
+                throw primaryError;
+            }
+
+            try {
+                return await requestViaFetch(options.fetcher, request);
+            } catch (fetchError) {
+                if (primaryError instanceof Error && fetchError instanceof Error) {
+                    throw new Error(`${primaryError.message} (fetch fallback also failed: ${fetchError.message})`);
+                }
+                throw fetchError;
+            }
+        }
+    };
+}
+
+function summarizeRequesterError(error: unknown, options: RemoteRuntimeBridgeRequest): Error {
+    const message = error instanceof Error && error.message.trim()
+        ? error.message.trim()
+        : "Remote bridge request failed.";
+    const protocol = (() => {
+        try {
+            return new URL(options.baseUrl).protocol;
+        } catch {
+            return null;
+        }
+    })();
+
+    if (protocol === "http:") {
+        return new Error(
+            `Remote bridge request failed before the server responded. ${message} If browser access works but SideNote2 still fails on mobile, try HTTPS or check the app's local-network permission.`,
+        );
+    }
+
+    return new Error(`Remote bridge request failed before the server responded. ${message}`);
+}
+
 export async function startRemoteRuntimeRun(
     requester: RemoteRuntimeRequester,
     options: RemoteRuntimeBridgeRequest & {
@@ -149,12 +249,16 @@ export async function startRemoteRuntimeRun(
         metadata: Record<string, unknown>;
     },
 ): Promise<RemoteRuntimeResponseEnvelope> {
-    const response = await requester(buildRequest(options, "v1/sidenote2/runs", "POST", {
-        agent: options.agent,
-        promptText: options.promptText,
-        metadata: options.metadata,
-    }));
-    return parseRemoteRuntimeResponseEnvelope(response.json, response.status);
+    try {
+        const response = await requester(buildRequest(options, "v1/sidenote2/runs", "POST", {
+            agent: options.agent,
+            promptText: options.promptText,
+            metadata: options.metadata,
+        }));
+        return parseRemoteRuntimeResponseEnvelope(response.json, response.status);
+    } catch (error) {
+        throw summarizeRequesterError(error, options);
+    }
 }
 
 export async function pollRemoteRuntimeRun(
@@ -168,14 +272,18 @@ export async function pollRemoteRuntimeRun(
     if (options.afterCursor) {
         query.set("after", options.afterCursor);
     }
-    const response = await requester(buildRequest(
-        options,
-        `v1/sidenote2/runs/${encodeURIComponent(options.runId)}`,
-        "GET",
-        null,
-        query,
-    ));
-    return parseRemoteRuntimeResponseEnvelope(response.json, response.status);
+    try {
+        const response = await requester(buildRequest(
+            options,
+            `v1/sidenote2/runs/${encodeURIComponent(options.runId)}`,
+            "GET",
+            null,
+            query,
+        ));
+        return parseRemoteRuntimeResponseEnvelope(response.json, response.status);
+    } catch (error) {
+        throw summarizeRequesterError(error, options);
+    }
 }
 
 export async function cancelRemoteRuntimeRun(
@@ -184,11 +292,33 @@ export async function cancelRemoteRuntimeRun(
         runId: string;
     },
 ): Promise<RemoteRuntimeResponseEnvelope> {
-    const response = await requester(buildRequest(
-        options,
-        `v1/sidenote2/runs/${encodeURIComponent(options.runId)}/cancel`,
-        "POST",
-        {},
-    ));
-    return parseRemoteRuntimeResponseEnvelope(response.json, response.status);
+    try {
+        const response = await requester(buildRequest(
+            options,
+            `v1/sidenote2/runs/${encodeURIComponent(options.runId)}/cancel`,
+            "POST",
+            {},
+        ));
+        return parseRemoteRuntimeResponseEnvelope(response.json, response.status);
+    } catch (error) {
+        throw summarizeRequesterError(error, options);
+    }
+}
+
+export async function probeRemoteRuntimeBridge(
+    requester: RemoteRuntimeRequester,
+    options: RemoteRuntimeBridgeRequest,
+): Promise<RemoteRuntimeHealthEnvelope> {
+    try {
+        const response = await requester(buildRequest(options, "healthz", "GET"));
+        const record = isRecord(response.json) ? response.json : {};
+        return {
+            httpStatus: response.status,
+            ok: record.ok === true,
+            status: normalizeOptionalString(record.status),
+            publicBaseUrl: normalizeOptionalString(record.publicBaseUrl),
+        };
+    } catch (error) {
+        throw summarizeRequesterError(error, options);
+    }
 }

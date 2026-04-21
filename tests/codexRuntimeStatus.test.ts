@@ -3,6 +3,7 @@ import test from "node:test";
 import {
     createCheckingCodexRuntimeDiagnostics,
     getCodexRuntimeStatusPresentation,
+    getCodexRuntimeStatusPresentationForSelection,
 } from "../src/ui/settings/codexRuntimeStatus";
 
 test("codex runtime status presentation reports available clearly", () => {
@@ -41,6 +42,35 @@ test("codex runtime status presentation exposes checking copy", () => {
         {
             title: "Codex runtime: Checking...",
             description: "Checking whether @codex is available...",
+        },
+    );
+});
+
+test("codex runtime status presentation reflects resolved remote runtime selection", () => {
+    assert.deepEqual(
+        getCodexRuntimeStatusPresentationForSelection({
+            kind: "resolved",
+            runtime: "openclaw-acp",
+            modePreference: "auto",
+            ownershipMessage: "Using remote runtime",
+        }),
+        {
+            title: "Codex runtime: Available",
+            description: "Using remote runtime",
+        },
+    );
+});
+
+test("codex runtime status presentation reflects blocked runtime selection", () => {
+    assert.deepEqual(
+        getCodexRuntimeStatusPresentationForSelection({
+            kind: "blocked",
+            modePreference: "auto",
+            notice: "Remote bridge is not configured.",
+        }),
+        {
+            title: "Codex runtime: Unavailable",
+            description: "Remote bridge is not configured.",
         },
     );
 });

@@ -144,6 +144,31 @@ npm run dev:install-built -- --vault "/path/to/synced-vault"
 - This is the right path when you want to test an unreleased build on mobile without pushing a new release.
 - The remote bridge token is stored only on the current device, so if you test remote `@codex` on mobile you still need to enter the token on the phone.
 
+## DGX Bridge
+
+The repo now includes a standalone DGX/mobile bridge runner for the existing remote runtime contract:
+
+```bash
+cp .env.example .env
+npm run dgx:bridge
+```
+
+- The runner listens for:
+  - `POST /v1/sidenote2/runs`
+  - `GET /v1/sidenote2/runs/{runId}?after=<cursor>`
+  - `POST /v1/sidenote2/runs/{runId}/cancel`
+- By default it reads `.env` from the repo root.
+- For local development, the example config uses:
+  - `SIDENOTE2_DGX_PUBLIC_BASE_URL=http://127.0.0.1:4215`
+  - `SIDENOTE2_DGX_WORKSPACE_ROOT=.dgx-workspace`
+- The bridge runs `codex app-server` inside `SIDENOTE2_DGX_WORKSPACE_ROOT`, so remote runs can inspect or edit that server-side workspace while still returning only the final thread reply to Obsidian.
+- On a real DGX deployment, change at minimum:
+  - `SIDENOTE2_DGX_BIND_HOST`
+  - `SIDENOTE2_DGX_PUBLIC_BASE_URL`
+  - `SIDENOTE2_DGX_WORKSPACE_ROOT`
+  - `SIDENOTE2_DGX_BRIDGE_BEARER_TOKEN`
+- The mobile plugin should then point its remote bridge base URL and token at that service.
+
 ## Debugging
 
 Persistent local logs are always on.

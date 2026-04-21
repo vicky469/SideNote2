@@ -2,8 +2,10 @@ import * as assert from "node:assert/strict";
 import test from "node:test";
 import {
     cancelRemoteRuntimeRun,
+    createRemoteRuntimeRequester,
     parseRemoteRuntimeResponseEnvelope,
     pollRemoteRuntimeRun,
+    probeRemoteRuntimeBridge,
     startRemoteRuntimeRun,
 } from "../src/control/openclawRuntimeBridge";
 
@@ -77,7 +79,7 @@ test("startRemoteRuntimeRun posts the SideNote2 prompt contract with bearer auth
         agent: "codex",
         promptText: "Prompt text",
         metadata: {
-            capability: "reply-only",
+            capability: "workspace-aware",
         },
     });
 
@@ -153,4 +155,83 @@ test("cancelRemoteRuntimeRun calls the cancel endpoint", async () => {
     });
 
     assert.equal(lastRequestUrl, "https://remote.example.com/v1/sidenote2/runs/remote-run-1/cancel");
+});
+
+test("probeRemoteRuntimeBridge calls healthz and normalizes the response", async () => {
+    let lastRequestUrl = "";
+    const response = await probeRemoteRuntimeBridge(async (request) => {
+        lastRequestUrl = request.url;
+        return {
+            status: 200,
+            headers: {},
+            arrayBuffer: new ArrayBuffer(0),
+            json: {
+                ok: true,
+                status: "available",
+                publicBaseUrl: "http://192.168.1.184:4215",
+            },
+            text: "",
+        };
+    }, {
+        baseUrl: "http://192.168.1.184:4215",
+        bearerToken: "secret-token",
+    });
+
+    assert.equal(lastRequestUrl, "http://192.168.1.184:4215/healthz");
+    assert.deepEqual(response, {
+        httpStatus: 200,
+        ok: true,
+        status: "available",
+        publicBaseUrl: "http://192.168.1.184:4215",
+    });
+});
+
+test("startRemoteRuntimeRun wraps requester transport errors with mobile bridge guidance", async () => {
+    await assert.rejects(
+        () => startRemoteRuntimeRun(async () => {
+            throw new Error("Request failed, the internet connection appears to be offline.");
+        }, {
+            baseUrl: "http://192.168.1.184:4215",
+            bearerToken: "secret-token",
+            agent: "codex",
+            promptText: "Prompt text",
+            metadata: {},
+        }),
+        /try HTTPS or check the app's local-network permission/i,
+    );
+});
+
+test("createRemoteRuntimeRequester falls back to fetch when the primary requester fails", async () => {
+    const requester = createRemoteRuntimeRequester({
+        primaryRequester: async () => {
+            throw new Error("Request failed, the internet connection appears to be offline.");
+        },
+        fetcher: async (url, init) => {
+            assert.equal(url, "http://192.168.1.184:4215/healthz");
+            assert.equal(init?.method, "GET");
+            assert.deepEqual(init?.headers, {
+                Authorization: "Bearer secret-token",
+            });
+            return {
+                status: 200,
+                text: async () => JSON.stringify({
+                    ok: true,
+                    status: "available",
+                    publicBaseUrl: "http://192.168.1.184:4215",
+                }),
+            };
+        },
+    });
+
+    const response = await probeRemoteRuntimeBridge(requester, {
+        baseUrl: "http://192.168.1.184:4215",
+        bearerToken: "secret-token",
+    });
+
+    assert.deepEqual(response, {
+        httpStatus: 200,
+        ok: true,
+        status: "available",
+        publicBaseUrl: "http://192.168.1.184:4215",
+    });
 });

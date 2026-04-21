@@ -323,7 +323,7 @@ test("comment agent controller can run through the remote bridge and persist res
             kind: "resolved",
             runtime: "openclaw-acp",
             modePreference: "remote",
-            ownershipMessage: "Using your remote runtime",
+            ownershipMessage: "Using remote runtime",
         },
         startRemoteRuntimeRun: async () => ({
             httpStatus: 200,
@@ -562,7 +562,7 @@ test("comment agent controller resumes a persisted remote run after restart inst
             kind: "resolved",
             runtime: "openclaw-acp",
             modePreference: "auto",
-            ownershipMessage: "Using your remote runtime",
+            ownershipMessage: "Using remote runtime",
         },
         pollRemoteRuntimeRun: async (_runId, afterCursor) => ({
             httpStatus: 200,

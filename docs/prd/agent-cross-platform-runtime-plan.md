@@ -12,9 +12,15 @@ Related docs:
 
 ## Summary
 
-Built-in `@codex` should work on both desktop and mobile Obsidian, but the current implementation is desktop-local only.
+Built-in `@codex` should work on both desktop and mobile Obsidian, but the current implementation is still uneven across runtimes.
 
-Today, SideNote2 runs `@codex` by launching the local Codex CLI from desktop Obsidian. That path does not exist on mobile.
+Today, SideNote2 has:
+
+- a mature local Codex CLI path on desktop
+- a remote bridge path that can work on desktop and mobile
+
+The remaining gap is not inventing remote runtime support from scratch.
+It is productizing runtime selection, access policy, and remote deployment.
 
 This plan adds a cross-platform runtime model with clear compute ownership:
 
@@ -25,7 +31,7 @@ This plan adds a cross-platform runtime model with clear compute ownership:
 The core product requirement is not only technical compatibility. It is also billing clarity:
 
 - do not silently spend the author's subscription on other users
-- keep the first rollout on user-owned access only
+- keep the first rollout explicit about who owns and pays for the remote runtime
 - make runtime ownership explicit before a run starts
 
 ## Problem
@@ -35,11 +41,11 @@ Current built-in `@codex` has three hard limits:
 1. It is desktop-only in practice.
    The runtime depends on desktop Node and process spawning, so mobile cannot execute it.
 
-2. It assumes local compute ownership.
-   The current flow works when the user has Codex available locally, but it has no model for cross-device or user-owned remote execution.
+2. The product model around remote execution is still incomplete.
+   The code now has a remote path, but settings, ownership copy, and access policy still need to be formalized.
 
 3. It has no billing or entitlement layer.
-   If SideNote2 ever starts proxying requests through a shared subscription, the product would need account, payment, and usage policy first. That is deferred.
+   If SideNote2 starts proxying requests through a DGX bridge, shared subscription, or operator-funded allowance, the product needs an explicit access and usage policy. Full billing is deferred.
 
 ## Product Goal
 
@@ -48,11 +54,11 @@ Make built-in `@codex` available on both desktop and mobile with a clear runtime
 The target user experience should be:
 
 - on desktop, `@codex` works with the user's own local setup when available
-- on mobile, `@codex` works through a supported remote path tied to the user's own access
+- on mobile, `@codex` works through a supported remote path
 - the UI always makes it clear whether the run uses:
   - the user's own local setup
-  - the user's own remote credentials, endpoint, or subscription
-- no run ever falls back to the author's paid compute invisibly
+  - a configured remote runtime
+- no run ever falls back to operator-paid compute invisibly
 
 ## Non-Goals
 
@@ -75,15 +81,15 @@ Each run should have a clear source of compute:
 
 The product should never quietly substitute one for another.
 
-### 2. User-owned access only in the first rollout
+### 2. Remote access policy must be explicit
 
-The first rollout should use only the user's own access:
+The first rollout may use a user-managed remote runtime or an operator-managed bridge, but it must stay explicit.
 
 That means:
 
-- no SideNote2-hosted compute in the initial implementation
-- no silent fallback from local to any author-paid runtime
+- no silent fallback from local to any operator-paid runtime
 - no hidden use of the author's Codex subscription just because the local runtime is unavailable
+- if a bridge offers free allowance or paid access, that policy belongs to the bridge product layer, not hidden plugin fallback logic
 
 ### 3. Desktop and mobile should share one thread UX
 
@@ -103,9 +109,9 @@ Not every runtime needs the same capabilities.
 For example:
 
 - local desktop runtime can support workspace-aware coding tasks
-- mobile remote runtime may start as reply-only or note-context-only
+- remote runtime should target the same workspace-aware Codex behavior when the bridge has a real server-side workspace checkout
 
-The UI should expose this honestly instead of pretending every mode can do everything.
+The UI should expose this honestly, or negotiate it later, instead of pretending every remote endpoint is identical.
 
 ## Runtime Modes
 
@@ -122,18 +128,18 @@ Characteristics:
 
 This should remain the default desktop path when it is available.
 
-### Mode B: Bring-your-own remote runtime
+### Mode B: Remote runtime
 
-Allow the user to configure their own remote endpoint or account-backed runtime for both desktop and mobile.
+Allow the user to configure a remote endpoint for both desktop and mobile.
 
 Characteristics:
 
 - works on desktop and mobile
-- uses the user's own credentials, endpoint, or provider account or subscription
-- SideNote2 does not pay for the compute
-- best first cross-platform path for reply generation and note-context tasks
+- uses a configured remote endpoint plus bearer auth
+- keeps provider or DGX specifics out of the plugin settings surface
+- best first cross-platform path for mobile support and remote execution
 
-This is the safest way to make `@codex` cross-platform without taking on hosted compute cost.
+This is the cleanest way to make `@codex` cross-platform while keeping the plugin surface provider-neutral.
 
 ## Product Decision
 
@@ -145,8 +151,8 @@ SideNote2 should support both desktop and mobile through a multi-runtime archite
 
 Recommended default policy:
 
-- desktop + local runtime available: prefer local
-- desktop or mobile + BYO remote configured: use BYO remote
+- remote runtime configured and available: prefer remote
+- otherwise local desktop runtime when available
 - no eligible runtime: show setup UI instead of attempting the run
 
 ## UX Requirements
@@ -157,20 +163,20 @@ Add a runtime section with explicit mode selection:
 
 - `Auto`
 - `Local desktop`
-- `Bring your own remote`
+- `Remote runtime`
 
 Recommended supporting fields:
 
 - remote base URL
-- remote auth token or account link state
-- provider/account status
+- remote auth token
+- bridge/provider status
 
 ### Status copy
 
 The settings and runtime UI should clearly describe ownership:
 
 - `Using your local Codex setup`
-- `Using your remote runtime`
+- `Using remote runtime`
 - `Uses your own account or endpoint`
 
 ### Run gating
@@ -178,7 +184,7 @@ The settings and runtime UI should clearly describe ownership:
 Before dispatch:
 
 - if the chosen mode is unavailable, block early with setup guidance
-- do not silently reroute a failed local run into any author-paid runtime
+- do not silently reroute a failed local run into any operator-paid runtime
 
 ## Capability Scope
 
@@ -217,7 +223,7 @@ Add a runtime abstraction that can choose between:
 
 This should be decided before dispatch, with a capability result the UI can read.
 
-### Phase 2: BYO remote runtime
+### Phase 2: Remote runtime
 
 Add a remote transport that works on both desktop and mobile:
 
@@ -247,14 +253,14 @@ After cross-platform reply generation is stable, evaluate richer modes for:
 
 - creating or updating markdown notes remotely
 - paired desktop execution
-- repository-aware coding tasks through a remote worker
+- multi-workspace selection and capability negotiation for remote workers
 
 ## Recommended Rollout Order
 
 1. Build runtime abstraction and explicit mode selection.
-2. Ship BYO remote reply generation on desktop and mobile.
+2. Ship remote-runtime Codex execution on desktop and mobile.
 3. Revisit hosted paid runtime only after billing and entitlement are real.
-4. Expand hosted or remote capability beyond reply-only after the base model is stable.
+4. Expand hosted or remote productization beyond the first bridge after the base model is stable.
 
 ## Acceptance Criteria
 
@@ -264,13 +270,13 @@ This plan is successful when:
 - desktop still supports the current local path
 - the plugin clearly tells the user which runtime is being used
 - the first rollout uses only user-owned access
-- local or BYO users are not silently switched onto author-paid compute
+- local or remote-runtime users are not silently switched onto operator-paid compute
 - the same SideNote2 thread UX works on both desktop and mobile
 
 ## Open Questions
 
-- Should BYO remote mean raw API key entry, account linking, or a user-managed bridge service?
-- For BYO remote, should the first version support one provider shape only, or a generic bridge contract?
+- Should remote runtime mean raw API key entry, account linking, or a user-managed bridge service?
+- For remote runtime, should the first version support one provider shape only, or a generic bridge contract?
 - If hosted runtime is revisited later, should it keep the same `@codex` label or use distinct branding in settings?
 
 <!-- SideNote2 comments
@@ -283,6 +289,7 @@ This plan is successful when:
     "endChar": 58,
     "selectedText": "1. Build runtime abstraction and explicit mode selection.\n2. Ship BYO remote reply generation on desktop and mobile.",
     "selectedTextHash": "6d80330ad2eefe7b33571ba8f3181321c553cc40e30dcb2be2eed09e1a64e08a",
+    "orphaned": true,
     "entries": [
       {
         "id": "01269687-ee71-4842-ada1-48896fb457f0",
