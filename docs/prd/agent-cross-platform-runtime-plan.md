@@ -283,13 +283,13 @@ This plan is successful when:
 [
   {
     "id": "01269687-ee71-4842-ada1-48896fb457f0",
-    "startLine": 253,
+    "startLine": 0,
     "startChar": 0,
-    "endLine": 254,
-    "endChar": 58,
-    "selectedText": "1. Build runtime abstraction and explicit mode selection.\n2. Ship BYO remote reply generation on desktop and mobile.",
-    "selectedTextHash": "6d80330ad2eefe7b33571ba8f3181321c553cc40e30dcb2be2eed09e1a64e08a",
-    "orphaned": true,
+    "endLine": 0,
+    "endChar": 35,
+    "selectedText": "# Agent Cross-Platform Runtime Plan",
+    "selectedTextHash": "5be8f37c3bb2d06fae06851f92f991cabb2c1ac287c3a017b9cee52daba382ed",
+    "deletedAt": 1776801139704,
     "entries": [
       {
         "id": "01269687-ee71-4842-ada1-48896fb457f0",
@@ -304,6 +304,25 @@ This plan is successful when:
     ],
     "createdAt": 1776739676586,
     "updatedAt": 1776739691237
+  },
+  {
+    "id": "952e97d1-68ba-449d-b789-5d20f0db9268",
+    "startLine": 0,
+    "startChar": 0,
+    "endLine": 0,
+    "endChar": 0,
+    "selectedText": "agent-cross-platform-runtime-plan",
+    "selectedTextHash": "6b7eeca05dc8ae6ccb0e2965192c67b195314f6ae606d2d4de3d41fc713df81b",
+    "anchorKind": "page",
+    "entries": [
+      {
+        "id": "952e97d1-68ba-449d-b789-5d20f0db9268",
+        "body": "Created [[agent-cross-platform-runtime-spec]].\n\nIt covers:\n- explicit `auto | local | remote` mode selection\n- `direct-cli` vs `openclaw-acp` runtime abstraction\n- BYO remote bridge contract for desktop + mobile reply generation\n- settings, availability gating, and ownership copy\n- remote run persistence, polling, cancel, and restart recovery\n- no-silent-fallback rules and data/logging constraints\n\nI also linked it from [[agent-cross-platform-runtime-plan]].",
+        "timestamp": 1776801140567
+      }
+    ],
+    "createdAt": 1776801140567,
+    "updatedAt": 1776801140567
   }
 ]
 -->

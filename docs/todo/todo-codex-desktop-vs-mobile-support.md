@@ -550,6 +550,7 @@ That would reduce drift between:
     "selectedText": "Right now it only exposes index-note image settings. So the plugin has a Codex runtime diagnostic, but no settings row that surfaces it to the user.",
     "selectedTextHash": "f5e9bdcc0893803b237ee1eff02a3ac5b0496edfe3d9a399235365018cdb703b",
     "orphaned": true,
+    "deletedAt": 1776800767901,
     "entries": [
       {
         "id": "4ac0ef3a-64bf-4e81-8cf7-844d69c7e8e5",

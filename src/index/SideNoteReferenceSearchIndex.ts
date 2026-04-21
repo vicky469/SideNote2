@@ -157,18 +157,13 @@ export class SideNoteReferenceSearchIndex {
 
         return this.documents
             .filter((document) => document.threadId !== options.excludeThreadId)
+            .filter((document) => normalizedSourceFilePath === null || normalizeNotePath(document.filePath) !== normalizedSourceFilePath)
             .map((document) => ({
                 document,
-                sameFile: normalizedSourceFilePath !== null
-                    && normalizeNotePath(document.filePath) === normalizedSourceFilePath,
                 matchRank: getQueryMatchRank(normalizedQuery, document),
             }))
             .filter((candidate) => candidate.matchRank !== Number.POSITIVE_INFINITY)
             .sort((left, right) => {
-                if (left.sameFile !== right.sameFile) {
-                    return left.sameFile ? -1 : 1;
-                }
-
                 if (left.matchRank !== right.matchRank) {
                     return left.matchRank - right.matchRank;
                 }

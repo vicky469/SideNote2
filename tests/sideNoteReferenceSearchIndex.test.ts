@@ -27,7 +27,7 @@ function createThread(overrides: Partial<CommentThread> = {}): CommentThread {
     };
 }
 
-test("side note reference search prefers same-file matches before equally matching results", () => {
+test("side note reference search excludes same-file matches for link suggestions", () => {
     const aggregateCommentIndex = new AggregateCommentIndex();
     aggregateCommentIndex.updateFile("docs/current.md", [
         createThread({
@@ -52,7 +52,6 @@ test("side note reference search prefers same-file matches before equally matchi
     });
 
     assert.deepEqual(results.map((result) => result.threadId), [
-        "thread-current",
         "thread-other",
     ]);
 });
