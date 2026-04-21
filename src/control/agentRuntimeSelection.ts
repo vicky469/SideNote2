@@ -10,6 +10,7 @@ export interface RemoteRuntimeAvailability {
 
 export interface RuntimeAvailabilityContext {
     modePreference: AgentRuntimeModePreference;
+    isDesktopWithFilesystem: boolean;
     localDiagnostics: CodexRuntimeDiagnostics;
     remoteRuntimeBaseUrl: string;
     remoteRuntimeBearerToken: string;
@@ -165,6 +166,13 @@ function blockRuntimeSelection(modePreference: AgentRuntimeModePreference, notic
     };
 }
 
+function getLocalRuntimeUnavailableNotice(localDiagnostics: CodexRuntimeDiagnostics): string {
+    const message = typeof localDiagnostics.message === "string"
+        ? localDiagnostics.message.trim()
+        : "";
+    return message || "Local desktop runtime is unavailable on this device.";
+}
+
 export function resolveAgentRuntimeSelection(context: RuntimeAvailabilityContext): AgentRuntimeSelection {
     const localAvailable = context.localDiagnostics.status === "available";
     const remoteAvailability = getRemoteRuntimeAvailability({
@@ -181,15 +189,17 @@ export function resolveAgentRuntimeSelection(context: RuntimeAvailabilityContext
         case "local":
             return localAvailable
                 ? resolveLocalRuntimeSelection("local")
-                : blockRuntimeSelection("local", "Local desktop runtime is unavailable on this device.");
+                : blockRuntimeSelection("local", getLocalRuntimeUnavailableNotice(context.localDiagnostics));
         case "auto":
         default:
-            if (remoteAvailable) {
-                return resolveRemoteRuntimeSelection("auto");
+            if (context.isDesktopWithFilesystem) {
+                return localAvailable
+                    ? resolveLocalRuntimeSelection("auto")
+                    : blockRuntimeSelection("auto", getLocalRuntimeUnavailableNotice(context.localDiagnostics));
             }
 
-            if (localAvailable) {
-                return resolveLocalRuntimeSelection("auto");
+            if (remoteAvailable) {
+                return resolveRemoteRuntimeSelection("auto");
             }
 
             return blockRuntimeSelection("auto", remoteAvailability.message);

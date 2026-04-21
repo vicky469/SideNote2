@@ -602,6 +602,7 @@ export default class SideNote2 extends Plugin {
     public async resolveAgentRuntimeSelection(): Promise<AgentRuntimeSelection> {
         return resolveAgentRuntimeSelectionPlan({
             modePreference: this.getAgentRuntimeMode(),
+            isDesktopWithFilesystem: this.app.vault.adapter instanceof FileSystemAdapter,
             localDiagnostics: await this.getCodexRuntimeDiagnostics(),
             remoteRuntimeBaseUrl: this.getRemoteRuntimeBaseUrl(),
             remoteRuntimeBearerToken: this.getRemoteRuntimeBearerToken(),

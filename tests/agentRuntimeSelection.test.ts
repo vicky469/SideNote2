@@ -8,9 +8,10 @@ import {
     resolveAgentRuntimeSelection,
 } from "../src/control/agentRuntimeSelection";
 
-test("resolveAgentRuntimeSelection prefers remote in auto mode when both runtimes are available", () => {
+test("resolveAgentRuntimeSelection prefers local in auto mode on desktop with a filesystem-backed vault", () => {
     assert.deepEqual(resolveAgentRuntimeSelection({
         modePreference: "auto",
+        isDesktopWithFilesystem: true,
         localDiagnostics: {
             status: "available",
             message: "Codex is available.",
@@ -19,15 +20,16 @@ test("resolveAgentRuntimeSelection prefers remote in auto mode when both runtime
         remoteRuntimeBearerToken: "secret",
     }), {
         kind: "resolved",
-        runtime: "openclaw-acp",
+        runtime: "direct-cli",
         modePreference: "auto",
-        ownershipMessage: "Using remote runtime",
+        ownershipMessage: "Using your local Codex setup",
     });
 });
 
-test("resolveAgentRuntimeSelection uses remote on mobile when a remote runtime is configured", () => {
+test("resolveAgentRuntimeSelection uses remote on non-filesystem devices when a remote runtime is configured", () => {
     assert.deepEqual(resolveAgentRuntimeSelection({
         modePreference: "auto",
+        isDesktopWithFilesystem: false,
         localDiagnostics: {
             status: "unsupported",
             message: "Built-in @codex requires desktop Obsidian.",
@@ -45,6 +47,7 @@ test("resolveAgentRuntimeSelection uses remote on mobile when a remote runtime i
 test("resolveAgentRuntimeSelection falls back to local in auto mode when remote is unavailable", () => {
     assert.deepEqual(resolveAgentRuntimeSelection({
         modePreference: "auto",
+        isDesktopWithFilesystem: true,
         localDiagnostics: {
             status: "available",
             message: "Codex is available.",
@@ -59,9 +62,10 @@ test("resolveAgentRuntimeSelection falls back to local in auto mode when remote 
     });
 });
 
-test("resolveAgentRuntimeSelection blocks in auto mode when neither runtime is available", () => {
+test("resolveAgentRuntimeSelection blocks in auto mode on non-filesystem devices when remote is unavailable", () => {
     assert.deepEqual(resolveAgentRuntimeSelection({
         modePreference: "auto",
+        isDesktopWithFilesystem: false,
         localDiagnostics: {
             status: "missing",
             message: "Codex was not found on PATH.",
@@ -78,6 +82,7 @@ test("resolveAgentRuntimeSelection blocks in auto mode when neither runtime is a
 test("resolveAgentRuntimeSelection honors explicit remote mode", () => {
     assert.deepEqual(resolveAgentRuntimeSelection({
         modePreference: "remote",
+        isDesktopWithFilesystem: true,
         localDiagnostics: {
             status: "available",
             message: "Codex is available.",
@@ -95,6 +100,7 @@ test("resolveAgentRuntimeSelection honors explicit remote mode", () => {
 test("resolveAgentRuntimeSelection blocks in explicit remote mode when remote is unavailable", () => {
     assert.deepEqual(resolveAgentRuntimeSelection({
         modePreference: "remote",
+        isDesktopWithFilesystem: true,
         localDiagnostics: {
             status: "available",
             message: "Codex is available.",
@@ -111,6 +117,7 @@ test("resolveAgentRuntimeSelection blocks in explicit remote mode when remote is
 test("resolveAgentRuntimeSelection honors explicit local mode", () => {
     assert.deepEqual(resolveAgentRuntimeSelection({
         modePreference: "local",
+        isDesktopWithFilesystem: false,
         localDiagnostics: {
             status: "available",
             message: "Codex is available.",
@@ -125,9 +132,10 @@ test("resolveAgentRuntimeSelection honors explicit local mode", () => {
     });
 });
 
-test("resolveAgentRuntimeSelection blocks in explicit local mode when local is unavailable", () => {
+test("resolveAgentRuntimeSelection blocks in explicit local mode with the real local diagnostics", () => {
     assert.deepEqual(resolveAgentRuntimeSelection({
         modePreference: "local",
+        isDesktopWithFilesystem: false,
         localDiagnostics: {
             status: "unsupported",
             message: "Built-in @codex requires desktop Obsidian.",
@@ -137,7 +145,24 @@ test("resolveAgentRuntimeSelection blocks in explicit local mode when local is u
     }), {
         kind: "blocked",
         modePreference: "local",
-        notice: "Local desktop runtime is unavailable on this device.",
+        notice: "Built-in @codex requires desktop Obsidian.",
+    });
+});
+
+test("resolveAgentRuntimeSelection blocks in auto mode on desktop when local Codex is unavailable even if remote is configured", () => {
+    assert.deepEqual(resolveAgentRuntimeSelection({
+        modePreference: "auto",
+        isDesktopWithFilesystem: true,
+        localDiagnostics: {
+            status: "missing",
+            message: "Codex was not found on PATH.",
+        },
+        remoteRuntimeBaseUrl: "https://remote.example.com",
+        remoteRuntimeBearerToken: "secret",
+    }), {
+        kind: "blocked",
+        modePreference: "auto",
+        notice: "Codex was not found on PATH.",
     });
 });
 
