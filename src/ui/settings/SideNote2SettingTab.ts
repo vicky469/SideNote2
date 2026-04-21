@@ -46,11 +46,13 @@ export default class SideNote2SettingTab extends PluginSettingTab {
         const { containerEl } = this;
         containerEl.empty();
 
-        containerEl.createEl("h2", { text: "Agent Runtime" });
+        new Setting(containerEl)
+            .setName("Agent runtime")
+            .setHeading();
 
         const codexStatusSetting = new Setting(containerEl)
-            .setName("Codex runtime: Checking...")
-            .setDesc("Checking whether @codex is available...");
+            .setName("Codex runtime: checking...")
+            .setDesc("Checking whether the Codex runtime is available...");
         const applyCodexStatus = (diagnostics: CodexRuntimeDiagnostics) => {
             const presentation = getCodexRuntimeStatusPresentation(diagnostics);
             codexStatusSetting.setName(presentation.title);
@@ -100,7 +102,7 @@ export default class SideNote2SettingTab extends PluginSettingTab {
             remoteBridgeDetails.open = true;
         }
 
-        remoteBridgeDetails.createEl("summary", { text: "Advanced Remote Bridge" });
+        remoteBridgeDetails.createEl("summary", { text: "Advanced remote bridge" });
         new Setting(remoteBridgeDetails)
             .setName("Remote bridge base URL")
             .setDesc("Developer-managed bridge endpoint. Use HTTPS, or HTTP only for localhost and private LAN development.")
@@ -154,7 +156,9 @@ export default class SideNote2SettingTab extends PluginSettingTab {
                     })
             );
 
-        containerEl.createEl("h2", { text: "Index Note" });
+        new Setting(containerEl)
+            .setName("Index note")
+            .setHeading();
 
         new Setting(containerEl)
             .setName("Index header image URL")

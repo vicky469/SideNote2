@@ -22,8 +22,8 @@ export default tseslint.config(
 			"obsidianmd/ui/sentence-case": [
 				"error",
 				{
-					acronyms: ["JSONL", "URL"],
-					brands: ["SideNote2"],
+					acronyms: ["JSONL", "URL", "HTTP", "HTTPS", "LAN"],
+					brands: ["SideNote2", "Codex", "Obsidian"],
 				},
 			],
 		},

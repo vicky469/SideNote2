@@ -106,6 +106,16 @@ function getSafeLocalStorage(): Storage | null {
     }
 }
 
+type RemoteRuntimeFetchFallback = NonNullable<Parameters<typeof createRemoteRuntimeRequester>[0]["fetcher"]>;
+
+function getFetchFallback(): RemoteRuntimeFetchFallback | undefined {
+    if (typeof globalThis.fetch !== "function") {
+        return undefined;
+    }
+
+    return (input, init) => globalThis.fetch(input, init);
+}
+
 // Main plugin class
 export default class SideNote2 extends Plugin {
     commentManager!: CommentManager;
@@ -115,9 +125,7 @@ export default class SideNote2 extends Plugin {
     private runtime: "local" | "release" = "release";
     private readonly remoteRuntimeRequester = createRemoteRuntimeRequester({
         primaryRequester: requestUrl,
-        fetcher: typeof globalThis.fetch === "function"
-            ? globalThis.fetch.bind(globalThis)
-            : undefined,
+        fetcher: getFetchFallback(),
     });
     private readonly localSecretStore = new LocalSecretStore(
         buildLocalSecretStorageKey(this.manifest.id, this.app.vault.getName()),
@@ -542,11 +550,12 @@ export default class SideNote2 extends Plugin {
         await this.indexNoteSettingsController.setRemoteRuntimeBaseUrl(nextUrlInput);
     }
 
-    public async setRemoteRuntimeBearerToken(nextTokenInput: string): Promise<void> {
+    public setRemoteRuntimeBearerToken(nextTokenInput: string): Promise<void> {
         const nextToken = normalizeRemoteRuntimeBearerToken(nextTokenInput);
         this.localSecretStore.writeSecrets({
             remoteRuntimeBearerToken: nextToken,
         });
+        return Promise.resolve();
     }
 
     public getAgentRuns(): AgentRunRecord[] {

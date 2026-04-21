@@ -397,7 +397,7 @@ export class CommentAgentController {
         }
     }
 
-    private async processQueue(): Promise<void> {
+    private processQueue(): void {
         if (this.processingQueue) {
             return;
         }
