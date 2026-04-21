@@ -2,7 +2,13 @@
 
 ## Status
 
-Draft implementation spec.
+Superseded. Do not implement this model.
+
+This document assumes a synced vault copy on the DGX host. That is now a hard
+non-starter. The active replacement is
+[mobile-to-dgx-plugin-mediated-obsidian-api-spec.md](mobile-to-dgx-plugin-mediated-obsidian-api-spec.md),
+which keeps the vault on the client device and routes reads and writes through
+the plugin's Obsidian API surface instead of a DGX-side vault root.
 
 This spec captures the intended product direction for the DGX-backed mobile path.
 It supersedes the reply-only assumption in
