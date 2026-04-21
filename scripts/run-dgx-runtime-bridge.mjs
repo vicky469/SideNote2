@@ -14,9 +14,6 @@ function logStartup(config) {
     console.log(`[sidenote2-dgx-bridge] Transport: ${getBridgeTransportProtocol(config).toUpperCase()}`);
     console.log(`[sidenote2-dgx-bridge] Public base URL: ${baseUrl}`);
     console.log(`[sidenote2-dgx-bridge] Workspace root: ${config.workspaceRoot}`);
-    if (config.vaultRoot) {
-        console.log(`[sidenote2-dgx-bridge] Vault root: ${config.vaultRoot}`);
-    }
     console.log(`[sidenote2-dgx-bridge] Codex binary: ${config.codexBin}`);
 }
 

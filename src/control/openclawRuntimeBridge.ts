@@ -2,9 +2,6 @@ import type { RequestUrlParam } from "obsidian";
 
 export type RemoteRuntimeTerminalStatus = "completed" | "failed" | "cancelled";
 export type RemoteRuntimeStatus = "queued" | "running" | RemoteRuntimeTerminalStatus;
-export type RemoteRuntimeNoteHashAlgorithm = "sha256";
-export type RemoteRuntimeContextScope = "anchor" | "section";
-export type RemoteRuntimeCapability = "workspace-aware" | "workspace-aware-vault";
 
 export type RemoteRuntimeEvent =
     | { type: "progress"; text: string }
@@ -26,18 +23,6 @@ export interface RemoteRuntimeResponseEnvelope {
 export interface RemoteRuntimeBridgeRequest {
     baseUrl: string;
     bearerToken: string;
-}
-
-export interface VaultBackedRemoteRuntimeMetadata {
-    vaultName: string;
-    vaultRelativePath: string;
-    contextScope: RemoteRuntimeContextScope;
-    pluginVersion: string;
-    capability: "workspace-aware-vault";
-    noteHash: string;
-    noteHashAlgorithm: RemoteRuntimeNoteHashAlgorithm;
-    triggerEntryId: string;
-    notePath: string;
 }
 
 export interface RemoteRuntimeRequesterResponse {
@@ -64,18 +49,6 @@ export interface RemoteRuntimeHealthEnvelope {
     ok: boolean;
     status: string | null;
     publicBaseUrl: string | null;
-}
-
-function normalizeNoteContentForHashing(value: string): string {
-    return value.replace(/\r\n/g, "\n");
-}
-
-export async function hashRemoteRuntimeNoteContent(value: string): Promise<string> {
-    const data = new TextEncoder().encode(normalizeNoteContentForHashing(value));
-    const digest = await crypto.subtle.digest("SHA-256", data);
-    return Array.from(new Uint8Array(digest), (byte) =>
-        byte.toString(16).padStart(2, "0"),
-    ).join("");
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

@@ -1,6 +1,5 @@
 import * as assert from "node:assert/strict";
-import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
-import { createHash } from "node:crypto";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import http from "node:http";
 import https from "node:https";
 import os from "node:os";
@@ -80,20 +79,6 @@ function createTlsFiles(t) {
 
 function sleep(ms) {
     return new Promise((resolve) => setTimeout(resolve, ms));
-}
-
-function hashNoteContent(value) {
-    return createHash("sha256")
-        .update(String(value).replace(/\r\n/g, "\n"), "utf8")
-        .digest("hex");
-}
-
-function createVaultRoot(t) {
-    const directory = mkdtempSync(path.join(os.tmpdir(), "sidenote2-dgx-vault-"));
-    t.after(() => {
-        rmSync(directory, { recursive: true, force: true });
-    });
-    return directory;
 }
 
 async function startBridge(t, options = {}) {
@@ -272,126 +257,6 @@ test("DGX bridge accepts HEAD health checks without auth", async (t) => {
     assert.equal(healthResponse.headers["access-control-allow-origin"], "*");
     assert.match(String(healthResponse.headers["access-control-allow-methods"]), /HEAD/);
     assert.match(String(healthResponse.headers["content-type"]), /^application\/json/u);
-});
-
-test("DGX bridge resolves vault-backed runs under the configured vault root", async (t) => {
-    const vaultRoot = createVaultRoot(t);
-    const repoRoot = path.join(vaultRoot, "Projects", "ClientA");
-    const noteRelativePath = "Projects/ClientA/Notes/Todo.md";
-    const noteAbsolutePath = path.join(vaultRoot, "Projects", "ClientA", "Notes", "Todo.md");
-    mkdirSync(path.join(repoRoot, ".git"), { recursive: true });
-    mkdirSync(path.dirname(noteAbsolutePath), { recursive: true });
-    writeFileSync(noteAbsolutePath, "# Todo\n\nBridge me", "utf8");
-
-    let executeRunOptions = null;
-    const { baseUrl, token } = await startBridge(t, {
-        env: {
-            SIDENOTE2_DGX_VAULT_ROOT: vaultRoot,
-        },
-        executeRun: async (options) => {
-            executeRunOptions = options;
-            return { replyText: "Vault-backed done" };
-        },
-    });
-
-    const startResponse = await requestJson({
-        method: "POST",
-        url: `${baseUrl}/v1/sidenote2/runs`,
-        token,
-        body: {
-            agent: "codex",
-            promptText: "Update the active note.",
-            metadata: {
-                capability: "workspace-aware-vault",
-                vaultRelativePath: noteRelativePath,
-                noteHash: hashNoteContent("# Todo\n\nBridge me"),
-                noteHashAlgorithm: "sha256",
-            },
-        },
-    });
-
-    assert.equal(startResponse.statusCode, 200);
-    const runUrl = `${baseUrl}/v1/sidenote2/runs/${encodeURIComponent(startResponse.json.runId)}`;
-    const completedResponse = await pollUntil(runUrl, token, (response) => response.json?.status === "completed");
-
-    assert.equal(completedResponse.json.replyText, "Vault-backed done");
-    assert.equal(executeRunOptions?.cwd, repoRoot);
-    assert.equal(executeRunOptions?.metadata?.resolvedVaultAbsoluteNotePath, noteAbsolutePath);
-    assert.equal(executeRunOptions?.metadata?.resolvedVaultRelativePath, noteRelativePath);
-});
-
-test("DGX bridge rejects stale vault-backed runs before Codex starts", async (t) => {
-    const vaultRoot = createVaultRoot(t);
-    const noteAbsolutePath = path.join(vaultRoot, "Notes", "Sync.md");
-    mkdirSync(path.dirname(noteAbsolutePath), { recursive: true });
-    writeFileSync(noteAbsolutePath, "# Sync\n\nDGX copy", "utf8");
-
-    let executeRunCalled = false;
-    const { baseUrl, token } = await startBridge(t, {
-        env: {
-            SIDENOTE2_DGX_VAULT_ROOT: vaultRoot,
-        },
-        executeRun: async () => {
-            executeRunCalled = true;
-            return { replyText: "Should not run" };
-        },
-    });
-
-    const response = await requestJson({
-        method: "POST",
-        url: `${baseUrl}/v1/sidenote2/runs`,
-        token,
-        body: {
-            agent: "codex",
-            promptText: "Use the synced note.",
-            metadata: {
-                capability: "workspace-aware-vault",
-                vaultRelativePath: "Notes/Sync.md",
-                noteHash: hashNoteContent("# Sync\n\nMobile copy"),
-                noteHashAlgorithm: "sha256",
-            },
-        },
-    });
-
-    assert.equal(response.statusCode, 409);
-    assert.equal(response.json.status, "failed");
-    assert.match(response.json.error, /not yet in sync/i);
-    assert.equal(executeRunCalled, false);
-});
-
-test("DGX bridge rejects vault-backed path traversal", async (t) => {
-    const vaultRoot = createVaultRoot(t);
-    let executeRunCalled = false;
-    const { baseUrl, token } = await startBridge(t, {
-        env: {
-            SIDENOTE2_DGX_VAULT_ROOT: vaultRoot,
-        },
-        executeRun: async () => {
-            executeRunCalled = true;
-            return { replyText: "Should not run" };
-        },
-    });
-
-    const response = await requestJson({
-        method: "POST",
-        url: `${baseUrl}/v1/sidenote2/runs`,
-        token,
-        body: {
-            agent: "codex",
-            promptText: "Escape the vault.",
-            metadata: {
-                capability: "workspace-aware-vault",
-                vaultRelativePath: "../outside.md",
-                noteHash: hashNoteContent("irrelevant"),
-                noteHashAlgorithm: "sha256",
-            },
-        },
-    });
-
-    assert.equal(response.statusCode, 409);
-    assert.equal(response.json.status, "failed");
-    assert.match(response.json.error, /must stay inside SIDENOTE2_DGX_VAULT_ROOT/i);
-    assert.equal(executeRunCalled, false);
 });
 
 test("DGX bridge starts, streams, completes, and honors cursors", async (t) => {
