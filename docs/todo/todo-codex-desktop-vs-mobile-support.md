@@ -3,6 +3,8 @@
 Related docs:
 
 - [agent-cross-platform-runtime-plan.md](../prd/agent-cross-platform-runtime-plan.md)
+- [mobile-to-macos-codex-bridge-spec.md](../prd/mobile-to-macos-codex-bridge-spec.md)
+- [mobile-to-dgx-codex-bridge-spec.md](../prd/mobile-to-dgx-codex-bridge-spec.md)
 
 ## Why This Note Exists
 
@@ -153,9 +155,45 @@ The realistic path is:
 
 - keep the current desktop local-runtime path
 - add a second remote runtime path for desktop and mobile
+- keep the normal user-facing mobile route reply-only
 - make runtime selection explicit in settings
 
 This is already the direction described in [agent-cross-platform-runtime-plan.md](../prd/agent-cross-platform-runtime-plan.md).
+
+## User-Facing Mobile Rule
+
+Normal mobile support should be reply-only.
+
+That means the remote host, whether it is:
+
+- a Mac
+- a DGX Spark
+- or another user-managed machine
+
+should not:
+
+- access the user's repo directly
+- inspect local vault files directly
+- modify note bodies directly
+- modify project files directly
+
+Instead:
+
+- SideNote2 builds and sends the relevant context
+- the remote host returns reply text only
+- SideNote2 writes that reply back into the original markdown thread
+
+This keeps mobile support:
+
+- safer
+- simpler to explain
+- easier to operate
+- compatible with machines that do not hold a mirrored copy of the user's vault
+
+The machine-specific reply-only variants are now described in:
+
+- [mobile-to-macos-codex-bridge-spec.md](../prd/mobile-to-macos-codex-bridge-spec.md)
+- [mobile-to-dgx-codex-bridge-spec.md](../prd/mobile-to-dgx-codex-bridge-spec.md)
 
 ## DGX Spark Route
 
