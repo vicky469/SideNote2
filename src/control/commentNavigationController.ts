@@ -53,6 +53,28 @@ export interface CommentNavigationHost {
 export class CommentNavigationController {
     constructor(private readonly host: CommentNavigationHost) {}
 
+    private async resolveCommentById(
+        commentId: string,
+        filePathHint?: string | null,
+    ): Promise<Comment | null> {
+        const knownComment = this.host.getKnownCommentById(commentId);
+        if (knownComment) {
+            return knownComment;
+        }
+
+        if (!filePathHint) {
+            return null;
+        }
+
+        const file = this.host.getFileByPath(filePathHint);
+        if (!file) {
+            return null;
+        }
+
+        await this.host.loadCommentsForFile(file);
+        return this.host.getLoadedCommentById(commentId) ?? null;
+    }
+
     private async syncIndexSidebarScope(
         leaf: WorkspaceLeaf,
         sidebarFile: TFile | null,
@@ -338,39 +360,29 @@ export class CommentNavigationController {
         await this.activateViewAndHighlightComment(comment.id);
     }
 
-    public async highlightCommentById(filePath: string, commentId: string): Promise<void> {
-        const knownComment = this.host.getKnownCommentById(commentId);
-        if (knownComment?.filePath === filePath) {
-            await this.activateViewAndHighlightComment(commentId);
-            return;
-        }
+    public async highlightCommentById(filePath: string | null, commentId: string): Promise<void> {
+        const comment = await this.resolveCommentById(commentId, filePath);
+        if (!comment) {
+            if (filePath && !this.host.getFileByPath(filePath)) {
+                this.host.showNotice("Unable to find that file.");
+                return;
+            }
 
-        const file = this.host.getFileByPath(filePath);
-        if (!file) {
-            this.host.showNotice("Unable to find that file.");
-            return;
-        }
-
-        await this.host.loadCommentsForFile(file);
-        const comment = this.host.getLoadedCommentById(commentId);
-        if (!comment || comment.filePath !== file.path) {
             this.host.showNotice("Unable to find that side comment.");
             return;
         }
 
-        await this.activateViewAndHighlightComment(comment.id);
+        await this.activateViewAndHighlightComment(commentId);
     }
 
-    public async openCommentById(filePath: string, commentId: string): Promise<void> {
-        const file = this.host.getFileByPath(filePath);
-        if (!file) {
-            this.host.showNotice("Unable to find that file.");
-            return;
-        }
+    public async openCommentById(filePath: string | null, commentId: string): Promise<void> {
+        const comment = await this.resolveCommentById(commentId, filePath);
+        if (!comment) {
+            if (filePath && !this.host.getFileByPath(filePath)) {
+                this.host.showNotice("Unable to find that file.");
+                return;
+            }
 
-        await this.host.loadCommentsForFile(file);
-        const comment = this.host.getLoadedCommentById(commentId);
-        if (!comment || comment.filePath !== file.path) {
             this.host.showNotice("Unable to find that side comment.");
             return;
         }

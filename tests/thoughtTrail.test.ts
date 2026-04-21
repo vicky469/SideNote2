@@ -7,7 +7,7 @@ import {
 } from "../src/core/derived/thoughtTrail";
 import type { Comment, CommentThread } from "../src/commentManager";
 
-const THOUGHT_TRAIL_INIT = "%%{init: {\"fontFamily\":\"var(--font-interface-theme)\",\"themeVariables\":{\"fontSize\":\"12px\"},\"flowchart\":{\"nodeSpacing\":3,\"rankSpacing\":5,\"padding\":3,\"diagramPadding\":0,\"useMaxWidth\":false,\"htmlLabels\":true}}}%%";
+const THOUGHT_TRAIL_INIT = "%%{init: {\"fontFamily\":\"var(--font-interface-theme)\",\"themeVariables\":{\"fontSize\":\"14px\"},\"flowchart\":{\"nodeSpacing\":3,\"rankSpacing\":14,\"padding\":3,\"diagramPadding\":0,\"useMaxWidth\":false,\"htmlLabels\":true}}}%%";
 
 function createComment(overrides: Partial<Comment> = {}): Comment {
     return {
@@ -124,7 +124,7 @@ test("buildThoughtTrailLines marks cycles and avoids duplicate roots", () => {
     assert.equal(lines.filter((line) => line === "    n1[\"file2\"]").length, 1);
 });
 
-test("buildThoughtTrailLines uses pn ordinals for page notes", () => {
+test("buildThoughtTrailLines omits edge labels for page notes", () => {
     const lines = buildThoughtTrailLines("dev", [
         createComment({
             id: "page-note",
@@ -143,11 +143,26 @@ test("buildThoughtTrailLines uses pn ordinals for page notes", () => {
         "flowchart TD",
         "    n0[\"file1\"]",
         "    n1[\"target\"]",
-        "    n0 -->|pn1| n1",
+        "    n0 --> n1",
         "    click n0 href \"obsidian://open?vault=dev&file=file1.md\" \"Open file1.md\"",
         "    click n1 href \"obsidian://open?vault=dev&file=target.md\" \"Open target.md\"",
         "```",
     ]);
+});
+
+test("buildThoughtTrailLines truncates anchored edge labels to a few words", () => {
+    const lines = buildThoughtTrailLines("dev", [
+        createComment({
+            id: "anchored-note",
+            filePath: "file1.md",
+            selectedText: "this is a longer anchored selection for the edge label",
+            comment: "Connects to [[target]].",
+        }),
+    ], {
+        resolveWikiLinkPath: (linkPath) => `${linkPath}.md`,
+    });
+
+    assert.equal(lines.includes("    n0 -->|this is a longer...| n1"), true);
 });
 
 test("buildThoughtTrailLines renders a full chain without a depth limit", () => {
@@ -231,6 +246,23 @@ test("buildThoughtTrailLines includes links from older child entries in a thread
     });
 
     assert.equal(lines.includes("    n0 -->|setup| n1"), true);
+    assert.equal(lines.includes("    n1[\"file2\"]"), true);
+});
+
+test("buildThoughtTrailLines includes side note reference edges", () => {
+    const lines = buildThoughtTrailLines("dev", [
+        createComment({
+            id: "note-a",
+            filePath: "file1.md",
+            selectedText: "alpha",
+            comment: "[Target](obsidian://side-note2-comment?vault=dev&file=file2.md&commentId=comment-2)",
+        }),
+    ], {
+        localVaultName: "dev",
+        resolveSideNoteReferencePath: (commentId) => commentId === "comment-2" ? "file2.md" : null,
+    });
+
+    assert.equal(lines.includes("    n0 -->|alpha| n1"), true);
     assert.equal(lines.includes("    n1[\"file2\"]"), true);
 });
 

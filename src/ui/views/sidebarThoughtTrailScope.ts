@@ -7,6 +7,7 @@ export function buildRootedThoughtTrailScope(
     options: {
         rootFilePath: string;
         allCommentsNotePath: string;
+        referenceAdjacency?: Map<string, Set<string>>;
         resolveWikiLinkPath: (linkPath: string, sourceFilePath: string) => string | null;
     },
 ): {
@@ -15,6 +16,7 @@ export function buildRootedThoughtTrailScope(
 } {
     const graph = buildIndexFileFilterGraph(threads, {
         allCommentsNotePath: options.allCommentsNotePath,
+        referenceAdjacency: options.referenceAdjacency,
         resolveWikiLinkPath: options.resolveWikiLinkPath,
         showResolved: null,
     });

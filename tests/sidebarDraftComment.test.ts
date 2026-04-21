@@ -79,7 +79,6 @@ test("buildBookmarkDraftButtonPresentation keeps bookmark toggles lightweight", 
         isBookmark: false,
     }), {
         ariaLabel: "Mark as bookmark",
-        title: "Mark as bookmark and keep editing",
         active: false,
     });
     assert.deepEqual(buildBookmarkDraftButtonPresentation({
@@ -87,7 +86,6 @@ test("buildBookmarkDraftButtonPresentation keeps bookmark toggles lightweight", 
         isBookmark: true,
     }), {
         ariaLabel: "Remove bookmark",
-        title: "Remove bookmark and keep editing",
         active: true,
     });
     assert.deepEqual(buildBookmarkDraftButtonPresentation({
@@ -95,7 +93,6 @@ test("buildBookmarkDraftButtonPresentation keeps bookmark toggles lightweight", 
         isBookmark: false,
     }), {
         ariaLabel: "Save as bookmark",
-        title: "Save as bookmark",
         active: false,
     });
     assert.deepEqual(buildBookmarkDraftButtonPresentation({
@@ -103,7 +100,6 @@ test("buildBookmarkDraftButtonPresentation keeps bookmark toggles lightweight", 
         isBookmark: true,
     }), {
         ariaLabel: "Remove bookmark",
-        title: "Remove bookmark and keep editing",
         active: true,
     });
 });

@@ -79,6 +79,7 @@ test("buildPageSidebarThreadRenderSignature ignores unrelated active comment ids
         thread,
         activeCommentId: null,
         showNestedComments: false,
+        showNestedCommentsByDefault: false,
         enablePageThreadReorder: true,
         editDraftComment: null,
         appendDraftComment: null,
@@ -88,6 +89,7 @@ test("buildPageSidebarThreadRenderSignature ignores unrelated active comment ids
         thread,
         activeCommentId: "other-thread",
         showNestedComments: false,
+        showNestedCommentsByDefault: false,
         enablePageThreadReorder: true,
         editDraftComment: null,
         appendDraftComment: null,
@@ -97,6 +99,7 @@ test("buildPageSidebarThreadRenderSignature ignores unrelated active comment ids
         thread,
         activeCommentId: "entry-2",
         showNestedComments: false,
+        showNestedCommentsByDefault: false,
         enablePageThreadReorder: true,
         editDraftComment: null,
         appendDraftComment: null,
@@ -113,6 +116,7 @@ test("buildPageSidebarThreadRenderSignature changes when nested draft or run sta
         thread,
         activeCommentId: null,
         showNestedComments: false,
+        showNestedCommentsByDefault: false,
         enablePageThreadReorder: true,
         editDraftComment: null,
         appendDraftComment: null,
@@ -122,6 +126,7 @@ test("buildPageSidebarThreadRenderSignature changes when nested draft or run sta
         thread,
         activeCommentId: null,
         showNestedComments: false,
+        showNestedCommentsByDefault: false,
         enablePageThreadReorder: true,
         editDraftComment: createDraft({ mode: "edit", id: "entry-2", threadId: "thread-1" }),
         appendDraftComment: null,
@@ -131,6 +136,7 @@ test("buildPageSidebarThreadRenderSignature changes when nested draft or run sta
         thread,
         activeCommentId: null,
         showNestedComments: false,
+        showNestedCommentsByDefault: false,
         enablePageThreadReorder: true,
         editDraftComment: null,
         appendDraftComment: createDraft(),
@@ -140,6 +146,7 @@ test("buildPageSidebarThreadRenderSignature changes when nested draft or run sta
         thread,
         activeCommentId: null,
         showNestedComments: false,
+        showNestedCommentsByDefault: false,
         enablePageThreadReorder: true,
         editDraftComment: null,
         appendDraftComment: null,
@@ -157,6 +164,7 @@ test("buildPageSidebarThreadRenderSignature changes when nested comments are sho
         thread,
         activeCommentId: null,
         showNestedComments: false,
+        showNestedCommentsByDefault: false,
         enablePageThreadReorder: true,
         editDraftComment: null,
         appendDraftComment: null,
@@ -166,6 +174,7 @@ test("buildPageSidebarThreadRenderSignature changes when nested comments are sho
         thread,
         activeCommentId: null,
         showNestedComments: true,
+        showNestedCommentsByDefault: false,
         enablePageThreadReorder: true,
         editDraftComment: null,
         appendDraftComment: null,
@@ -183,6 +192,7 @@ test("buildPageSidebarThreadRenderSignature changes when bookmark state changes"
         thread: noteThread,
         activeCommentId: null,
         showNestedComments: false,
+        showNestedCommentsByDefault: false,
         enablePageThreadReorder: true,
         editDraftComment: null,
         appendDraftComment: null,
@@ -192,6 +202,7 @@ test("buildPageSidebarThreadRenderSignature changes when bookmark state changes"
         thread: bookmarkThread,
         activeCommentId: null,
         showNestedComments: false,
+        showNestedCommentsByDefault: false,
         enablePageThreadReorder: true,
         editDraftComment: null,
         appendDraftComment: null,
@@ -200,7 +211,6 @@ test("buildPageSidebarThreadRenderSignature changes when bookmark state changes"
 
     assert.notEqual(noteSignature, bookmarkSignature);
 });
-
 test("buildPageSidebarDraftRenderSignature changes only for the matching active draft", () => {
     const draft = createDraft({ id: "draft-1", mode: "edit", threadId: undefined });
     const inactive = buildPageSidebarDraftRenderSignature(draft, null);
@@ -209,6 +219,32 @@ test("buildPageSidebarDraftRenderSignature changes only for the matching active 
 
     assert.equal(inactive, unrelatedActive);
     assert.notEqual(inactive, active);
+});
+
+test("buildPageSidebarThreadRenderSignature changes when the global nested default changes for an active parent thread", () => {
+    const thread = createThread();
+    const hiddenByDefault = buildPageSidebarThreadRenderSignature({
+        thread,
+        activeCommentId: "thread-1",
+        showNestedComments: false,
+        showNestedCommentsByDefault: false,
+        enablePageThreadReorder: true,
+        editDraftComment: null,
+        appendDraftComment: null,
+        threadAgentRuns: [],
+    });
+    const explicitlyHidden = buildPageSidebarThreadRenderSignature({
+        thread,
+        activeCommentId: "thread-1",
+        showNestedComments: false,
+        showNestedCommentsByDefault: true,
+        enablePageThreadReorder: true,
+        editDraftComment: null,
+        appendDraftComment: null,
+        threadAgentRuns: [],
+    });
+
+    assert.notEqual(hiddenByDefault, explicitlyHidden);
 });
 
 test("buildPageSidebarDraftRenderSignature changes when draft bookmark state changes", () => {

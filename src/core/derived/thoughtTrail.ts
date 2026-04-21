@@ -1,19 +1,22 @@
 import type { Comment, CommentThread } from "../../commentManager";
 import { getCommentSelectionLabel, getCommentStatusLabel, isAnchoredComment, isPageComment } from "../anchors/commentAnchors";
 import { extractWikiLinks } from "../text/commentMentions";
+import { extractSideNoteReferences } from "../text/commentReferences";
 
 const ALL_COMMENTS_NOTE_PATH = "SideNote2 index.md";
 const LEGACY_ALL_COMMENTS_NOTE_PATH = "SideNote2 comments.md";
 const MAX_PREVIEW_LENGTH = 80;
-const MAX_EDGE_LABEL_LENGTH = 24;
+const MAX_EDGE_LABEL_WORDS = 4;
 const THOUGHT_TRAIL_MERMAID_RENDER_CONFIG = {
     fontFamily: "var(--font-interface-theme)",
     themeVariables: {
-        fontSize: "12px",
+        fontSize: "14px",
     },
     flowchart: {
         nodeSpacing: 3,
-        rankSpacing: 5,
+        // Keep enough vertical edge length that the connector line stays visible
+        // between stacked note boxes without making the whole card oversized.
+        rankSpacing: 14,
         padding: 3,
         diagramPadding: 0,
         useMaxWidth: false,
@@ -24,13 +27,14 @@ const THOUGHT_TRAIL_MERMAID_INIT = `%%{init: ${JSON.stringify(THOUGHT_TRAIL_MERM
 
 export interface ThoughtTrailBuildOptions {
     allCommentsNotePath?: string;
+    localVaultName?: string | null;
+    resolveSideNoteReferencePath?: (commentId: string, filePathHint: string | null) => string | null;
     resolveWikiLinkPath?: (linkPath: string, sourceFilePath: string) => string | null;
 }
 
 interface ThoughtTrailEdge {
     comment: Comment | CommentThread;
     targetFilePath: string;
-    pageNoteOrdinal?: number;
 }
 
 function isThreadLike(value: Comment | CommentThread): value is CommentThread {
@@ -102,6 +106,20 @@ function toInlinePreview(value: string, maxLength: number = MAX_PREVIEW_LENGTH):
     return `${normalized.slice(0, maxLength - 3).trimEnd()}...`;
 }
 
+function toInlineWordPreview(value: string, maxWords: number): string {
+    const normalized = value.replace(/\r\n/g, "\n").replace(/\s+/g, " ").trim();
+    if (!normalized) {
+        return "(blank selection)";
+    }
+
+    const words = normalized.split(" ").filter(Boolean);
+    if (words.length <= maxWords) {
+        return normalized;
+    }
+
+    return `${words.slice(0, maxWords).join(" ")}...`;
+}
+
 function buildNoteOpenUrl(vaultName: string, filePath: string): string {
     return `obsidian://open?vault=${encodeURIComponent(vaultName)}&file=${encodeURIComponent(normalizeNotePath(filePath))}`;
 }
@@ -115,12 +133,12 @@ function toMermaidText(value: string): string {
         .replace(/[|{}[\]]/g, " ");
 }
 
-function formatEdgeLabel(comment: Comment | CommentThread, pageNoteOrdinal?: number): string {
+function formatEdgeLabel(comment: Comment | CommentThread): string | null {
     let label: string;
     if (isPageComment(comment)) {
-        label = pageNoteOrdinal ? `pn${pageNoteOrdinal}` : "pn";
+        return null;
     } else {
-        const selectedPreview = toInlinePreview(getCommentSelectionLabel(comment), MAX_EDGE_LABEL_LENGTH);
+        const selectedPreview = toInlineWordPreview(getCommentSelectionLabel(comment), MAX_EDGE_LABEL_WORDS);
         label = isAnchoredComment(comment)
             ? selectedPreview
             : `${getCommentStatusLabel(comment)}: ${selectedPreview}`;
@@ -198,31 +216,50 @@ function buildEdgesBySourceFile(
     options: ThoughtTrailBuildOptions,
 ): Map<string, ThoughtTrailEdge[]> {
     const resolveWikiLinkPath = options.resolveWikiLinkPath;
-    if (!resolveWikiLinkPath) {
+    const resolveSideNoteReferencePath = options.resolveSideNoteReferencePath;
+    if (!resolveWikiLinkPath && !resolveSideNoteReferencePath) {
         return new Map();
     }
 
     const edgesBySourceFile = new Map<string, ThoughtTrailEdge[]>();
     for (const filePath of Array.from(commentsByFile.keys()).sort((left, right) => left.localeCompare(right))) {
         const fileComments = sortCommentItemsByPosition(commentsByFile.get(filePath) ?? []);
-        const pageNoteOrdinals = new Map<string, number>();
-        let nextPageNoteOrdinal = 1;
-        for (const comment of fileComments) {
-            if (!isPageComment(comment)) {
-                continue;
-            }
-
-            pageNoteOrdinals.set(comment.id, nextPageNoteOrdinal);
-            nextPageNoteOrdinal += 1;
-        }
-
         const edges: ThoughtTrailEdge[] = [];
         for (const comment of fileComments) {
             const seenTargets = new Set<string>();
 
             for (const body of getCommentBodies(comment)) {
-                for (const match of extractWikiLinks(body)) {
-                    const resolvedPath = resolveWikiLinkPath(match.linkPath, comment.filePath);
+                if (resolveWikiLinkPath) {
+                    for (const match of extractWikiLinks(body)) {
+                        const resolvedPath = resolveWikiLinkPath(match.linkPath, comment.filePath);
+                        if (!resolvedPath || resolvedPath === comment.filePath || isAllCommentsNotePath(resolvedPath, options.allCommentsNotePath)) {
+                            continue;
+                        }
+
+                        if (seenTargets.has(resolvedPath)) {
+                            continue;
+                        }
+
+                        seenTargets.add(resolvedPath);
+                        edges.push({
+                            comment,
+                            targetFilePath: resolvedPath,
+                        });
+                    }
+                }
+
+                if (!resolveSideNoteReferencePath) {
+                    continue;
+                }
+
+                for (const reference of extractSideNoteReferences(body, {
+                    localOnly: true,
+                    localVaultName: options.localVaultName ?? null,
+                })) {
+                    const resolvedPath = resolveSideNoteReferencePath(
+                        reference.target.commentId,
+                        reference.target.filePath,
+                    );
                     if (!resolvedPath || resolvedPath === comment.filePath || isAllCommentsNotePath(resolvedPath, options.allCommentsNotePath)) {
                         continue;
                     }
@@ -235,7 +272,6 @@ function buildEdgesBySourceFile(
                     edges.push({
                         comment,
                         targetFilePath: resolvedPath,
-                        pageNoteOrdinal: pageNoteOrdinals.get(comment.id),
                     });
                 }
             }
@@ -358,8 +394,10 @@ export function buildThoughtTrailLines(
         const sourceId = ensureNode(sourceFilePath);
         for (const edge of edgesBySourceFile.get(sourceFilePath) ?? []) {
             const targetId = ensureNode(edge.targetFilePath);
-            const label = formatEdgeLabel(edge.comment, edge.pageNoteOrdinal);
-            edgeLines.push(`    ${sourceId} -->|${label}| ${targetId}`);
+            const label = formatEdgeLabel(edge.comment);
+            edgeLines.push(label
+                ? `    ${sourceId} -->|${label}| ${targetId}`
+                : `    ${sourceId} --> ${targetId}`);
 
             if (
                 branchVisited.has(edge.targetFilePath)

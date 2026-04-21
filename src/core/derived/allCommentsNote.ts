@@ -2,12 +2,17 @@ import type { Comment } from "../../commentManager";
 import { compareCommentsForSidebarOrder } from "../anchors/commentSectionOrder";
 import { getCommentSelectionLabel, getCommentStatusLabel, isAnchoredComment, isPageComment } from "../anchors/commentAnchors";
 import { filterCommentsByResolvedVisibility } from "../rules/resolvedCommentVisibility";
+import {
+    buildSideNoteReferenceUrl,
+    parseSideNoteReferenceUrl,
+    SIDE_NOTE_REFERENCE_PROTOCOL,
+} from "../text/commentReferences";
 import { stripMarkdownLinksForPreview } from "../text/commentUrls";
 import { extractTagsFromText } from "../text/commentTags";
 
 export const ALL_COMMENTS_NOTE_PATH = "SideNote2 index.md";
 export const LEGACY_ALL_COMMENTS_NOTE_PATH = "SideNote2 comments.md";
-export const COMMENT_LOCATION_PROTOCOL = "side-note2-comment";
+export const COMMENT_LOCATION_PROTOCOL = SIDE_NOTE_REFERENCE_PROTOCOL;
 export const ALL_COMMENTS_NOTE_IMAGE_URL = "https://ichef.bbci.co.uk/images/ic/1920xn/p02vhq1v.jpg.webp";
 export const ALL_COMMENTS_NOTE_IMAGE_CAPTION = "Relativity (Credit: 2015 The M.C. Escher Company - Baarn, The Netherlands)";
 export const ALL_COMMENTS_NOTE_IMAGE_ALT = "SideNote2 index header image";
@@ -194,7 +199,10 @@ export function isAllCommentsNotePath(filePath: string, currentPath: string = AL
 }
 
 export function buildCommentLocationUrl(vaultName: string, comment: Pick<Comment, "filePath" | "id">): string {
-    return `obsidian://${COMMENT_LOCATION_PROTOCOL}?vault=${encodeURIComponent(vaultName)}&file=${encodeURIComponent(comment.filePath)}&commentId=${encodeURIComponent(comment.id)}`;
+    return buildSideNoteReferenceUrl(vaultName, {
+        commentId: comment.id,
+        filePath: comment.filePath,
+    });
 }
 
 export function buildIndexCommentBlockId(commentId: string): string {
@@ -208,25 +216,15 @@ export function buildIndexCommentBlockId(commentId: string): string {
 }
 
 export function parseCommentLocationUrl(url: string): CommentLocationTarget | null {
-    try {
-        const parsed = new URL(url);
-        if (parsed.protocol !== "obsidian:" || parsed.hostname !== COMMENT_LOCATION_PROTOCOL) {
-            return null;
-        }
-
-        const filePath = parsed.searchParams.get("file");
-        const commentId = parsed.searchParams.get("commentId");
-        if (!(filePath && commentId)) {
-            return null;
-        }
-
-        return {
-            filePath,
-            commentId,
-        };
-    } catch {
+    const target = parseSideNoteReferenceUrl(url);
+    if (!(target?.filePath && target.commentId)) {
         return null;
     }
+
+    return {
+        filePath: target.filePath,
+        commentId: target.commentId,
+    };
 }
 
 export function findCommentLocationTargetInMarkdownLine(line: string): CommentLocationTarget | null {

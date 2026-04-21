@@ -103,21 +103,18 @@ export function shouldRenderBookmarkDraftButton(comment: Pick<DraftComment, "mod
 
 export function buildBookmarkDraftButtonPresentation(comment: Pick<DraftComment, "mode" | "isBookmark">): {
     ariaLabel: string;
-    title: string;
     active: boolean;
 } {
     if (comment.mode === "new") {
         if (comment.isBookmark === true) {
             return {
                 ariaLabel: "Remove bookmark",
-                title: "Remove bookmark and keep editing",
                 active: true,
             };
         }
 
         return {
             ariaLabel: "Save as bookmark",
-            title: "Save as bookmark",
             active: false,
         };
     }
@@ -125,14 +122,12 @@ export function buildBookmarkDraftButtonPresentation(comment: Pick<DraftComment,
     if (comment.isBookmark === true) {
         return {
             ariaLabel: "Remove bookmark",
-            title: "Remove bookmark and keep editing",
             active: true,
         };
     }
 
     return {
         ariaLabel: "Mark as bookmark",
-        title: "Mark as bookmark and keep editing",
         active: false,
     };
 }
@@ -152,7 +147,6 @@ function createDraftFormatButton(
         label?: string;
         icon?: string;
         ariaLabel: string;
-        title: string;
     },
 ): HTMLButtonElement {
     const button = container.createEl("button", {
@@ -160,7 +154,6 @@ function createDraftFormatButton(
     });
     button.setAttribute("type", "button");
     button.setAttribute("aria-label", options.ariaLabel);
-    button.setAttribute("title", options.title);
     if (options.label) {
         button.setText(options.label);
     }
@@ -233,14 +226,12 @@ function renderDraftEditor(
         ? createDraftFormatButton(toolbarRow, host, {
             label: "B",
             ariaLabel: "Bold",
-            title: "Wrap selection with **bold**",
         })
         : null;
     const highlightButton = toolbarRow
         ? createDraftFormatButton(toolbarRow, host, {
             label: "H",
             ariaLabel: "Highlight",
-            title: "Wrap selection with ==highlight==",
         })
         : null;
     const bookmarkButton = toolbarRow && shouldRenderBookmarkDraftButton(comment)
@@ -249,11 +240,16 @@ function renderDraftEditor(
             const button = createDraftFormatButton(toolbarRow, host, {
                 icon: "bookmark",
                 ariaLabel: presentation.ariaLabel,
-                title: presentation.title,
             });
             button.toggleClass("is-active", presentation.active);
             return button;
         })()
+        : null;
+    const referenceButton = toolbarRow
+        ? createDraftFormatButton(toolbarRow, host, {
+            icon: "link-2",
+            ariaLabel: "Link side note",
+        })
         : null;
     const editorShell = editorWrap.createDiv("sidenote2-inline-editor-shell");
     const preview = editorShell.createDiv("sidenote2-inline-editor-preview");
@@ -288,14 +284,12 @@ function renderDraftEditor(
         ? createDraftFormatButton(actionRow, host, {
             label: "B",
             ariaLabel: "Bold",
-            title: "Wrap selection with **bold**",
         })
         : null;
     const inlineEditHighlightButton = layout === "inline-edit"
         ? createDraftFormatButton(actionRow, host, {
             label: "H",
             ariaLabel: "Highlight",
-            title: "Wrap selection with ==highlight==",
         })
         : null;
     const inlineEditBookmarkButton = layout === "inline-edit" && shouldRenderBookmarkDraftButton(comment)
@@ -304,11 +298,16 @@ function renderDraftEditor(
             const button = createDraftFormatButton(actionRow, host, {
                 icon: "bookmark",
                 ariaLabel: presentation.ariaLabel,
-                title: presentation.title,
             });
             button.toggleClass("is-active", presentation.active);
             return button;
         })()
+        : null;
+    const inlineEditReferenceButton = layout === "inline-edit"
+        ? createDraftFormatButton(actionRow, host, {
+            icon: "link-2",
+            ariaLabel: "Link side note",
+        })
         : null;
     let isBookmark = comment.isBookmark === true;
     const syncBookmarkButtons = () => {
@@ -320,7 +319,6 @@ function renderDraftEditor(
             .filter((button): button is HTMLButtonElement => !!button)
             .forEach((button) => {
                 button.setAttribute("aria-label", bookmarkPresentation.ariaLabel);
-                button.setAttribute("title", bookmarkPresentation.title);
                 button.toggleClass("is-active", bookmarkPresentation.active);
             });
     };
@@ -333,14 +331,15 @@ function renderDraftEditor(
         text: presentation.saveLabel,
         cls: "mod-cta sidenote2-inline-save-button",
     });
-    saveButton.setAttribute("title", "Save");
     [
         boldButton,
         highlightButton,
         bookmarkButton,
+        referenceButton,
         inlineEditBoldButton,
         inlineEditHighlightButton,
         inlineEditBookmarkButton,
+        inlineEditReferenceButton,
         cancelButton,
         saveButton,
     ]
@@ -364,6 +363,9 @@ function renderDraftEditor(
     if (bookmarkButton) {
         bookmarkButton.disabled = saving;
     }
+    if (referenceButton) {
+        referenceButton.disabled = saving;
+    }
     if (inlineEditBoldButton) {
         inlineEditBoldButton.disabled = saving;
     }
@@ -372,6 +374,9 @@ function renderDraftEditor(
     }
     if (inlineEditBookmarkButton) {
         inlineEditBookmarkButton.disabled = saving;
+    }
+    if (inlineEditReferenceButton) {
+        inlineEditReferenceButton.disabled = saving;
     }
     cancelButton.disabled = saving;
     saveButton.disabled = saving;
@@ -445,6 +450,19 @@ function renderDraftEditor(
             return;
         }
     });
+    textarea.addEventListener("paste", (event: ClipboardEvent) => {
+        const pastedText = event.clipboardData?.getData("text/plain");
+        if (!pastedText) {
+            return;
+        }
+
+        if (!draftEditorController.normalizePastedSideNoteReferences(comment, textarea, pastedText, comment.mode === "edit")) {
+            return;
+        }
+
+        event.preventDefault();
+        event.stopPropagation();
+    });
     textarea.addEventListener("keydown", (event: KeyboardEvent) => {
         const consumeShortcut = () => {
             event.preventDefault();
@@ -480,6 +498,11 @@ function renderDraftEditor(
         draftEditorController.applyDraftHighlight(comment.id, textarea, comment.mode === "edit");
         textarea.focus();
     };
+    const applySideNoteReference = (event: Event) => {
+        stopPropagation(event);
+        draftEditorController.openDraftSideNoteReferenceSuggest(comment, textarea, comment.mode === "edit");
+        textarea.focus();
+    };
     const applyBookmark = (event: Event) => {
         stopPropagation(event);
         isBookmark = toggleBookmarkDraftState(isBookmark);
@@ -498,9 +521,11 @@ function renderDraftEditor(
     };
     boldButton?.addEventListener("click", applyBold);
     highlightButton?.addEventListener("click", applyHighlight);
+    referenceButton?.addEventListener("click", applySideNoteReference);
     bookmarkButton?.addEventListener("click", applyBookmark);
     inlineEditBoldButton?.addEventListener("click", applyBold);
     inlineEditHighlightButton?.addEventListener("click", applyHighlight);
+    inlineEditReferenceButton?.addEventListener("click", applySideNoteReference);
     inlineEditBookmarkButton?.addEventListener("click", applyBookmark);
     cancelButton.onclick = (event) => {
         stopPropagation(event);

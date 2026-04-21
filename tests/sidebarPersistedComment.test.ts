@@ -3,6 +3,7 @@ import test from "node:test";
 import { commentToThread, type Comment, type CommentThread } from "../src/commentManager";
 import type { AgentRunRecord } from "../src/core/agents/agentRuns";
 import {
+    buildSidebarSideNoteReferencePresentation,
     buildPersistedCommentPresentation,
     buildPersistedThreadEntryPresentation,
     formatSidebarCommentIndexLeadLabel,
@@ -13,6 +14,7 @@ import {
     resolveSidebarCommentAuthor,
     shouldRenderSidebarCommentAuthor,
     shouldRenderNestedThreadEntries,
+    shouldRenderThreadNestedToggle,
 } from "../src/ui/views/sidebarPersistedComment";
 import { formatSidebarCommentMeta } from "../src/ui/views/sidebarCommentSections";
 
@@ -203,6 +205,54 @@ test("buildPersistedCommentPresentation omits anchored preview text for page not
     assert.equal(presentation.metaPreviewText, null);
 });
 
+test("buildSidebarSideNoteReferencePresentation renders note-title previews instead of raw urls", () => {
+    const presentation = buildSidebarSideNoteReferencePresentation({
+        bodyPreview: "This is a longer side note preview that should be trimmed once it crosses the display limit for related references.",
+        filePath: "docs/agent-cross-platform-runtime-plan.md",
+        fileTitle: "agent-cross-platform-runtime-plan",
+        primaryLabel: "Build runtime abstraction",
+        resolved: false,
+        selectedText: "runtime abstraction",
+    }, {
+        filePath: "docs/fallback.md",
+    });
+
+    assert.equal(presentation.title, "agent-cross-platform-runtime-plan");
+    assert.equal(
+        presentation.preview,
+        "This is a longer side note preview that should be trimmed once it crosses the display limit for related references.",
+    );
+    assert.equal(
+        presentation.tooltip,
+        "docs/agent-cross-platform-runtime-plan.md\nThis is a longer side note preview that should be trimmed once it crosses the display limit for related references.",
+    );
+    assert.equal(presentation.resolved, false);
+});
+
+test("buildSidebarSideNoteReferencePresentation falls back to the source file title when the target is not indexed", () => {
+    const presentation = buildSidebarSideNoteReferencePresentation(null, {
+        filePath: "docs/related-note.md",
+    });
+
+    assert.equal(presentation.title, "related-note");
+    assert.equal(presentation.preview, null);
+    assert.equal(presentation.tooltip, "docs/related-note.md");
+});
+
+test("buildSidebarSideNoteReferencePresentation normalizes whitespace without fixed truncation", () => {
+    assert.equal(
+        buildSidebarSideNoteReferencePresentation({
+            bodyPreview: "  one   two   three   four  ",
+            filePath: "docs/related-note.md",
+            fileTitle: "related-note",
+            primaryLabel: "related-note",
+            resolved: false,
+            selectedText: "",
+        }).preview,
+        "one two three four",
+    );
+});
+
 test("shouldRenderNestedThreadEntries hides stored child comments when nested comments are off", () => {
     const thread = createThreadWithEntries({
         entries: [
@@ -216,6 +266,7 @@ test("shouldRenderNestedThreadEntries hides stored child comments when nested co
     assert.equal(shouldRenderNestedThreadEntries(thread, {
         activeCommentId: null,
         showNestedComments: false,
+        showNestedCommentsByDefault: false,
         hasEditDraftComment: false,
         hasAppendDraftComment: false,
         hasAgentStream: false,
@@ -235,13 +286,14 @@ test("shouldRenderNestedThreadEntries keeps a targeted child comment visible eve
     assert.equal(shouldRenderNestedThreadEntries(thread, {
         activeCommentId: "entry-2",
         showNestedComments: false,
+        showNestedCommentsByDefault: true,
         hasEditDraftComment: false,
         hasAppendDraftComment: false,
         hasAgentStream: false,
     }), true);
 });
 
-test("shouldRenderNestedThreadEntries keeps an active parent thread visible even when nested comments are off", () => {
+test("shouldRenderNestedThreadEntries keeps an active parent thread visible when nested comments are hidden by the global default", () => {
     const thread = createThreadWithEntries({
         id: "entry-1",
         entries: [
@@ -255,10 +307,32 @@ test("shouldRenderNestedThreadEntries keeps an active parent thread visible even
     assert.equal(shouldRenderNestedThreadEntries(thread, {
         activeCommentId: "entry-1",
         showNestedComments: false,
+        showNestedCommentsByDefault: false,
         hasEditDraftComment: false,
         hasAppendDraftComment: false,
         hasAgentStream: false,
     }), true);
+});
+
+test("shouldRenderNestedThreadEntries does not keep an active parent thread visible after the thread was explicitly hidden", () => {
+    const thread = createThreadWithEntries({
+        id: "entry-1",
+        entries: [
+            { id: "entry-1", body: "Parent", timestamp: 100 },
+            { id: "entry-2", body: "Child", timestamp: 200 },
+        ],
+        createdAt: 100,
+        updatedAt: 200,
+    });
+
+    assert.equal(shouldRenderNestedThreadEntries(thread, {
+        activeCommentId: "entry-1",
+        showNestedComments: false,
+        showNestedCommentsByDefault: true,
+        hasEditDraftComment: false,
+        hasAppendDraftComment: false,
+        hasAgentStream: false,
+    }), false);
 });
 
 test("shouldRenderNestedThreadEntries keeps stored child comments visible while editing a thread entry", () => {
@@ -274,6 +348,7 @@ test("shouldRenderNestedThreadEntries keeps stored child comments visible while 
     assert.equal(shouldRenderNestedThreadEntries(thread, {
         activeCommentId: null,
         showNestedComments: false,
+        showNestedCommentsByDefault: false,
         hasEditDraftComment: true,
         hasAppendDraftComment: false,
         hasAgentStream: false,
@@ -286,6 +361,7 @@ test("shouldRenderNestedThreadEntries keeps append drafts visible even when nest
     assert.equal(shouldRenderNestedThreadEntries(thread, {
         activeCommentId: null,
         showNestedComments: false,
+        showNestedCommentsByDefault: false,
         hasEditDraftComment: false,
         hasAppendDraftComment: true,
         hasAgentStream: false,
@@ -298,9 +374,21 @@ test("shouldRenderNestedThreadEntries keeps streamed agent replies visible even 
     assert.equal(shouldRenderNestedThreadEntries(thread, {
         activeCommentId: null,
         showNestedComments: false,
+        showNestedCommentsByDefault: false,
         hasEditDraftComment: false,
         hasAppendDraftComment: false,
         hasAgentStream: true,
+    }), true);
+});
+
+test("shouldRenderThreadNestedToggle hides the toggle while the parent card is in inline edit draft mode", () => {
+    assert.equal(shouldRenderThreadNestedToggle({
+        hasStoredChildEntries: true,
+        hasInlineEditDraft: true,
+    }), false);
+    assert.equal(shouldRenderThreadNestedToggle({
+        hasStoredChildEntries: true,
+        hasInlineEditDraft: false,
     }), true);
 });
 

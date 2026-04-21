@@ -191,6 +191,13 @@ test("sidebar interaction controller opens a comment by marking it active and re
     assert.deepEqual(harness.matchingCommentEl.addClassCalls, ["active"]);
 });
 
+test("sidebar interaction controller marks the targeted comment active", () => {
+    const harness = createHarness();
+
+    harness.controller.setActiveComment("comment-1");
+    assert.equal(harness.controller.getActiveCommentId(), "comment-1");
+});
+
 test("sidebar interaction controller scrolls the rerendered draft card instead of a stale pre-render node", async () => {
     const staleDraftEl = createCommentElement({ draftId: "draft-1" });
     const freshDraftEl = createCommentElement({ draftId: "draft-1" });
@@ -264,10 +271,11 @@ test("sidebar interaction controller scrolls the rerendered draft card instead o
 test("sidebar interaction controller clears active state classes", () => {
     const harness = createHarness();
 
+    harness.controller.setActiveComment("comment-1");
     harness.controller.clearActiveState();
 
     assert.equal(harness.controller.getActiveCommentId(), null);
-    assert.deepEqual(harness.otherActiveEl.removeClassCalls, ["active"]);
+    assert.deepEqual(harness.otherActiveEl.removeClassCalls, ["active", "active"]);
 });
 
 test("sidebar interaction controller claims the sidebar leaf before focusing a draft textarea", () => {

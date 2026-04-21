@@ -18,14 +18,19 @@ function toThreads(items: Array<Comment | CommentThread>): CommentThread[] {
 
 export class AggregateCommentIndex {
     private threadsByFile = new Map<string, CommentThread[]>();
+    private version = 0;
 
     updateFile(filePath: string, items: Array<Comment | CommentThread>): void {
         if (!items.length) {
+            if (this.threadsByFile.has(filePath)) {
+                this.version += 1;
+            }
             this.threadsByFile.delete(filePath);
             return;
         }
 
         this.threadsByFile.set(filePath, toThreads(items));
+        this.version += 1;
     }
 
     renameFile(oldPath: string, newPath: string): void {
@@ -42,9 +47,13 @@ export class AggregateCommentIndex {
                 filePath: newPath,
             })),
         );
+        this.version += 1;
     }
 
     deleteFile(filePath: string): void {
+        if (this.threadsByFile.has(filePath)) {
+            this.version += 1;
+        }
         this.threadsByFile.delete(filePath);
     }
 
@@ -85,6 +94,10 @@ export class AggregateCommentIndex {
 
         const entry = thread.entries.find((threadEntry) => threadEntry.id === commentId) ?? getFirstThreadEntry(thread);
         return threadEntryToComment(thread, entry);
+    }
+
+    getVersion(): number {
+        return this.version;
     }
 }
 

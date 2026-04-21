@@ -47,19 +47,19 @@ export interface PluginRegistrationHost {
     addRibbonIcon(icon: string, title: string, callback: () => void): void;
     createSidebarView(leaf: unknown): unknown;
     startDraftFromEditorSelection(editor: EditorSelectionLike, file: TFile | null): Promise<unknown>;
-    highlightCommentById(filePath: string, commentId: string): Promise<void>;
+    highlightCommentById(filePath: string | null, commentId: string): Promise<void>;
     openIndexNote(): Promise<void> | void;
 }
 
 export interface CommentProtocolTarget {
-    filePath: string;
+    filePath: string | null;
     commentId: string;
 }
 
 export function resolveCommentProtocolTarget(params: Record<string, unknown>): CommentProtocolTarget | null {
     const filePath = typeof params.file === "string" ? params.file : null;
     const commentId = typeof params.commentId === "string" ? params.commentId : null;
-    return filePath && commentId ? { filePath, commentId } : null;
+    return commentId ? { filePath, commentId } : null;
 }
 
 export class PluginRegistrationController {

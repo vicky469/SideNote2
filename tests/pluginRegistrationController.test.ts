@@ -74,7 +74,7 @@ function createHarness() {
     const ribbonActions: Array<{ icon: string; title: string; callback: () => void }> = [];
     const createdSidebarLeaves: unknown[] = [];
     const draftCalls: Array<{ selected: boolean; filePath: string | null }> = [];
-    const highlightedCommentTargets: Array<{ filePath: string; commentId: string }> = [];
+    const highlightedCommentTargets: Array<{ filePath: string | null; commentId: string }> = [];
     let openIndexNoteCount = 0;
 
     const controller = new PluginRegistrationController({
@@ -209,9 +209,13 @@ test("plugin registration controller only adds the editor menu item for active s
     }]);
 });
 
-test("comment protocol target resolution requires both file and comment id", () => {
+test("comment protocol target resolution requires a comment id and treats file as optional", () => {
     assert.equal(resolveCommentProtocolTarget({}), null);
     assert.equal(resolveCommentProtocolTarget({ file: "docs/file.md" }), null);
+    assert.deepEqual(resolveCommentProtocolTarget({ commentId: "comment-1" }), {
+        filePath: null,
+        commentId: "comment-1",
+    });
     assert.deepEqual(resolveCommentProtocolTarget({
         file: "docs/file.md",
         commentId: "comment-1",
