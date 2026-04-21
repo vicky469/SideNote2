@@ -77,13 +77,21 @@ export default class SideNote2SettingTab extends PluginSettingTab {
                 applyCodexStatus(diagnostics);
             }
         };
-        codexStatusSetting.addButton((button) =>
+        codexStatusSetting.addButton((button) => {
             button
                 .setButtonText("Re-check")
                 .onClick(async () => {
                     await refreshCodexStatus();
-                })
-        );
+                });
+
+            // Obsidian can land initial focus on the first settings action button.
+            // Clear that one-time autofocus so the row does not render as highlighted on open.
+            window.setTimeout(() => {
+                if (document.activeElement === button.buttonEl) {
+                    button.buttonEl.blur();
+                }
+            }, 0);
+        });
         void refreshCodexStatus();
 
         const hasRemoteBridgeConfig = !!this.plugin.getRemoteRuntimeBaseUrl() || !!this.plugin.getRemoteRuntimeBearerToken();
