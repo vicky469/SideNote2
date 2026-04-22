@@ -8,6 +8,7 @@ import {
     buildPersistedThreadEntryPresentation,
     formatSidebarCommentIndexLeadLabel,
     formatSidebarCommentSourceFileLabel,
+    getInsertableSidebarCommentMarkdown,
     getAppendDraftInsertAfterEntryId,
     getRenderableThreadEntries,
     getAgentRunStatusPresentation,
@@ -535,6 +536,36 @@ test("formatSidebarCommentIndexLeadLabel uses the source page name for both page
         })),
         "architecture",
     );
+});
+
+test("getInsertableSidebarCommentMarkdown keeps the full agent reply body without trailing references", () => {
+    assert.equal(
+        getInsertableSidebarCommentMarkdown(
+            "entry-2",
+            [
+                "Here is the summary.",
+                "",
+                "| Name | Status |",
+                "| --- | --- |",
+                "| Alpha | Ready |",
+                "",
+                "Mentioned:",
+                "- [linked note](obsidian://side-note2-comment?vault=dev&file=docs%2Flinked.md&commentId=linked-1)",
+            ].join("\n"),
+            [createAgentRun({ outputEntryId: "entry-2" })],
+        ),
+        [
+            "Here is the summary.",
+            "",
+            "| Name | Status |",
+            "| --- | --- |",
+            "| Alpha | Ready |",
+        ].join("\n"),
+    );
+});
+
+test("getInsertableSidebarCommentMarkdown returns null for user-authored comments", () => {
+    assert.equal(getInsertableSidebarCommentMarkdown("entry-2", "Reply body", []), null);
 });
 
 test("resolveSidebarCommentAuthor labels user-written entries as the current user", () => {

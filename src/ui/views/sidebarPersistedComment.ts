@@ -84,6 +84,7 @@ export interface SidebarPersistedCommentHost {
     getEventTargetElement(target: EventTarget | null): HTMLElement | null;
     isSelectionInsideSidebarContent(selection?: Selection | null): boolean;
     claimSidebarInteractionOwnership(focusTarget?: HTMLElement | null): void;
+    insertCommentMarkdownIntoNote(filePath: string, markdown: string): Promise<boolean>;
     renderMarkdown(markdown: string, container: HTMLElement, sourcePath: string): Promise<void>;
     openSidebarInternalLink(href: string, sourcePath: string, focusTarget: HTMLElement): Promise<void>;
     openSideNoteReference(url: string): Promise<void>;
@@ -333,6 +334,19 @@ export function resolveSidebarCommentAuthor(
         currentUserLabel,
         getAgentRunByOutputEntryId(threadAgentRuns, commentId),
     );
+}
+
+export function getInsertableSidebarCommentMarkdown(
+    commentId: string,
+    entryBody: string,
+    threadAgentRuns: readonly AgentRunRecord[],
+): string | null {
+    if (!getAgentRunByOutputEntryId(threadAgentRuns, commentId)) {
+        return null;
+    }
+
+    const markdown = splitTrailingSideNoteReferenceSection(entryBody).body.trim();
+    return markdown || null;
 }
 
 export function buildPersistedThreadEntryPresentation(
@@ -921,7 +935,7 @@ function renderReorderHandle(
 }
 
 function attachSidebarActionButtonInteractions(
-    buttonEl: HTMLButtonElement,
+    buttonEl: HTMLElement,
     host: SidebarPersistedCommentHost,
 ): void {
     buttonEl.addEventListener("mousedown", (event: MouseEvent) => {
@@ -992,6 +1006,10 @@ function renderThreadFooterActions(
         showShareAction: boolean;
         showAddEntryAction: boolean;
         showRetryAction?: boolean;
+        insertAction?: {
+            filePath: string;
+            markdown: string;
+        } | null;
     },
     host: SidebarPersistedCommentHost,
 ): void {
@@ -1000,6 +1018,38 @@ function renderThreadFooterActions(
     renderCommentAuthorIndicator(footerMetaEl, author);
     if (agentRun) {
         renderAgentRunStatus(footerMetaEl, agentRun);
+    }
+    if (options.insertAction) {
+        const insertAction = options.insertAction;
+        footerMetaEl.createSpan({
+            cls: "sidenote2-thread-footer-meta-separator",
+            text: "·",
+        });
+        const addButton = footerMetaEl.createSpan({
+            cls: "sidenote2-thread-footer-meta-action",
+            text: "Add to source",
+        });
+        attachSidebarActionButtonInteractions(addButton, host);
+        addButton.tabIndex = 0;
+        addButton.setAttribute("role", "button");
+        const runInsert = async (event: Event) => {
+            event.preventDefault();
+            event.stopPropagation();
+            if (!(await host.saveVisibleDraftIfPresent())) {
+                return;
+            }
+            await host.insertCommentMarkdownIntoNote(insertAction.filePath, insertAction.markdown);
+        };
+        addButton.addEventListener("click", (event) => {
+            void runInsert(event);
+        });
+        addButton.addEventListener("keydown", (event: KeyboardEvent) => {
+            if (event.key !== "Enter" && event.key !== " ") {
+                return;
+            }
+
+            void runInsert(event);
+        });
     }
 
     if (!(options.showShareAction || options.showAddEntryAction || options.showRetryAction)) {
@@ -1164,6 +1214,9 @@ export async function renderPersistedCommentCard(
     }
 
     if (!parentEditDraft) {
+        const parentInsertMarkdown = !comment.deletedAt && !thread.deletedAt
+            ? getInsertableSidebarCommentMarkdown(comment.id, entries[0]?.body || "", host.threadAgentRuns)
+            : null;
         if (comment.deletedAt && host.enableSoftDeleteActions) {
             renderRestoreButton(actionsEl, comment.id, host, "Restore deleted side note");
         } else {
@@ -1209,6 +1262,12 @@ export async function renderPersistedCommentCard(
         renderThreadFooterActions(commentEl, comment, null, parentAuthor, null, {
             showShareAction: !comment.deletedAt,
             showAddEntryAction: !comment.deletedAt,
+            insertAction: parentInsertMarkdown
+                ? {
+                    filePath: comment.filePath,
+                    markdown: parentInsertMarkdown,
+                }
+                : null,
             showRetryAction: false,
         }, host);
     }
@@ -1262,6 +1321,9 @@ export async function renderPersistedCommentCard(
                 }
                 const entryAuthor = resolveSidebarCommentAuthor(entryComment.id, host.threadAgentRuns, host.currentUserLabel);
                 const entryAgentRun = getAgentRunByOutputEntryId(host.threadAgentRuns, entryComment.id);
+                const entryInsertMarkdown = !entryComment.deletedAt && !thread.deletedAt
+                    ? getInsertableSidebarCommentMarkdown(entryComment.id, entry.body || "", host.threadAgentRuns)
+                    : null;
                 renderThreadFooterActions(
                     entryEl,
                     entryComment,
@@ -1271,6 +1333,12 @@ export async function renderPersistedCommentCard(
                     {
                         showShareAction: !entryComment.deletedAt && !thread.deletedAt,
                         showAddEntryAction: !entryComment.deletedAt && !thread.deletedAt,
+                        insertAction: entryInsertMarkdown
+                            ? {
+                                filePath: entryComment.filePath,
+                                markdown: entryInsertMarkdown,
+                            }
+                            : null,
                         showRetryAction: !!entryAgentRun && !entryComment.deletedAt && !thread.deletedAt,
                     },
                     host,

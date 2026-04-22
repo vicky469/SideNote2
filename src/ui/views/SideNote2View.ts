@@ -1,5 +1,6 @@
 import {
     ItemView,
+    MarkdownView,
     MarkdownRenderer,
     Notice,
     TFile,
@@ -163,6 +164,24 @@ function isMermaidRuntimeLike(value: unknown): value is MermaidRuntimeLike {
     const candidate = value as Partial<MermaidRuntimeLike>;
     return typeof candidate.initialize === "function"
         && typeof candidate.render === "function";
+}
+
+function buildBlockInsertionText(
+    noteContent: string,
+    fromOffset: number,
+    toOffset: number,
+    blockMarkdown: string,
+): string {
+    const normalizedBlock = blockMarkdown.trim();
+    if (!normalizedBlock) {
+        return "";
+    }
+
+    const charBefore = fromOffset > 0 ? noteContent.charAt(fromOffset - 1) : "";
+    const charAfter = toOffset < noteContent.length ? noteContent.charAt(toOffset) : "";
+    const prefix = fromOffset === 0 || charBefore === "\n" ? "" : "\n\n";
+    const suffix = toOffset >= noteContent.length || charAfter === "\n" ? "" : "\n\n";
+    return `${prefix}${normalizedBlock}${suffix}`;
 }
 
 export default class SideNote2View extends ItemView {
@@ -1978,6 +1997,61 @@ export default class SideNote2View extends ItemView {
         });
     }
 
+    private async insertCommentMarkdownIntoNote(filePath: string, markdown: string): Promise<boolean> {
+        const targetFile = this.app.vault.getAbstractFileByPath(filePath);
+        if (!(targetFile instanceof TFile) || targetFile.extension !== "md") {
+            new Notice("Unable to open the source note.");
+            return false;
+        }
+
+        let targetLeaf = this.plugin.getPreferredFileLeaf(targetFile.path) ?? this.app.workspace.getLeaf(false);
+        if (!targetLeaf) {
+            new Notice("Unable to open that note.");
+            return false;
+        }
+
+        if (!(targetLeaf.view instanceof MarkdownView) || targetLeaf.view.file?.path !== targetFile.path) {
+            await targetLeaf.openFile(targetFile);
+        }
+
+        if (!(targetLeaf.view instanceof MarkdownView) || targetLeaf.view.file?.path !== targetFile.path) {
+            new Notice("Unable to insert into that note.");
+            return false;
+        }
+
+        if (targetLeaf.view.getMode() === "preview") {
+            new Notice("Switch the source note to editing mode to add the reply.");
+            return false;
+        }
+
+        this.app.workspace.setActiveLeaf(targetLeaf, { focus: true });
+
+        const editor = targetLeaf.view.editor;
+        const from = editor.getCursor("from");
+        const to = editor.getCursor("to");
+        const fromOffset = editor.posToOffset(from);
+        const insertionText = editor.somethingSelected()
+            ? markdown.trim()
+            : buildBlockInsertionText(
+                editor.getValue(),
+                fromOffset,
+                editor.posToOffset(to),
+                markdown,
+            );
+        if (!insertionText) {
+            new Notice("Unable to add that reply.");
+            return false;
+        }
+
+        editor.replaceRange(insertionText, from, to);
+        const nextOffset = fromOffset + insertionText.length;
+        const nextPosition = editor.offsetToPos(nextOffset);
+        editor.setSelection(nextPosition, nextPosition);
+        editor.focus();
+        new Notice("Added to source note.");
+        return true;
+    }
+
     private async renderPersistedComment(
         commentsContainer: HTMLDivElement,
         thread: CommentThread,
@@ -2010,6 +2084,7 @@ export default class SideNote2View extends ItemView {
             getEventTargetElement: (target) => this.interactionController.getEventTargetElement(target),
             isSelectionInsideSidebarContent: (selection) => this.interactionController.isSelectionInsideSidebarContent(selection),
             claimSidebarInteractionOwnership: (focusTarget) => this.interactionController.claimSidebarInteractionOwnership(focusTarget),
+            insertCommentMarkdownIntoNote: (filePath, markdown) => this.insertCommentMarkdownIntoNote(filePath, markdown),
             renderMarkdown: async (markdown, container, sourcePath) => {
                 await MarkdownRenderer.render(this.app, markdown, container, sourcePath, this);
             },
