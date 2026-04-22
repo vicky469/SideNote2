@@ -271,6 +271,11 @@
 
 .sidenote2-sidebar-toolbar-row.is-note-secondary-row {
     justify-content: flex-start;
+    flex-wrap: nowrap;
+}
+
+.sidenote2-sidebar-toolbar-row.is-note-search-row {
+    align-items: stretch;
 }
 
 .sidenote2-sidebar-toolbar-group {
@@ -283,11 +288,81 @@
 }
 
 .sidenote2-sidebar-toolbar-group.is-filter-group {
+    flex: 1 1 auto;
+    flex-wrap: nowrap;
     margin-right: auto;
+    min-width: 0;
 }
 
 .sidenote2-sidebar-toolbar-group.is-action-group {
+    flex-wrap: nowrap;
     justify-content: flex-end;
+    gap: 6px;
+    min-width: 0;
+}
+
+.sidenote2-sidebar-toolbar-group.is-search-group {
+    width: auto;
+    flex: 1 1 150px;
+    min-width: 120px;
+}
+
+.sidenote2-note-search-field {
+    position: relative;
+    width: min(100%, clamp(144px, 34vw, 196px));
+}
+
+.sidenote2-note-search-field > input.sidenote2-note-search-input {
+    display: block;
+    width: 100%;
+    min-height: 27px !important;
+    padding: 4px 10px !important;
+    border: 1px solid color-mix(in srgb, var(--background-modifier-border) 52%, transparent) !important;
+    border-radius: 999px;
+    background: color-mix(in srgb, var(--background-primary) 97%, var(--background-secondary) 3%) !important;
+    background-image: none !important;
+    color: var(--text-normal) !important;
+    font-size: 11px;
+    line-height: 1.2;
+    box-sizing: border-box;
+    appearance: none !important;
+    -webkit-appearance: none !important;
+    box-shadow: none !important;
+    outline: none !important;
+    transition: border-color 0.14s ease, background-color 0.14s ease;
+}
+
+.sidenote2-note-search-field > input.sidenote2-note-search-input::-webkit-search-decoration,
+.sidenote2-note-search-field > input.sidenote2-note-search-input::-webkit-search-cancel-button,
+.sidenote2-note-search-field > input.sidenote2-note-search-input::-webkit-search-results-button,
+.sidenote2-note-search-field > input.sidenote2-note-search-input::-webkit-search-results-decoration {
+    -webkit-appearance: none !important;
+    appearance: none !important;
+    display: none !important;
+}
+
+.sidenote2-note-search-field > input.sidenote2-note-search-input::placeholder {
+    color: color-mix(in srgb, var(--text-faint) 84%, transparent) !important;
+    font-size: 11px;
+}
+
+.sidenote2-note-search-field > input.sidenote2-note-search-input:focus,
+.sidenote2-note-search-field > input.sidenote2-note-search-input:focus-visible,
+.sidenote2-note-search-field > input.sidenote2-note-search-input.is-focused {
+    outline: none !important;
+    border-color: color-mix(in srgb, var(--background-modifier-border) 64%, transparent) !important;
+    background: color-mix(in srgb, var(--background-primary) 98%, var(--background-secondary) 2%) !important;
+    box-shadow: none !important;
+}
+
+.sidenote2-search-match {
+    background: color-mix(in srgb, var(--text-highlight-bg, hsla(var(--interactive-accent-hsl), 0.18)) 88%, transparent);
+    color: inherit;
+    border-radius: 4px;
+    padding: 0 0.14em;
+    box-shadow: inset 0 -1px 0 color-mix(in srgb, var(--interactive-accent) 34%, transparent);
+    box-decoration-break: clone;
+    -webkit-box-decoration-break: clone;
 }
 
 .sidenote2-tablist {

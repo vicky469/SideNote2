@@ -211,6 +211,34 @@ test("buildPageSidebarThreadRenderSignature changes when bookmark state changes"
 
     assert.notEqual(noteSignature, bookmarkSignature);
 });
+
+test("buildPageSidebarThreadRenderSignature ignores sidebar search query changes", () => {
+    const thread = createThread();
+    const withoutSearch = buildPageSidebarThreadRenderSignature({
+        thread,
+        activeCommentId: null,
+        showNestedComments: false,
+        showNestedCommentsByDefault: false,
+        enablePageThreadReorder: true,
+        editDraftComment: null,
+        appendDraftComment: null,
+        threadAgentRuns: [],
+    });
+    const withSearch = buildPageSidebarThreadRenderSignature({
+        thread,
+        activeCommentId: null,
+        searchQuery: "architecture",
+        showNestedComments: false,
+        showNestedCommentsByDefault: false,
+        enablePageThreadReorder: true,
+        editDraftComment: null,
+        appendDraftComment: null,
+        threadAgentRuns: [],
+    } as Parameters<typeof buildPageSidebarThreadRenderSignature>[0] & { searchQuery: string });
+
+    assert.equal(withoutSearch, withSearch);
+});
+
 test("buildPageSidebarDraftRenderSignature changes only for the matching active draft", () => {
     const draft = createDraft({ id: "draft-1", mode: "edit", threadId: undefined });
     const inactive = buildPageSidebarDraftRenderSignature(draft, null);

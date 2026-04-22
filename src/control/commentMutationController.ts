@@ -1,5 +1,6 @@
 import type { TFile } from "obsidian";
-import type { Comment, CommentManager } from "../commentManager";
+import type { Comment, CommentManager, CommentThread } from "../commentManager";
+import { getPageCommentLabel } from "../core/anchors/commentAnchors";
 import { lineChToOffset, offsetToLineCh } from "../core/anchors/anchorResolver";
 import { shortenBareUrlsInMarkdown } from "../core/text/commentUrls";
 import { MAX_SIDENOTE_WORDS, countCommentWords, exceedsCommentWordLimit } from "../core/text/commentWordLimit";
@@ -427,6 +428,57 @@ export class CommentMutationController {
         return true;
     }
 
+    public async moveCommentThreadToFile(threadId: string, targetFilePath: string): Promise<boolean> {
+        void this.host.log?.("info", "draft", "thread.move.begin", {
+            threadId,
+            targetFilePath,
+        });
+        const latestTarget = await this.loadLatestCommentTarget(threadId);
+        if (!latestTarget) {
+            return false;
+        }
+
+        if (latestTarget.file.path === targetFilePath) {
+            this.host.showNotice("Choose a different note to move this side note.");
+            return false;
+        }
+
+        const targetFile = this.host.getFileByPath(targetFilePath);
+        if (!this.host.isCommentableFile(targetFile)) {
+            this.host.showNotice("Unable to find that destination note.");
+            return false;
+        }
+
+        await this.host.loadCommentsForFile(targetFile);
+        const sourceThread = this.host.getCommentManager().getThreadById(threadId);
+        if (!sourceThread) {
+            this.host.showNotice("Unable to find that side note.");
+            return false;
+        }
+
+        const movedAt = this.host.now();
+        const movedThread = await this.buildMovedPageThread(sourceThread, targetFile.path, movedAt);
+        const sourceThreads = this.host.getCommentManager()
+            .getThreadsForFile(latestTarget.file.path, { includeDeleted: true })
+            .filter((thread) => thread.id !== sourceThread.id);
+        const targetThreads = this.host.getCommentManager().getThreadsForFile(targetFile.path, { includeDeleted: true });
+
+        this.host.getCommentManager().replaceThreadsForFile(latestTarget.file.path, sourceThreads);
+        this.host.getCommentManager().replaceThreadsForFile(targetFile.path, [movedThread, ...targetThreads]);
+        await this.host.persistCommentsForFile(latestTarget.file, {
+            immediateAggregateRefresh: false,
+            skipCommentViewRefresh: true,
+        });
+        await this.host.persistCommentsForFile(targetFile, { immediateAggregateRefresh: true });
+        this.host.showNotice(`Moved side note to ${targetFile.basename}.`);
+        void this.host.log?.("info", "draft", "thread.move.success", {
+            sourceFilePath: latestTarget.file.path,
+            targetFilePath: targetFile.path,
+            threadId,
+        });
+        return true;
+    }
+
     private async loadLatestCommentTarget(
         commentId: string,
     ): Promise<{ file: TFile; latestComment: Comment } | null> {
@@ -445,6 +497,29 @@ export class CommentMutationController {
         }
 
         return { file, latestComment };
+    }
+
+    private async buildMovedPageThread(
+        thread: CommentThread,
+        targetFilePath: string,
+        movedAt: number,
+    ): Promise<CommentThread> {
+        const pageLabel = getPageCommentLabel(targetFilePath);
+
+        return {
+            ...thread,
+            filePath: targetFilePath,
+            startLine: 0,
+            startChar: 0,
+            endLine: 0,
+            endChar: 0,
+            selectedText: pageLabel,
+            selectedTextHash: await this.host.hashText(pageLabel),
+            anchorKind: "page",
+            orphaned: false,
+            updatedAt: Math.max(thread.updatedAt, movedAt),
+            entries: thread.entries.map((entry) => ({ ...entry })),
+        };
     }
 
     private async prepareNewDraftForSave(

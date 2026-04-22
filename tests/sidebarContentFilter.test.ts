@@ -5,9 +5,12 @@ import {
     countAgentThreads,
     countBookmarkThreads,
     filterThreadsBySidebarContentFilter,
+    filterThreadsBySidebarSearchQuery,
     isAgentThread,
     isBookmarkThread,
+    matchesSidebarDraftSearchQuery,
     matchesSidebarContentFilter,
+    matchesSidebarThreadSearchQuery,
     unlockSidebarContentFilterForDraft,
 } from "../src/ui/views/sidebarContentFilter";
 
@@ -92,6 +95,46 @@ test("sidebar content filter counters reflect bookmark and supported agent menti
 
     assert.equal(countBookmarkThreads([noteThread, bookmarkThread, agentThread]), 1);
     assert.equal(countAgentThreads([noteThread, bookmarkThread, agentThread, unsupportedAgentThread, emailThread]), 1);
+});
+
+test("sidebar search matches selected text and entry bodies case-insensitively", () => {
+    const selectionThread = createThread({
+        id: "thread-selection",
+        selectedText: "Architecture review",
+        entries: [
+            { id: "thread-selection", body: "Parent entry", timestamp: 100 },
+        ],
+    });
+    const bodyThread = createThread({
+        id: "thread-body",
+        selectedText: "Different note",
+        entries: [
+            { id: "thread-body", body: "Follow up on API cleanup", timestamp: 100 },
+        ],
+    });
+
+    assert.equal(matchesSidebarThreadSearchQuery(selectionThread, "architecture"), true);
+    assert.equal(matchesSidebarThreadSearchQuery(bodyThread, "api cleanup"), true);
+    assert.equal(matchesSidebarThreadSearchQuery(bodyThread, "missing term"), false);
+    assert.deepEqual(
+        filterThreadsBySidebarSearchQuery([selectionThread, bodyThread], "api cleanup").map((thread) => thread.id),
+        ["thread-body"],
+    );
+});
+
+test("sidebar search also matches draft text", () => {
+    assert.equal(matchesSidebarDraftSearchQuery({
+        selectedText: "Anchor label",
+        comment: "Need to revisit the search affordance",
+    }, "search affordance"), true);
+    assert.equal(matchesSidebarDraftSearchQuery({
+        selectedText: "Anchor label",
+        comment: "Need to revisit the search affordance",
+    }, "anchor"), true);
+    assert.equal(matchesSidebarDraftSearchQuery({
+        selectedText: "Anchor label",
+        comment: "Need to revisit the search affordance",
+    }, "bookmark"), false);
 });
 
 test("sidebar content filters unlock when a new draft starts", () => {

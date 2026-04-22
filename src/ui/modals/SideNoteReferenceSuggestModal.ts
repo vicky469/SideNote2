@@ -5,37 +5,46 @@ import {
 import type { SideNoteReferenceSearchDocument } from "../../index/SideNoteReferenceSearchIndex";
 
 interface SideNoteReferenceSuggestModalOptions {
+    emptyStateText?: string;
     excludeThreadId?: string | null;
     initialQuery: string;
     onChooseReference: (commentId: string) => void | Promise<void>;
     onCloseModal: () => void;
+    placeholder?: string;
     searchReferences: (query: string, options: {
         excludeThreadId?: string | null;
         limit?: number;
     }) => SideNoteReferenceSearchDocument[];
     sourcePath: string;
+    title?: string;
 }
 
 export default class SideNoteReferenceSuggestModal extends SuggestModal<SideNoteReferenceSearchDocument> {
+    private readonly emptyStateTextOverride: string;
     private readonly excludeThreadId: string | null;
     private readonly initialQuery: string;
     private readonly onChooseReference: (commentId: string) => void | Promise<void>;
     private readonly onCloseModal: () => void;
+    private readonly placeholder: string;
     private readonly searchReferences: SideNoteReferenceSuggestModalOptions["searchReferences"];
     private readonly sourcePath: string;
+    private readonly title: string;
 
     constructor(app: App, options: SideNoteReferenceSuggestModalOptions) {
         super(app);
+        this.emptyStateTextOverride = options.emptyStateText ?? "No indexed side notes match that query.";
         this.excludeThreadId = options.excludeThreadId ?? null;
         this.initialQuery = options.initialQuery;
         this.onChooseReference = options.onChooseReference;
         this.onCloseModal = options.onCloseModal;
+        this.placeholder = options.placeholder ?? "Find a side note to reference";
         this.searchReferences = options.searchReferences;
         this.sourcePath = options.sourcePath;
+        this.title = options.title ?? "Link side note";
 
         this.limit = 40;
-        this.setPlaceholder("Find a side note to reference");
-        this.emptyStateText = "No indexed side notes match that query.";
+        this.setPlaceholder(this.placeholder);
+        this.emptyStateText = this.emptyStateTextOverride;
         this.setInstructions([
             { command: "↑↓", purpose: "move" },
             { command: "Enter", purpose: "choose" },
@@ -45,7 +54,7 @@ export default class SideNoteReferenceSuggestModal extends SuggestModal<SideNote
 
     onOpen(): void {
         void super.onOpen();
-        this.setTitle("Link side note");
+        this.setTitle(this.title);
         this.inputEl.value = this.initialQuery;
         this.inputEl.dispatchEvent(new Event("input"));
         const caret = this.inputEl.value.length;

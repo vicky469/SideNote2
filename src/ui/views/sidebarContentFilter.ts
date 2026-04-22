@@ -4,6 +4,25 @@ import type { DraftComment } from "../../domain/drafts";
 
 export type SidebarContentFilter = "all" | "bookmarks" | "agents";
 
+function normalizeSidebarSearchText(value: string): string {
+    return value
+        .trim()
+        .toLowerCase()
+        .replace(/\s+/g, " ");
+}
+
+function matchesNormalizedSidebarSearchValue(value: string | null | undefined, normalizedQuery: string): boolean {
+    if (!normalizedQuery) {
+        return true;
+    }
+
+    if (!value) {
+        return false;
+    }
+
+    return normalizeSidebarSearchText(value).includes(normalizedQuery);
+}
+
 export function isBookmarkThread(thread: Pick<CommentThread, "isBookmark">): boolean {
     return thread.isBookmark === true;
 }
@@ -32,6 +51,39 @@ export function filterThreadsBySidebarContentFilter<T extends Pick<CommentThread
     filter: SidebarContentFilter,
 ): T[] {
     return threads.filter((thread) => matchesSidebarContentFilter(thread, filter));
+}
+
+export function matchesSidebarThreadSearchQuery<T extends Pick<CommentThread, "selectedText" | "entries">>(
+    thread: T,
+    query: string,
+): boolean {
+    const normalizedQuery = normalizeSidebarSearchText(query);
+    if (!normalizedQuery) {
+        return true;
+    }
+
+    return matchesNormalizedSidebarSearchValue(thread.selectedText, normalizedQuery)
+        || thread.entries.some((entry) => matchesNormalizedSidebarSearchValue(entry.body, normalizedQuery));
+}
+
+export function filterThreadsBySidebarSearchQuery<T extends Pick<CommentThread, "selectedText" | "entries">>(
+    threads: readonly T[],
+    query: string,
+): T[] {
+    return threads.filter((thread) => matchesSidebarThreadSearchQuery(thread, query));
+}
+
+export function matchesSidebarDraftSearchQuery(
+    draft: Pick<DraftComment, "selectedText" | "comment">,
+    query: string,
+): boolean {
+    const normalizedQuery = normalizeSidebarSearchText(query);
+    if (!normalizedQuery) {
+        return true;
+    }
+
+    return matchesNormalizedSidebarSearchValue(draft.selectedText, normalizedQuery)
+        || matchesNormalizedSidebarSearchValue(draft.comment, normalizedQuery);
 }
 
 export function countBookmarkThreads<T extends Pick<CommentThread, "isBookmark">>(threads: readonly T[]): number {

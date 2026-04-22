@@ -51,9 +51,9 @@ import {
     buildPageSidebarThreadRenderSignature,
 } from "./sidebarPageRenderSignature";
 import {
-    countAgentThreads,
     countBookmarkThreads,
     filterThreadsBySidebarContentFilter,
+    filterThreadsBySidebarSearchQuery,
     unlockSidebarContentFilterForDraft,
     type SidebarContentFilter,
 } from "./sidebarContentFilter";
@@ -70,6 +70,7 @@ import {
 import { extractThoughtTrailClickTargets, parseThoughtTrailOpenFilePath, resolveThoughtTrailNodeId } from "./thoughtTrailNodeLinks";
 import { parseTrustedMermaidSvg } from "./thoughtTrailSvg";
 import { buildRootedThoughtTrailScope } from "./sidebarThoughtTrailScope";
+import { clearSidebarSearchHighlights, highlightSidebarSearchMatches } from "./sidebarSearchHighlight";
 import {
     filterIndexThreadsByExistingSourceFiles,
     scopeIndexThreadsByFilePaths,
@@ -165,6 +166,7 @@ function isMermaidRuntimeLike(value: unknown): value is MermaidRuntimeLike {
 }
 
 export default class SideNote2View extends ItemView {
+    private static readonly NOTE_SIDEBAR_SEARCH_DEBOUNCE_MS = 240;
     private file: TFile | null = null;
     private plugin: SideNote2;
     private renderVersion = 0;
@@ -173,6 +175,10 @@ export default class SideNote2View extends ItemView {
     private indexSidebarMode: IndexSidebarMode = "list";
     private noteSidebarMode: SidebarPrimaryMode = "list";
     private noteSidebarContentFilter: SidebarContentFilter = "all";
+    private noteSidebarSearchQuery = "";
+    private noteSidebarSearchInputValue = "";
+    private noteSidebarSearchDebounceTimer: number | null = null;
+    private noteSidebarSearchRequestVersion = 0;
     private selectedIndexFileFilterRootPath: string | null = null;
     private indexFileFilterGraph: IndexFileFilterGraph | null = null;
     private reorderDragState: SidebarReorderDragState | null = null;
@@ -193,6 +199,100 @@ export default class SideNote2View extends ItemView {
     private syncViewContainerClasses(): void {
         this.containerEl.addClass("sidenote2-view-container");
         this.containerEl.classList.toggle("is-non-desktop", this.isNonDesktopClient());
+    }
+
+    private setCurrentFile(nextFile: TFile | null): void {
+        const currentFilePath = this.file?.path ?? null;
+        const nextFilePath = nextFile?.path ?? null;
+        if (currentFilePath !== nextFilePath) {
+            this.clearNoteSidebarSearchDebounceTimer();
+            this.noteSidebarSearchRequestVersion += 1;
+            this.noteSidebarSearchQuery = "";
+            this.noteSidebarSearchInputValue = "";
+        }
+        this.file = nextFile;
+    }
+
+    private clearNoteSidebarSearchDebounceTimer(): void {
+        if (this.noteSidebarSearchDebounceTimer === null) {
+            return;
+        }
+
+        window.clearTimeout(this.noteSidebarSearchDebounceTimer);
+        this.noteSidebarSearchDebounceTimer = null;
+    }
+
+    private scheduleNoteSidebarSearchQuery(
+        query: string,
+        options: {
+            selectionStart?: number | null;
+            selectionEnd?: number | null;
+        } = {},
+    ): void {
+        this.noteSidebarSearchInputValue = query;
+        const requestVersion = ++this.noteSidebarSearchRequestVersion;
+        this.clearNoteSidebarSearchDebounceTimer();
+        if (this.noteSidebarSearchQuery === query) {
+            return;
+        }
+
+        this.noteSidebarSearchDebounceTimer = window.setTimeout(() => {
+            this.noteSidebarSearchDebounceTimer = null;
+            void this.applyNoteSidebarSearchQuery(query, requestVersion, options);
+        }, SideNote2View.NOTE_SIDEBAR_SEARCH_DEBOUNCE_MS);
+    }
+
+    private async applyNoteSidebarSearchQuery(
+        query: string,
+        requestVersion: number,
+        options: {
+            selectionStart?: number | null;
+            selectionEnd?: number | null;
+        } = {},
+    ): Promise<void> {
+        if (this.noteSidebarSearchQuery === query) {
+            return;
+        }
+
+        this.noteSidebarSearchInputValue = query;
+        const activeElement = document.activeElement;
+        const shouldRestoreFocus = activeElement instanceof HTMLInputElement
+            && activeElement.matches(".sidenote2-note-search-input")
+            && this.containerEl.contains(activeElement);
+        if (query.trim() && this.noteSidebarMode !== "list") {
+            this.noteSidebarMode = "list";
+            void this.plugin.logEvent("info", "note", "note.mode.changed", {
+                mode: "list",
+                source: "search",
+            });
+        }
+
+        this.noteSidebarSearchQuery = query;
+        const currentFilePath = this.file?.path ?? null;
+        await this.renderComments();
+        if (requestVersion !== this.noteSidebarSearchRequestVersion) {
+            return;
+        }
+
+        if (
+            !currentFilePath
+            || this.file?.path !== currentFilePath
+            || this.plugin.isAllCommentsNotePath(currentFilePath)
+            || !shouldRestoreFocus
+        ) {
+            return;
+        }
+
+        const inputEl = this.containerEl.querySelector(".sidenote2-note-search-input");
+        if (!(inputEl instanceof HTMLInputElement)) {
+            return;
+        }
+
+        const maxSelection = inputEl.value.length;
+        const selectionStart = Math.max(0, Math.min(options.selectionStart ?? maxSelection, maxSelection));
+        const selectionEnd = Math.max(0, Math.min(options.selectionEnd ?? selectionStart, maxSelection));
+        this.interactionController.claimSidebarInteractionOwnership(inputEl);
+        inputEl.setSelectionRange(selectionStart, selectionEnd);
     }
 
     constructor(leaf: WorkspaceLeaf, plugin: SideNote2, file: TFile | null = null) {
@@ -232,14 +332,7 @@ export default class SideNote2View extends ItemView {
                 new SideNoteLinkSuggestModal(this.app, options).open();
             },
             openSideNoteReferenceSuggestModal: (options) => {
-                new SideNoteReferenceSuggestModal(this.app, {
-                    ...options,
-                    searchReferences: (query, searchOptions) => this.plugin.searchSideNoteReferenceDocuments(query, {
-                        excludeThreadId: searchOptions.excludeThreadId,
-                        limit: searchOptions.limit,
-                        sourceFilePath: options.sourcePath,
-                    }),
-                }).open();
+                this.openSideNoteReferenceSuggestModal(options);
             },
             openTagSuggestModal: (options) => {
                 new SideNoteTagSuggestModal(this.app, options).open();
@@ -277,6 +370,7 @@ export default class SideNote2View extends ItemView {
     async onClose() {
         this.unsubscribeFromAgentStreamUpdates?.();
         this.unsubscribeFromAgentStreamUpdates = null;
+        this.clearNoteSidebarSearchDebounceTimer();
         this.noteSidebarShell = null;
         this.resetStreamedReplyControllers();
         document.removeEventListener("keydown", this.interactionController.documentKeydownHandler, true);
@@ -324,14 +418,14 @@ export default class SideNote2View extends ItemView {
                 ? normalizeSidebarViewFile(file, (candidate): candidate is TFile => this.plugin.isSidebarSupportedFile(candidate))
                 : null;
             if (normalizedFile) {
-                this.file = normalizedFile;
+                this.setCurrentFile(normalizedFile);
                 shouldRender = true;
             } else if (this.file !== null) {
-                this.file = null;
+                this.setCurrentFile(null);
                 shouldRender = true;
             }
         } else if (state.filePath === null && this.file) {
-            this.file = null;
+            this.setCurrentFile(null);
             shouldRender = true;
         }
 
@@ -342,7 +436,9 @@ export default class SideNote2View extends ItemView {
     }
 
     public async updateActiveFile(file: TFile | null) {
-        this.file = normalizeSidebarViewFile(file, (candidate): candidate is TFile => this.plugin.isSidebarSupportedFile(candidate));
+        this.setCurrentFile(
+            normalizeSidebarViewFile(file, (candidate): candidate is TFile => this.plugin.isSidebarSupportedFile(candidate)),
+        );
         await this.renderComments();
     }
 
@@ -376,7 +472,7 @@ export default class SideNote2View extends ItemView {
             (candidate): candidate is TFile => this.plugin.isSidebarSupportedFile(candidate),
         );
         if (normalizedFile !== this.file) {
-            this.file = normalizedFile;
+            this.setCurrentFile(normalizedFile);
         }
         const file = normalizedFile;
         const isAllCommentsView = !!file && this.plugin.isAllCommentsNotePath(file.path);
@@ -551,7 +647,6 @@ export default class SideNote2View extends ItemView {
                 noteSidebarContentFilter: "all",
                 noteSidebarMode: this.noteSidebarMode,
                 bookmarkThreadCount: 0,
-                agentThreadCount: 0,
                 addPageCommentAction: !isAllCommentsView
                     ? {
                         icon: "plus",
@@ -683,6 +778,7 @@ export default class SideNote2View extends ItemView {
             this.noteSidebarContentFilter,
             draftComment,
         );
+        this.normalizeNoteSidebarContentFilter();
         if (this.noteSidebarMode === "thought-trail") {
             await this.renderNoteThoughtTrailSidebar(shell, file, renderVersion, {
                 showDeleted,
@@ -694,26 +790,37 @@ export default class SideNote2View extends ItemView {
         const deletedCommentCount = countDeletedComments(pageThreadsWithDeleted);
         const showResolved = this.plugin.shouldShowResolvedComments();
         const bookmarkThreadCount = countBookmarkThreads(persistedThreads);
-        const agentThreadCount = countAgentThreads(persistedThreads);
         const hasResolvedThreadsInFile = persistedThreads.some((thread) => thread.resolved);
         const contentFilteredThreads = filterThreadsBySidebarContentFilter(
             persistedThreads,
             this.noteSidebarContentFilter,
         );
+        const searchMatchedThreads = filterThreadsBySidebarSearchQuery(
+            contentFilteredThreads,
+            this.noteSidebarSearchQuery,
+        );
         const allAgentRuns = this.plugin.getAgentRuns();
-        const visiblePersistedThreads = contentFilteredThreads.filter((thread) =>
-            matchesPageSidebarVisibility(thread, {
-                showResolved,
-                showDeleted,
-            }));
         const visibleDraftComment = draftComment
             && matchesResolvedVisibility(draftComment.resolved, showResolved)
             ? draftComment
             : null;
-        const totalScopedCount = contentFilteredThreads.length;
-        const resolvedCount = contentFilteredThreads.filter((thread) => thread.resolved).length;
+        const activeDraftHostThreadId = visibleDraftComment?.mode === "edit" || visibleDraftComment?.mode === "append"
+            ? visibleDraftComment.threadId ?? null
+            : null;
+        const matchedThreadIds = new Set(searchMatchedThreads.map((thread) => thread.id));
+        if (activeDraftHostThreadId) {
+            matchedThreadIds.add(activeDraftHostThreadId);
+        }
+        const searchScopedThreads = contentFilteredThreads.filter((thread) => matchedThreadIds.has(thread.id));
+        const visiblePersistedThreads = searchScopedThreads.filter((thread) =>
+            matchesPageSidebarVisibility(thread, {
+                showResolved,
+                showDeleted,
+            }));
+        const totalScopedCount = searchMatchedThreads.length;
+        const resolvedCount = searchMatchedThreads.filter((thread) => thread.resolved).length;
         const hasResolvedComments = resolvedCount > 0;
-        const hasNestedComments = contentFilteredThreads.some((thread) => thread.entries.length > 1)
+        const hasNestedComments = searchScopedThreads.some((thread) => thread.entries.length > 1)
             || visibleDraftComment?.mode === "append";
         const nestedEditDraftThreadId = getNestedThreadIdForEditDraft(
             visiblePersistedThreads,
@@ -730,6 +837,7 @@ export default class SideNote2View extends ItemView {
             visibleDraftComment,
         );
         const topLevelDraftComment = this.noteSidebarContentFilter === "all"
+            && !!visibleDraftComment
             ? shouldRenderTopLevelDraftComment({
             draft: visibleDraftComment,
             nestedAppendDraftThreadId,
@@ -761,7 +869,6 @@ export default class SideNote2View extends ItemView {
             noteSidebarContentFilter: this.noteSidebarContentFilter,
             noteSidebarMode: this.noteSidebarMode,
             bookmarkThreadCount,
-            agentThreadCount,
             addPageCommentAction: {
                 icon: "plus",
                 ariaLabel: "Add page note",
@@ -787,12 +894,14 @@ export default class SideNote2View extends ItemView {
             visibleDraftComment,
         });
         await this.reconcileNoteSidebarItems(shell.commentsBodyEl, renderDescriptors);
+        this.refreshNoteSidebarSearchHighlights(shell.commentsBodyEl);
         this.renderPageSidebarEmptyState(shell.commentsBodyEl, {
             renderedItemCount: renderableItems.length,
             showResolved,
             totalScopedCount,
             hasResolvedComments,
             contentFilter: this.noteSidebarContentFilter,
+            searchQuery: this.noteSidebarSearchQuery,
         });
         this.syncVisibleStreamedReplyControllers();
 
@@ -814,12 +923,12 @@ export default class SideNote2View extends ItemView {
             showDeleted: boolean;
         },
     ): Promise<void> {
+        this.normalizeNoteSidebarContentFilter();
         const persistedThreads = this.plugin.getThreadsForFile(file.path, { includeDeleted: options.showDeleted });
         const pageThreadsWithDeleted = this.plugin.getThreadsForFile(file.path, { includeDeleted: true });
         const deletedCommentCount = countDeletedComments(pageThreadsWithDeleted);
         const showResolved = this.plugin.shouldShowResolvedComments();
         const bookmarkThreadCount = countBookmarkThreads(persistedThreads);
-        const agentThreadCount = countAgentThreads(persistedThreads);
         const hasResolvedThreadsInFile = persistedThreads.some((thread) => thread.resolved);
 
         await this.plugin.ensureIndexedCommentsLoaded();
@@ -862,7 +971,6 @@ export default class SideNote2View extends ItemView {
             noteSidebarContentFilter: this.noteSidebarContentFilter,
             noteSidebarMode: this.noteSidebarMode,
             bookmarkThreadCount,
-            agentThreadCount,
             addPageCommentAction: {
                 icon: "plus",
                 ariaLabel: "Add page note",
@@ -1069,6 +1177,7 @@ export default class SideNote2View extends ItemView {
             totalScopedCount: number;
             hasResolvedComments: boolean;
             contentFilter: SidebarContentFilter;
+            searchQuery: string;
         },
     ): void {
         for (const child of Array.from(commentsBody.children)) {
@@ -1083,18 +1192,27 @@ export default class SideNote2View extends ItemView {
 
         const filterLabel = this.getNoteSidebarContentFilterLabel(options.contentFilter);
         const pluralFilterLabel = this.getNoteSidebarContentFilterPluralLabel(options.contentFilter);
+        const trimmedSearchQuery = options.searchQuery.trim();
+        const hasSearchQuery = trimmedSearchQuery.length > 0;
+        const searchSubjectLabel = options.contentFilter === "all"
+            ? "side notes"
+            : pluralFilterLabel;
 
         if (options.showResolved && options.totalScopedCount > 0) {
             const emptyStateEl = commentsBody.createDiv("sidenote2-empty-state sidenote2-section-empty-state");
             emptyStateEl.createEl("p", {
-                text: options.contentFilter === "all"
-                    ? "No resolved comments for this file."
-                    : `No resolved ${pluralFilterLabel} for this file.`,
+                text: hasSearchQuery
+                    ? `No resolved ${searchSubjectLabel} match "${trimmedSearchQuery}" in this file.`
+                    : options.contentFilter === "all"
+                        ? "No resolved comments for this file."
+                        : `No resolved ${pluralFilterLabel} for this file.`,
             });
             emptyStateEl.createEl("p", {
-                text: options.contentFilter === "all"
-                    ? "Turn off resolved to return to active comments."
-                    : `Turn off resolved to return to active ${pluralFilterLabel}.`,
+                text: hasSearchQuery
+                    ? "Turn off resolved or clear search to broaden the results."
+                    : options.contentFilter === "all"
+                        ? "Turn off resolved to return to active comments."
+                        : `Turn off resolved to return to active ${pluralFilterLabel}.`,
             });
             return;
         }
@@ -1102,28 +1220,36 @@ export default class SideNote2View extends ItemView {
         if (!options.showResolved && options.hasResolvedComments) {
             const emptyStateEl = commentsBody.createDiv("sidenote2-empty-state sidenote2-section-empty-state");
             emptyStateEl.createEl("p", {
-                text: options.contentFilter === "all"
-                    ? "No active comments for this file."
-                    : `No active ${pluralFilterLabel} for this file.`,
+                text: hasSearchQuery
+                    ? `No active ${searchSubjectLabel} match "${trimmedSearchQuery}" in this file.`
+                    : options.contentFilter === "all"
+                        ? "No active comments for this file."
+                        : `No active ${pluralFilterLabel} for this file.`,
             });
             emptyStateEl.createEl("p", {
-                text: options.contentFilter === "all"
-                    ? "Turn on resolved to review archived comments only."
-                    : `Turn on resolved to review archived ${pluralFilterLabel} only.`,
+                text: hasSearchQuery
+                    ? "Turn on resolved or clear search to broaden the results."
+                    : options.contentFilter === "all"
+                        ? "Turn on resolved to review archived comments only."
+                        : `Turn on resolved to review archived ${pluralFilterLabel} only.`,
             });
             return;
         }
 
         const emptyStateEl = commentsBody.createDiv("sidenote2-empty-state");
         emptyStateEl.createEl("p", {
-            text: options.contentFilter === "all"
-                ? "No comments for this file yet."
-                : `No ${pluralFilterLabel} for this file yet.`,
+            text: hasSearchQuery
+                ? `No ${searchSubjectLabel} match "${trimmedSearchQuery}" in this file.`
+                : options.contentFilter === "all"
+                    ? "No comments for this file yet."
+                    : `No ${pluralFilterLabel} for this file yet.`,
         });
         emptyStateEl.createEl("p", {
-            text: options.contentFilter === "all"
-                ? "Use the add button to create a page side note."
-                : `Turn off ${filterLabel} to return to all side notes.`,
+            text: hasSearchQuery
+                ? "Clear search or try different words."
+                : options.contentFilter === "all"
+                    ? "Use the add button to create a page side note."
+                    : `Turn off ${filterLabel} to return to all side notes.`,
         });
     }
 
@@ -1217,6 +1343,12 @@ export default class SideNote2View extends ItemView {
         this.streamedReplyControllers.delete(threadId);
     }
 
+    private normalizeNoteSidebarContentFilter(): void {
+        if (this.noteSidebarContentFilter === "agents") {
+            this.noteSidebarContentFilter = "all";
+        }
+    }
+
     private resetStreamedReplyControllers(): void {
         for (const controller of this.streamedReplyControllers.values()) {
             controller.clear();
@@ -1242,7 +1374,6 @@ export default class SideNote2View extends ItemView {
             noteSidebarContentFilter: SidebarContentFilter;
             noteSidebarMode: SidebarPrimaryMode;
             bookmarkThreadCount: number;
-            agentThreadCount: number;
             addPageCommentAction: {
                 icon: string;
                 ariaLabel: string;
@@ -1325,8 +1456,11 @@ export default class SideNote2View extends ItemView {
 
         const filterGroup = indexChipGroup ?? noteFilterGroup ?? (indexChipRow ?? toolbarEl).createDiv("sidenote2-sidebar-toolbar-group");
         const actionGroup = noteActionGroup ?? filterGroup;
+        if (!options.isAllCommentsView) {
+            this.renderNoteSearchInput(filterGroup);
+        }
         if (shouldShowContentFilterIcons && showListOnlyToolbarChips) {
-            this.renderToolbarIconButton(filterGroup, {
+            this.renderToolbarIconButton(actionGroup, {
                 icon: "bookmark",
                 active: contentFilter === "bookmarks",
                 ariaLabel: contentFilter === "bookmarks"
@@ -1335,18 +1469,6 @@ export default class SideNote2View extends ItemView {
                 disabled: options.bookmarkThreadCount === 0 && contentFilter !== "bookmarks",
                 onClick: () => {
                     this.noteSidebarContentFilter = contentFilter === "bookmarks" ? "all" : "bookmarks";
-                    void this.renderComments();
-                },
-            });
-            this.renderToolbarIconButton(actionGroup, {
-                icon: "bot",
-                active: contentFilter === "agents",
-                ariaLabel: contentFilter === "agents"
-                    ? "Show all comments"
-                    : "Show agent comments",
-                disabled: options.agentThreadCount === 0 && contentFilter !== "agents",
-                onClick: () => {
-                    this.noteSidebarContentFilter = contentFilter === "agents" ? "all" : "agents";
                     void this.renderComments();
                 },
             });
@@ -1486,6 +1608,66 @@ export default class SideNote2View extends ItemView {
             }
             options.onClick();
         };
+    }
+
+    private refreshNoteSidebarSearchHighlights(container: HTMLElement): void {
+        clearSidebarSearchHighlights(container);
+
+        const query = this.noteSidebarSearchQuery.trim();
+        if (!query) {
+            return;
+        }
+
+        const selectors = [
+            ".sidenote2-comment-meta-preview",
+            ".sidenote2-comment-content",
+            ".sidenote2-comment-reference-section-list",
+        ];
+        for (const selector of selectors) {
+            const targets = Array.from(container.querySelectorAll(selector));
+            for (const target of targets) {
+                if (target instanceof HTMLElement) {
+                    highlightSidebarSearchMatches(target, query);
+                }
+            }
+        }
+    }
+
+    private renderNoteSearchInput(container: HTMLElement): void {
+        const searchGroup = container.createDiv("sidenote2-sidebar-toolbar-group is-search-group");
+        const fieldEl = searchGroup.createDiv("sidenote2-note-search-field");
+        const inputEl = fieldEl.createEl("input", {
+            cls: "sidenote2-note-search-input",
+        });
+        inputEl.type = "search";
+        inputEl.value = this.noteSidebarSearchInputValue;
+        inputEl.spellcheck = false;
+        inputEl.placeholder = "Search side notes";
+        inputEl.setAttribute("aria-label", "Search side notes in this file");
+        inputEl.addEventListener("focus", () => {
+            this.interactionController.claimSidebarInteractionOwnership(inputEl);
+        });
+        inputEl.addEventListener("keydown", (event) => {
+            if (event.key !== "Escape" || !inputEl.value) {
+                return;
+            }
+
+            event.preventDefault();
+            event.stopPropagation();
+            this.clearNoteSidebarSearchDebounceTimer();
+            const requestVersion = ++this.noteSidebarSearchRequestVersion;
+            this.noteSidebarSearchInputValue = "";
+            void this.applyNoteSidebarSearchQuery("", requestVersion, {
+                selectionStart: 0,
+                selectionEnd: 0,
+            });
+        });
+        inputEl.addEventListener("input", () => {
+            this.scheduleNoteSidebarSearchQuery(inputEl.value, {
+                selectionStart: inputEl.selectionStart,
+                selectionEnd: inputEl.selectionEnd,
+            });
+        });
     }
 
     private renderIndexModeControl(container: HTMLElement): void {
@@ -1722,6 +1904,46 @@ export default class SideNote2View extends ItemView {
         return container.createDiv("sidenote2-comments-list");
     }
 
+    private openSideNoteReferenceSuggestModal(options: {
+        emptyStateText?: string;
+        excludeThreadId?: string | null;
+        initialQuery: string;
+        onChooseReference: (commentId: string) => void | Promise<void>;
+        onCloseModal: () => void;
+        placeholder?: string;
+        sourcePath: string;
+        title?: string;
+    }): void {
+        new SideNoteReferenceSuggestModal(this.app, {
+            ...options,
+            searchReferences: (query, searchOptions) => this.plugin.searchSideNoteReferenceDocuments(query, {
+                excludeThreadId: searchOptions.excludeThreadId,
+                limit: searchOptions.limit,
+                sourceFilePath: options.sourcePath,
+            }),
+        }).open();
+    }
+
+    private openMoveCommentThreadModal(threadId: string, sourceFilePath: string): void {
+        this.openSideNoteReferenceSuggestModal({
+            excludeThreadId: threadId,
+            initialQuery: "",
+            placeholder: "Find a note to move into",
+            sourcePath: sourceFilePath,
+            title: "Move side note",
+            onChooseReference: async (commentId) => {
+                const target = this.plugin.getSideNoteReferenceDocument(commentId);
+                if (!target) {
+                    new Notice("Unable to find that destination note.");
+                    return;
+                }
+
+                await this.plugin.moveCommentThreadToFile(threadId, target.filePath);
+            },
+            onCloseModal: () => {},
+        });
+    }
+
     private async renderPersistedComment(
         commentsContainer: HTMLDivElement,
         thread: CommentThread,
@@ -1794,6 +2016,9 @@ export default class SideNote2View extends ItemView {
             },
             unresolveComment: (commentId) => {
                 void this.plugin.unresolveComment(commentId);
+            },
+            moveCommentThread: (threadId, sourceFilePath) => {
+                this.openMoveCommentThreadModal(threadId, sourceFilePath);
             },
             restoreComment: async (commentId) => {
                 await this.plugin.restoreComment(commentId);

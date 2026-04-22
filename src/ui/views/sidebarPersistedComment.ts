@@ -39,6 +39,10 @@ export interface PersistedCommentPresentation extends BasePersistedCommentPresen
         ariaLabel: string;
         icon: string;
     };
+    moveAction: {
+        ariaLabel: string;
+        icon: string;
+    };
     resolveAction: {
         ariaLabel: string;
         icon: string;
@@ -92,6 +96,7 @@ export interface SidebarPersistedCommentHost {
     setShowNestedCommentsForThread(threadId: string, showNestedComments: boolean): void;
     resolveComment(commentId: string): void;
     unresolveComment(commentId: string): void;
+    moveCommentThread(threadId: string, sourceFilePath: string): void;
     restoreComment(commentId: string): Promise<void> | void;
     startEditDraft(commentId: string, hostFilePath: string | null): void;
     startAppendEntryDraft(commentId: string, hostFilePath: string | null): void;
@@ -307,6 +312,10 @@ export function buildPersistedCommentPresentation(
         shareAction: {
             ariaLabel: "Share side note",
             icon: "share",
+        },
+        moveAction: {
+            ariaLabel: "Move side note",
+            icon: "arrow-right-left",
         },
         resolveAction: {
             ariaLabel: comment.resolved ? "Reopen side note" : "Resolve side note",
@@ -806,6 +815,32 @@ function renderDeleteButton(
     };
 }
 
+function renderMoveThreadButton(
+    actionsEl: HTMLDivElement,
+    threadId: string,
+    sourceFilePath: string,
+    host: SidebarPersistedCommentHost,
+    options: {
+        ariaLabel: string;
+        icon: string;
+    },
+): void {
+    const moveButton = actionsEl.createEl("button", {
+        cls: "clickable-icon sidenote2-comment-action-button sidenote2-comment-action-move",
+    });
+    attachSidebarActionButtonInteractions(moveButton, host);
+    moveButton.setAttribute("type", "button");
+    moveButton.setAttribute("aria-label", options.ariaLabel);
+    host.setIcon(moveButton, options.icon);
+    moveButton.onclick = async (event) => {
+        event.stopPropagation();
+        if (!(await host.saveVisibleDraftIfPresent())) {
+            return;
+        }
+        host.moveCommentThread(threadId, sourceFilePath);
+    };
+}
+
 function renderRestoreButton(
     actionsEl: HTMLDivElement,
     commentId: string,
@@ -1145,6 +1180,9 @@ export async function renderPersistedCommentCard(
             };
 
             renderEditButton(actionsEl, comment.id, host, "Edit side note");
+            if (!comment.deletedAt && !thread.deletedAt) {
+                renderMoveThreadButton(actionsEl, thread.id, thread.filePath, host, presentation.moveAction);
+            }
             if (host.enableSoftDeleteActions) {
                 renderDeleteButton(actionsEl, comment.id, host, "Delete side note thread");
             }

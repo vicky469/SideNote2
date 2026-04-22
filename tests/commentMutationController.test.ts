@@ -49,6 +49,7 @@ function createHost(options: {
     sidebarTargetFilePath?: string | null;
     knownComments?: Comment[];
     loadedComments?: Comment[];
+    extraFiles?: string[];
     currentNoteContentByPath?: Record<string, string>;
     getCurrentNoteContent?: (file: TFile) => Promise<string>;
     currentSelectionByPath?: Record<string, DraftSelection | null>;
@@ -75,6 +76,18 @@ function createHost(options: {
     const filesByPath = new Map<string, TFile>();
     for (const comment of options.knownComments ?? options.loadedComments ?? []) {
         filesByPath.set(comment.filePath, createFile(comment.filePath));
+    }
+    for (const filePath of options.extraFiles ?? []) {
+        filesByPath.set(filePath, createFile(filePath));
+    }
+    for (const filePath of Object.keys(options.currentNoteContentByPath ?? {})) {
+        filesByPath.set(filePath, createFile(filePath));
+    }
+    for (const filePath of Object.keys(options.currentSelectionByPath ?? {})) {
+        filesByPath.set(filePath, createFile(filePath));
+    }
+    if (options.sidebarTargetFilePath) {
+        filesByPath.set(options.sidebarTargetFilePath, createFile(options.sidebarTargetFilePath));
     }
 
     const knownCommentsById = new Map((options.knownComments ?? options.loadedComments ?? []).map((comment) => [comment.id, comment]));
@@ -749,6 +762,101 @@ test("comment mutation controller exits resolved-only mode after reopening a com
     }]);
     assert.deepEqual(host.setShowResolvedCalls, [false]);
     assert.equal(host.getShowResolvedComments(), false);
+});
+
+test("comment mutation controller moves a thread into another file as a page note at the top", async () => {
+    const source = createComment({
+        id: "thread-1",
+        filePath: "Folder/Source.md",
+        selectedText: "Source anchor",
+        selectedTextHash: "hash:Source anchor",
+        startLine: 8,
+        startChar: 2,
+        endLine: 8,
+        endChar: 15,
+        comment: "Root body",
+        timestamp: 300,
+        anchorKind: "selection",
+        isBookmark: true,
+        resolved: true,
+    });
+    const targetExisting = createComment({
+        id: "thread-2",
+        filePath: "Folder/Other.md",
+        selectedText: "Existing target note",
+        selectedTextHash: "hash:Existing target note",
+        comment: "Existing body",
+        timestamp: 500,
+        anchorKind: "selection",
+    });
+    const movedAt = 900;
+    const host = createHost({
+        knownComments: [source, targetExisting],
+        loadedComments: [source, targetExisting],
+        extraFiles: ["Folder/Other.md"],
+        now: movedAt,
+    });
+    host.manager.appendEntry(source.id, {
+        id: "entry-2",
+        body: "Child reply",
+        timestamp: 400,
+    });
+
+    const moved = await host.controller.moveCommentThreadToFile(source.id, "Folder/Other.md");
+
+    assert.equal(moved, true);
+    assert.deepEqual(host.loadedFiles, ["Folder/Source.md", "Folder/Other.md"]);
+    assert.deepEqual(host.persistedFiles, [
+        {
+            path: "Folder/Source.md",
+            immediateAggregateRefresh: false,
+            skipCommentViewRefresh: true,
+        },
+        {
+            path: "Folder/Other.md",
+            immediateAggregateRefresh: true,
+        },
+    ]);
+    assert.deepEqual(host.manager.getThreadsForFile("Folder/Source.md", { includeDeleted: true }), []);
+
+    const movedThread = host.manager.getThreadById("thread-1");
+    assert.ok(movedThread);
+    assert.equal(movedThread.filePath, "Folder/Other.md");
+    assert.equal(movedThread.anchorKind, "page");
+    assert.equal(movedThread.selectedText, "Other");
+    assert.equal(movedThread.selectedTextHash, "hash:Other");
+    assert.equal(movedThread.startLine, 0);
+    assert.equal(movedThread.startChar, 0);
+    assert.equal(movedThread.endLine, 0);
+    assert.equal(movedThread.endChar, 0);
+    assert.equal(movedThread.orphaned, false);
+    assert.equal(movedThread.isBookmark, true);
+    assert.equal(movedThread.resolved, true);
+    assert.equal(movedThread.updatedAt, movedAt);
+    assert.deepEqual(movedThread.entries.map((entry) => entry.id), ["thread-1", "entry-2"]);
+    assert.deepEqual(
+        host.manager.getThreadsForFile("Folder/Other.md", { includeDeleted: true }).map((thread) => thread.id),
+        ["thread-1", "thread-2"],
+    );
+    assert.deepEqual(host.notices, ["Moved side note to Other."]);
+});
+
+test("comment mutation controller rejects moving a thread into the same file", async () => {
+    const comment = createComment({
+        id: "thread-1",
+        filePath: "Folder/Source.md",
+    });
+    const host = createHost({
+        knownComments: [comment],
+        loadedComments: [comment],
+    });
+
+    const moved = await host.controller.moveCommentThreadToFile(comment.id, comment.filePath);
+
+    assert.equal(moved, false);
+    assert.deepEqual(host.loadedFiles, ["Folder/Source.md"]);
+    assert.deepEqual(host.persistedFiles, []);
+    assert.deepEqual(host.notices, ["Choose a different note to move this side note."]);
 });
 
 test("comment mutation controller soft deletes an existing comment and persists the change", async () => {

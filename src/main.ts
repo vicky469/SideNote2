@@ -1111,6 +1111,10 @@ export default class SideNote2 extends Plugin {
         return this.commentMutationController.reanchorCommentThreadToCurrentSelection(commentId);
     }
 
+    public async moveCommentThreadToFile(threadId: string, targetFilePath: string): Promise<boolean> {
+        return this.commentMutationController.moveCommentThreadToFile(threadId, targetFilePath);
+    }
+
     private markDraftFileActive(file: TFile) {
         if (isMarkdownCommentableFile(file, this.getAllCommentsNotePath())) {
             this.activeMarkdownFile = file;
