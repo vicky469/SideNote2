@@ -1,4 +1,4 @@
-# SideNote2
+
 <p align="center">
   <img src="./assets/logo-readme.svg" alt="SideNote2 logo" width="72">
 </p>
@@ -25,7 +25,7 @@
   </a>
 </p>
 <p align="center">
-  Same workflow in both Obsidian themes.
+SideNote2
 </p>
 <table>
   <tr>
