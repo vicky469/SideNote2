@@ -176,10 +176,10 @@ export default class SideNote2 extends Plugin {
         getKnownCommentById: (commentId) => this.getKnownCommentById(commentId),
         getKnownThreadIdByCommentId: (commentId) => this.getKnownThreadById(commentId)?.id ?? null,
         markDraftFileActive: (file) => this.markDraftFileActive(file),
-        setDraftComment: (draftComment, hostFilePath) => this.commentSessionController.setDraftComment(draftComment, hostFilePath),
+        setDraftComment: (draftComment, hostFilePath, options) =>
+            this.commentSessionController.setDraftComment(draftComment, hostFilePath, options),
         activateViewAndHighlightComment: (commentId) => this.activateViewAndHighlightComment(commentId),
         createCommentId: () => generateCommentId(),
-        hashText: (text) => generateHash(text),
         showNotice: (message) => {
             this.showNotice(message, "draft", "draft.notice");
         },
@@ -209,7 +209,8 @@ export default class SideNote2 extends Plugin {
         getSavingDraftCommentId: () => this.commentSessionController.getSavingDraftCommentId(),
         shouldShowResolvedComments: () => this.commentSessionController.shouldShowResolvedComments(),
         setShowResolvedComments: (showResolved) => this.setShowResolvedComments(showResolved),
-        setDraftComment: (draftComment, hostFilePath) => this.commentSessionController.setDraftComment(draftComment, hostFilePath),
+        setDraftComment: (draftComment, hostFilePath, options) =>
+            this.commentSessionController.setDraftComment(draftComment, hostFilePath, options),
         setDraftCommentValue: (draftComment) => this.commentSessionController.setDraftCommentValue(draftComment),
         clearDraftState: () => this.commentSessionController.clearDraftState(),
         setSavingDraftCommentId: (commentId) => this.commentSessionController.setSavingDraftCommentId(commentId),

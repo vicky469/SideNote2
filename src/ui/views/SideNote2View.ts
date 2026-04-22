@@ -442,6 +442,10 @@ export default class SideNote2View extends ItemView {
         await this.renderComments();
     }
 
+    public getCurrentFile(): TFile | null {
+        return this.file;
+    }
+
     public highlightComment(commentId: string) {
         this.ensureListModeForCommentFocus();
         this.interactionController.highlightComment(commentId);

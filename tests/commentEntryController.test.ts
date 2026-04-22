@@ -36,7 +36,11 @@ function isCommentableFilePath(path: string): boolean {
 }
 
 function createHost(options: { knownComments?: Comment[]; threadIdsByCommentId?: Record<string, string> } = {}) {
-    const draftCalls: Array<{ draft: DraftComment | null; hostFilePath?: string | null }> = [];
+    const draftCalls: Array<{
+        draft: DraftComment | null;
+        hostFilePath?: string | null;
+        skipCommentViewRefresh?: boolean;
+    }> = [];
     const loadedFiles: string[] = [];
     const markedFiles: string[] = [];
     const highlightedCommentIds: string[] = [];
@@ -55,14 +59,17 @@ function createHost(options: { knownComments?: Comment[]; threadIdsByCommentId?:
         markDraftFileActive: (file) => {
             markedFiles.push(file.path);
         },
-        setDraftComment: async (draft, hostFilePath) => {
-            draftCalls.push({ draft, hostFilePath });
+        setDraftComment: async (draft, hostFilePath, setDraftOptions) => {
+            draftCalls.push({
+                draft,
+                hostFilePath,
+                skipCommentViewRefresh: setDraftOptions?.skipCommentViewRefresh,
+            });
         },
         activateViewAndHighlightComment: async (commentId) => {
             highlightedCommentIds.push(commentId);
         },
         createCommentId: () => "comment-1",
-        hashText: async (text) => `hash:${text}`,
         showNotice: (message) => {
             notices.push(message);
         },
@@ -85,7 +92,7 @@ test("comment entry controller starts a draft from editor selection", async () =
     const started = await host.controller.startDraftFromEditorSelection(createEditor("beta"), file);
 
     assert.equal(started, true);
-    assert.deepEqual(host.loadedFiles, [file.path]);
+    assert.deepEqual(host.loadedFiles, []);
     assert.deepEqual(host.markedFiles, [file.path]);
     assert.equal(host.draftCalls.length, 1);
     assert.equal(host.highlightedCommentIds.length, 1);
@@ -95,13 +102,14 @@ test("comment entry controller starts a draft from editor selection", async () =
     assert.equal(draft.id, "comment-1");
     assert.equal(draft.filePath, file.path);
     assert.equal(draft.selectedText, "beta");
-    assert.equal(draft.selectedTextHash, "hash:beta");
+    assert.equal(draft.selectedTextHash, "");
     assert.equal(draft.startLine, 2);
     assert.equal(draft.startChar, 4);
     assert.equal(draft.endLine, 2);
     assert.equal(draft.endChar, 8);
     assert.equal(draft.anchorKind, "selection");
     assert.equal(host.draftCalls[0].hostFilePath, file.path);
+    assert.equal(host.draftCalls[0].skipCommentViewRefresh, true);
     assert.deepEqual(host.highlightedCommentIds, ["comment-1"]);
     assert.deepEqual(host.notices, []);
 });
@@ -149,7 +157,7 @@ test("comment entry controller starts page drafts for markdown files", async () 
     const started = await host.controller.startPageCommentDraft(file);
 
     assert.equal(started, true);
-    assert.deepEqual(host.loadedFiles, [file.path]);
+    assert.deepEqual(host.loadedFiles, []);
     assert.deepEqual(host.markedFiles, [file.path]);
     assert.equal(host.draftCalls.length, 1);
     assert.deepEqual(host.highlightedCommentIds, ["comment-1"]);
@@ -158,7 +166,8 @@ test("comment entry controller starts page drafts for markdown files", async () 
     assert.ok(draft);
     assert.equal(draft.anchorKind, "page");
     assert.equal(draft.selectedText, getPageCommentLabel(file.path));
-    assert.equal(draft.selectedTextHash, `hash:${getPageCommentLabel(file.path)}`);
+    assert.equal(draft.selectedTextHash, "");
+    assert.equal(host.draftCalls[0].skipCommentViewRefresh, true);
     assert.deepEqual(host.notices, []);
 });
 
@@ -197,6 +206,7 @@ test("comment entry controller starts an append-entry draft using the resolved v
     assert.equal(draft.filePath, existingComment.filePath);
     assert.equal(draft.comment, "");
     assert.equal(host.draftCalls[0].hostFilePath, "docs/host.md");
+    assert.equal(host.draftCalls[0].skipCommentViewRefresh, true);
     assert.deepEqual(host.notices, []);
 });
 
@@ -240,5 +250,6 @@ test("comment entry controller can start an append-entry draft from a child entr
     assert.equal(draft.filePath, childComment.filePath);
     assert.equal(draft.comment, "");
     assert.equal(host.draftCalls[0].hostFilePath, "docs/host.md");
+    assert.equal(host.draftCalls[0].skipCommentViewRefresh, true);
     assert.deepEqual(host.notices, []);
 });

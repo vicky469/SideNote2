@@ -17,6 +17,7 @@ import { resolveIndexLeafMode } from "./workspaceContextPlanner";
 
 interface SidebarViewLike {
     getViewType(): string;
+    getCurrentFile(): TFile | null;
     updateActiveFile(file: TFile | null): Promise<void>;
     highlightComment(commentId: string): void;
     highlightAndFocusDraft(commentId: string): Promise<void>;
@@ -27,6 +28,7 @@ function isSidebarViewLike(view: unknown): view is SidebarViewLike {
     return !!view
         && typeof (view as SidebarViewLike).getViewType === "function"
         && (view as SidebarViewLike).getViewType() === "sidenote2-view"
+        && typeof (view as SidebarViewLike).getCurrentFile === "function"
         && typeof (view as SidebarViewLike).updateActiveFile === "function"
         && typeof (view as SidebarViewLike).highlightComment === "function"
         && typeof (view as SidebarViewLike).highlightAndFocusDraft === "function";
@@ -158,8 +160,12 @@ export class CommentNavigationController {
             await workspace.revealLeaf(leaf);
         }
 
-        if (!skipViewUpdate && isSidebarViewLike(leaf.view)) {
-            await leaf.view.updateActiveFile(sidebarFile);
+        if (isSidebarViewLike(leaf.view)) {
+            const shouldSkipLeafViewUpdate = skipViewUpdate
+                && leaf.view.getCurrentFile()?.path === sidebarFile?.path;
+            if (!shouldSkipLeafViewUpdate) {
+                await leaf.view.updateActiveFile(sidebarFile);
+            }
         }
     }
 
@@ -181,7 +187,9 @@ export class CommentNavigationController {
         } = {},
     ): Promise<void> {
         const comment = this.getKnownOrDraftComment(commentId);
-        if (comment && revealedFilePath) {
+        const draftComment = this.host.getDraftComment();
+        const isDraftTarget = draftComment?.id === commentId;
+        if (comment && revealedFilePath && !isDraftTarget) {
             this.host.setRevealedCommentState(
                 revealedFilePath,
                 comment.id,

@@ -3,6 +3,7 @@ import type { Comment } from "../commentManager";
 import { getPageCommentLabel } from "../core/anchors/commentAnchors";
 import { isMarkdownCommentableFile } from "../core/rules/commentableFiles";
 import type { DraftComment, DraftSelection } from "../domain/drafts";
+import type { SetDraftCommentOptions } from "./commentSessionController";
 
 export interface CommentEntryHost {
     getAllCommentsNotePath(): string;
@@ -12,10 +13,13 @@ export interface CommentEntryHost {
     getKnownCommentById(commentId: string): Comment | null;
     getKnownThreadIdByCommentId(commentId: string): string | null;
     markDraftFileActive(file: TFile): void;
-    setDraftComment(draftComment: DraftComment | null, hostFilePath?: string | null): Promise<void>;
+    setDraftComment(
+        draftComment: DraftComment | null,
+        hostFilePath?: string | null,
+        options?: SetDraftCommentOptions,
+    ): Promise<void>;
     activateViewAndHighlightComment(commentId: string): Promise<void>;
     createCommentId(): string;
-    hashText(text: string): Promise<string>;
     showNotice(message: string): void;
     log?(level: "info" | "warn" | "error", area: string, event: string, payload?: Record<string, unknown>): Promise<void>;
 }
@@ -82,7 +86,9 @@ export class CommentEntryController {
             appendAfterCommentId: commentId,
         };
         this.host.markDraftFileActive(commentFile);
-        await this.host.setDraftComment(draft, hostFilePath ?? comment.filePath);
+        await this.host.setDraftComment(draft, hostFilePath ?? comment.filePath, {
+            skipCommentViewRefresh: true,
+        });
         void this.host.log?.("info", "draft", "draft.append.created", {
             filePath: comment.filePath,
             threadId: normalizedThreadId,
@@ -101,10 +107,11 @@ export class CommentEntryController {
             return false;
         }
 
-        await this.host.loadCommentsForFile(selection.file);
-        const draft = await this.buildDraftComment(selection);
+        const draft = this.buildDraftComment(selection);
         this.host.markDraftFileActive(selection.file);
-        await this.host.setDraftComment(draft, selection.file.path);
+        await this.host.setDraftComment(draft, selection.file.path, {
+            skipCommentViewRefresh: true,
+        });
         void this.host.log?.("info", "draft", selection.anchorKind === "page" ? "draft.page.created" : "draft.selection.created", {
             filePath: selection.file.path,
             commentId: draft.id,
@@ -114,7 +121,7 @@ export class CommentEntryController {
         return true;
     }
 
-    private async buildDraftComment(selection: DraftSelection): Promise<DraftComment> {
+    private buildDraftComment(selection: DraftSelection): DraftComment {
         const id = this.host.createCommentId();
         return {
             id,
@@ -124,7 +131,7 @@ export class CommentEntryController {
             endLine: selection.endLine,
             endChar: selection.endChar,
             selectedText: selection.selectedText,
-            selectedTextHash: await this.host.hashText(selection.selectedText),
+            selectedTextHash: "",
             comment: "",
             timestamp: Date.now(),
             anchorKind: selection.anchorKind === "page" ? "page" : "selection",

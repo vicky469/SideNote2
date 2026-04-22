@@ -8,6 +8,7 @@ import { resolveAnchorRange } from "../core/anchors/anchorResolver";
 import { getManagedSectionRange, getVisibleNoteContent } from "../core/storage/noteCommentStorage";
 import type { DraftComment, DraftSelection } from "../domain/drafts";
 import type { SavedUserEntryEvent } from "./commentAgentController";
+import type { SetDraftCommentOptions } from "./commentSessionController";
 
 type PersistOptions = {
     immediateAggregateRefresh?: boolean;
@@ -32,7 +33,11 @@ export interface CommentMutationHost {
     getSavingDraftCommentId(): string | null;
     shouldShowResolvedComments(): boolean;
     setShowResolvedComments(showResolved: boolean): Promise<boolean>;
-    setDraftComment(draftComment: DraftComment | null, hostFilePath?: string | null): Promise<void>;
+    setDraftComment(
+        draftComment: DraftComment | null,
+        hostFilePath?: string | null,
+        options?: SetDraftCommentOptions,
+    ): Promise<void>;
     setDraftCommentValue(draftComment: DraftComment | null): void;
     clearDraftState(): void;
     setSavingDraftCommentId(commentId: string | null): void;
@@ -81,6 +86,9 @@ export class CommentMutationController {
                 threadId: this.host.getCommentManager().getThreadById(commentId)?.id ?? latestTarget.latestComment.id,
             },
             hostFilePath ?? latestTarget.latestComment.filePath,
+            {
+                skipCommentViewRefresh: true,
+            },
         );
         await this.host.activateViewAndHighlightComment(latestTarget.latestComment.id);
         return true;
@@ -143,7 +151,7 @@ export class CommentMutationController {
         let saved = false;
         try {
             if (preparedDraft.mode === "new") {
-                saved = await this.addComment(this.toPersistedComment(preparedDraft), {
+                saved = await this.addComment(this.toPersistedComment(this.requireDraftSelectedTextHash(preparedDraft)), {
                     immediateAggregateRefresh: normalizedOptions.deferAggregateRefresh !== true,
                     skipCommentViewRefresh: normalizedOptions.skipPersistedViewRefresh === true,
                 });
@@ -527,11 +535,11 @@ export class CommentMutationController {
         options: SaveDraftOptions = {},
     ): Promise<DraftComment | null> {
         if (draftComment.anchorKind === "page") {
-            return draftComment;
+            return this.withSelectedTextHash(draftComment, draftComment.selectedText);
         }
 
         if (options.skipAnchorRevalidation) {
-            return draftComment;
+            return this.withSelectedTextHash(draftComment, draftComment.selectedText);
         }
 
         const file = this.host.getFileByPath(draftComment.filePath);
@@ -549,12 +557,11 @@ export class CommentMutationController {
         }
 
         return {
-            ...draftComment,
+            ...(await this.withSelectedTextHash(draftComment, resolvedAnchor.text)),
             startLine: resolvedAnchor.startLine,
             startChar: resolvedAnchor.startChar,
             endLine: resolvedAnchor.endLine,
             endChar: resolvedAnchor.endChar,
-            selectedText: resolvedAnchor.text,
             orphaned: false,
         };
     }
@@ -612,12 +619,33 @@ export class CommentMutationController {
         };
     }
 
-    private toPersistedComment(draftComment: DraftComment): Comment {
+    private toPersistedComment(draftComment: DraftComment & { selectedTextHash: string }): Comment {
         const { mode, threadId, appendAfterCommentId, ...comment } = draftComment;
         void mode;
         void threadId;
         void appendAfterCommentId;
         return comment;
+    }
+
+    private async withSelectedTextHash(draftComment: DraftComment, selectedText: string): Promise<DraftComment> {
+        const selectedTextHash = draftComment.selectedTextHash && selectedText === draftComment.selectedText
+            ? draftComment.selectedTextHash
+            : await this.host.hashText(selectedText);
+        return {
+            ...draftComment,
+            selectedText,
+            selectedTextHash,
+        };
+    }
+
+    private requireDraftSelectedTextHash(
+        draftComment: DraftComment,
+    ): DraftComment & { selectedTextHash: string } {
+        if (!draftComment.selectedTextHash) {
+            throw new Error("Draft selectedTextHash missing before persistence.");
+        }
+
+        return draftComment as DraftComment & { selectedTextHash: string };
     }
 
     private createAddFingerprint(comment: Comment): string {

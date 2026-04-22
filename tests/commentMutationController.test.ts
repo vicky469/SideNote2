@@ -39,6 +39,7 @@ function createComment(overrides: Partial<Comment> = {}): Comment {
 function toDraft(comment: Comment, overrides: Partial<DraftComment> = {}): DraftComment {
     return {
         ...comment,
+        ...overrides,
         mode: overrides.mode ?? "new",
         comment: overrides.comment ?? comment.comment,
     };
@@ -67,7 +68,11 @@ function createHost(options: {
     const loadedFiles: string[] = [];
     const persistedFiles: Array<{ path: string; immediateAggregateRefresh?: boolean; skipCommentViewRefresh?: boolean }> = [];
     const highlightedCommentIds: string[] = [];
-    const setDraftCalls: Array<{ draftComment: DraftComment | null; hostFilePath?: string | null }> = [];
+    const setDraftCalls: Array<{
+        draftComment: DraftComment | null;
+        hostFilePath?: string | null;
+        skipCommentViewRefresh?: boolean;
+    }> = [];
     const setShowResolvedCalls: boolean[] = [];
     const savedUserEntryEvents: SavedUserEntryEvent[] = [];
     let refreshCommentViewsCount = 0;
@@ -107,10 +112,14 @@ function createHost(options: {
             showResolvedComments = nextShowResolved;
             return true;
         },
-        setDraftComment: async (nextDraftComment, hostFilePath) => {
+        setDraftComment: async (nextDraftComment, hostFilePath, setDraftOptions) => {
             draftComment = nextDraftComment;
             draftHostFilePath = nextDraftComment ? (hostFilePath ?? nextDraftComment.filePath) : null;
-            setDraftCalls.push({ draftComment: nextDraftComment, hostFilePath });
+            setDraftCalls.push({
+                draftComment: nextDraftComment,
+                hostFilePath,
+                skipCommentViewRefresh: setDraftOptions?.skipCommentViewRefresh,
+            });
         },
         setDraftCommentValue: (nextDraftComment) => {
             draftComment = nextDraftComment;
@@ -199,6 +208,7 @@ test("comment mutation controller starts an edit draft from the latest loaded co
     assert.deepEqual(host.loadedFiles, [comment.filePath]);
     assert.deepEqual(host.highlightedCommentIds, [comment.id]);
     assert.equal(host.setDraftCalls.length, 1);
+    assert.equal(host.setDraftCalls[0].skipCommentViewRefresh, true);
     assert.equal(host.getDraftHostFilePath(), "SideNote2 index.md");
     assert.deepEqual(host.getDraftComment(), {
         ...comment,
@@ -235,6 +245,27 @@ test("comment mutation controller saves a new draft by trimming and persisting i
     assert.equal(host.getSavingDraftCommentId(), null);
     assert.equal(host.getRefreshCommentViewsCount(), 1);
     assert.equal(host.getRefreshEditorDecorationsCount(), 1);
+    assert.deepEqual(host.notices, []);
+});
+
+test("comment mutation controller hashes draft selections lazily during save", async () => {
+    const draft = toDraft(createComment({
+        id: "draft-lazy-hash-1",
+        comment: "Ship it",
+    }), {
+        selectedTextHash: "",
+    });
+    const host = createHost({
+        draftComment: draft,
+        currentNoteContentByPath: {
+            [draft.filePath]: "# Title\n\nAlpha beta gamma.\n",
+        },
+    });
+
+    await host.controller.saveDraft(draft.id);
+
+    assert.equal(host.manager.getAllComments().length, 1);
+    assert.equal(host.manager.getAllComments()[0].selectedTextHash, "hash:beta");
     assert.deepEqual(host.notices, []);
 });
 

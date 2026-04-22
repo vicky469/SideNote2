@@ -13,6 +13,11 @@ export interface RevealedCommentStateUpdateOptions {
     refreshMarkdownPreviews?: boolean;
 }
 
+export interface SetDraftCommentOptions {
+    skipCommentViewRefresh?: boolean;
+    refreshEditorDecorations?: boolean;
+}
+
 export class CommentSessionController {
     private readonly draftSessionStore = new DraftSessionStore();
     private readonly revealedCommentSelectionStore = new RevealedCommentSelectionStore();
@@ -58,10 +63,15 @@ export class CommentSessionController {
     public async setDraftComment(
         draftComment: DraftComment | null,
         hostFilePath: string | null = draftComment?.filePath ?? null,
+        options: SetDraftCommentOptions = {},
     ): Promise<void> {
         this.draftSessionStore.setDraftComment(draftComment, hostFilePath);
-        await this.host.refreshCommentViews();
-        this.host.refreshEditorDecorations();
+        if (!options.skipCommentViewRefresh) {
+            await this.host.refreshCommentViews();
+        }
+        if (options.refreshEditorDecorations !== false) {
+            this.host.refreshEditorDecorations();
+        }
     }
 
     public setDraftCommentValue(draftComment: DraftComment | null): void {

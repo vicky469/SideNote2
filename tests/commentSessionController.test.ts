@@ -189,3 +189,16 @@ test("comment session controller manages draft state and refresh side effects", 
     assert.equal(harness.getRefreshCommentViewsCount(), 2);
     assert.equal(harness.getRefreshEditorDecorationsCount(), 2);
 });
+
+test("comment session controller can skip the initial comment view refresh when opening a draft", async () => {
+    const harness = createHarness();
+    const draft = createDraft();
+
+    await harness.controller.setDraftComment(draft, draft.filePath, {
+        skipCommentViewRefresh: true,
+    });
+
+    assert.deepEqual(harness.controller.getDraftForView(draft.filePath), draft);
+    assert.equal(harness.getRefreshCommentViewsCount(), 0);
+    assert.equal(harness.getRefreshEditorDecorationsCount(), 1);
+});

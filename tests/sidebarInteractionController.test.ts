@@ -235,14 +235,20 @@ test("sidebar interaction controller scrolls the rerendered draft card instead o
                     if (!selector.includes("draft-1")) {
                         return null;
                     }
+                    if (selector.includes("textarea")) {
+                        return null;
+                    }
 
                     return renderCompleted ? freshDraftEl : staleDraftEl;
                 },
                 querySelectorAll: () => [],
                 contains: () => true,
             } as never,
-            getCurrentFile: () => null,
-            getDraftForView: () => null,
+            getCurrentFile: () => ({ path: "docs/architecture.md" }) as never,
+            getDraftForView: () => createDraft({
+                id: "draft-1",
+                filePath: "docs/architecture.md",
+            }),
             renderComments: async () => {
                 renderCalls += 1;
                 renderCompleted = true;
@@ -260,6 +266,7 @@ test("sidebar interaction controller scrolls the rerendered draft card instead o
         assert.equal(renderCalls, 1);
         assert.equal(staleDraftEl.scrollCalls, 0);
         assert.equal(freshDraftEl.scrollCalls, 1);
+        assert.equal(controller.getActiveCommentId(), null);
     } finally {
         Object.assign(globalThis, {
             window: originalWindow,

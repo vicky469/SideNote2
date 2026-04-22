@@ -187,11 +187,31 @@ export class SidebarInteractionController {
     }
 
     public async highlightAndFocusDraft(commentId: string): Promise<void> {
-        this.activeCommentId = commentId;
         void this.host.log?.("info", "sidebar", "sidebar.focus.requested", {
             commentId,
         });
 
+        const currentFile = this.host.getCurrentFile();
+        const visibleDraft = currentFile ? this.host.getDraftForView(currentFile.path) : null;
+        if (visibleDraft?.id === commentId) {
+            this.clearActiveState();
+            const existingTextarea = this.host.containerEl.querySelector(`[data-draft-id="${commentId}"] textarea`);
+            if (!existingTextarea) {
+                await this.host.renderComments();
+            }
+
+            const draftEl = this.host.containerEl.querySelector(`[data-draft-id="${commentId}"]`);
+            if (draftEl) {
+                draftEl.scrollIntoView({ behavior: "auto", block: "nearest" });
+                void this.host.log?.("info", "sidebar", "sidebar.draft.scrollIntoView", {
+                    commentId,
+                });
+            }
+            this.scheduleDraftFocus(commentId);
+            return;
+        }
+
+        this.activeCommentId = commentId;
         const draftEl = this.host.containerEl.querySelector(`[data-draft-id="${commentId}"]`);
         const persistedEl = this.host.containerEl.querySelector(`[data-comment-id="${commentId}"]`);
         let commentEl: Element | null = null;
