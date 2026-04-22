@@ -233,6 +233,9 @@ This is already the direction described in [agent-cross-platform-runtime-plan.md
 
 Normal mobile support should keep note writes in SideNote2, even when the remote bridge is workspace-aware.
 
+This does not mean the remote runtime must stay permanently reply-only.
+It means the vault remains client-owned and the plugin remains the execution owner for vault mutations.
+
 That means the remote host, whether it is:
 
 - a Mac
@@ -243,17 +246,21 @@ should not:
 
 - inspect local vault files directly
 - modify note bodies directly
+- write `Attachments/...` paths directly on the client filesystem
 
 It may:
 
 - access a mirrored repo or workspace on the remote machine
 - modify project files inside that remote workspace
+- request vault reads and writes through plugin-mediated tools
 
 Instead:
 
 - SideNote2 builds and sends the relevant context
 - the remote host can inspect or update its configured server-side workspace
-- the remote host returns reply text only
+- the remote host may request local vault operations through SideNote2
+- SideNote2 executes approved note, attachment, and thread operations locally
+- the remote host returns reply text plus any intermediate tool requests
 - SideNote2 writes that reply back into the original markdown thread
 
 This keeps mobile support:
@@ -267,6 +274,48 @@ Earlier reply-only variants are still described in:
 
 - [mobile-to-macos-codex-bridge-spec.md](../prd/mobile-to-macos-codex-bridge-spec.md)
 - [mobile-to-dgx-codex-bridge-spec.md](../prd/mobile-to-dgx-codex-bridge-spec.md)
+
+## Immediate Client-Mediated Tool TODO
+
+To make DGX useful without moving the vault off the user's device, the next implementation slice should be client-mediated vault tools instead of DGX-side vault paths.
+
+Concrete tasks:
+
+1. Split prompt policy by runtime capability.
+   - local desktop may keep direct `Attachments/` guidance
+   - remote DGX should be told to request client tools for note reads, note writes, and attachment creation
+
+2. Extend the remote bridge protocol beyond reply-only events.
+   - add `tool_call`
+   - add `tool_result_ack`
+   - add client submission for tool results
+
+3. Add a local plugin tool executor for read-only vault access first.
+   - `obsidian.get_active_note`
+   - `obsidian.read_note`
+   - `obsidian.list_folder`
+
+4. Add narrow write tools after read tools are stable.
+   - `obsidian.create_note`
+   - `obsidian.patch_active_note`
+   - `obsidian.write_attachment`
+
+5. Start attachment support with SVG first.
+   - DGX can generate diagram content remotely
+   - SideNote2 writes the resulting asset into `Attachments/` locally
+   - PNG or video can come after the protocol is proven
+
+6. Keep SideNote2 thread writes behind safe local helpers only.
+   - `sidenote2.append_thread_reply`
+   - `sidenote2.update_thread_entry`
+   - `sidenote2.resolve_thread`
+   - never raw-edit the serialized `<!-- SideNote2 comments -->` block from DGX
+
+7. Advertise the new capability explicitly in remote start metadata.
+   - move beyond the current generic `workspace-aware` flag
+   - include a client tool capability marker and API version
+
+This is the path that closes the gap for cases like "generate a diagram" when DGX has the compute but the vault and `Attachments/` folder remain on the client device.
 
 ## DGX Spark Route
 

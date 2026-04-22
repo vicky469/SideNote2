@@ -13,6 +13,10 @@ When a user is working with real SideNote2 comments in an Obsidian vault, do not
 
 Use the SideNote2 note workflow first.
 
+## Use The `change-surface-audit` Skill
+
+Switch to `skills/dev/change-surface-audit/SKILL.md` when the same behavior, prompt, label, or policy appears in multiple files or runtimes and a request would otherwise turn into patching several copies by hand.
+
 ## Use The `sidenote2` Skill
 
 Switch to `skills/sidenote2/SKILL.md` when the user:

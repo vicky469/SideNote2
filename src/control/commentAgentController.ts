@@ -48,6 +48,7 @@ export interface CommentAgentHost {
     createCommentId(): string;
     now(): number;
     getPluginVersion(): string;
+    getVaultRootPath(): string | null;
     refreshCommentViews?(): Promise<void>;
     getRuntimeWorkingDirectory(filePath: string): string | null;
     getCommentManager(): CommentManager;
@@ -74,6 +75,7 @@ export interface CommentAgentHost {
         target: SideNote2AgentTarget;
         prompt: string;
         cwd: string;
+        vaultRootPath?: string | null;
         onPartialText?: (partialText: string) => void;
         onProgressText?: (progressText: string) => void;
         abortSignal?: AbortSignal;
@@ -622,6 +624,7 @@ export class CommentAgentController {
             target: options.run.requestedAgent,
             prompt: options.runtimePrompt,
             cwd: workingDirectory,
+            vaultRootPath: this.host.getVaultRootPath(),
             abortSignal: options.execution.abortController.signal,
             onProgressText: (progressText) => {
                 if (this.isRunCancellationRequested(options.run.id)) {

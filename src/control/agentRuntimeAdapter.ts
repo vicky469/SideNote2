@@ -1,5 +1,6 @@
 import type { AgentRunRuntime } from "../core/agents/agentRuns";
 import { getAgentActorById } from "../core/agents/agentActorRegistry";
+import * as sideNotePromptPolicy from "../../shared/sideNotePromptPolicy.js";
 import type { SideNote2AgentTarget } from "../core/config/agentTargets";
 
 interface ExecFileResult {
@@ -65,6 +66,7 @@ export interface AgentRuntimeInvocation {
     target: SideNote2AgentTarget;
     prompt: string;
     cwd: string;
+    vaultRootPath?: string | null;
     onPartialText?: (partialText: string) => void;
     onProgressText?: (progressText: string) => void;
     abortSignal?: AbortSignal;
@@ -186,26 +188,15 @@ function execFileAsync(
     });
 }
 
-function buildSideNotePrompt(promptText: string): string {
-    return [
-        "You are responding to a SideNote2 thread in Obsidian.",
-        "Answer the user's request directly.",
-        "Only inspect or modify workspace files when the request actually needs that context.",
-        "If the request asks for file changes, make them directly in the workspace before replying.",
-        "Return only the reply text that should be appended back into the SideNote2 thread.",
-        "Keep the side-note reply compact and easy to scan.",
-        "Use plain paragraphs or one simple list; avoid headings, long multi-section layouts, and excess blank lines.",
-        "Keep the reply at or under 250 words.",
-        "If you include a diagram in a side note, render it as a compact ASCII diagram that fits comfortably in the sidebar.",
-        "Do not use Mermaid or other large diagram syntax in side-note replies.",
-        "If the best useful answer would exceed 250 words, create or update a short linked wiki note with the full detail and return a concise side note that points to it.",
-        "Do not mention skills, prompts, searches, files, tools, AGENTS instructions, or your process.",
-        "Do not narrate what you are doing.",
-        "Do not include thinking steps or tool logs.",
-        "Do not mention reading notes, locating threads, loading context, or using the workspace.",
-        "",
-        promptText,
-    ].join("\n");
+export function buildSideNotePrompt(options: {
+    promptText: string;
+    vaultRootPath?: string | null;
+}): string {
+    return sideNotePromptPolicy.buildSideNotePrompt({
+        promptText: options.promptText,
+        rootLabel: "vault root",
+        rootPath: options.vaultRootPath ?? null,
+    });
 }
 
 function normalizeNarrationSegment(value: string): string {
@@ -654,10 +645,12 @@ function extractJsonRpcErrorMessage(value: unknown): string | null {
     ]);
 }
 
-function createWorkspaceWriteSandboxPolicy(cwd: string) {
+export function createWorkspaceWriteSandboxPolicy(cwd: string, extraWritableRoots: string[] = []) {
+    const writableRoots = [cwd, ...extraWritableRoots]
+        .filter((value, index, values): value is string => typeof value === "string" && value.length > 0 && values.indexOf(value) === index);
     return {
         type: "workspaceWrite" as const,
-        writableRoots: [cwd],
+        writableRoots,
         readOnlyAccess: {
             type: "fullAccess" as const,
         },
@@ -1109,12 +1102,18 @@ async function runCodexDirect(
                     input: [
                         {
                             type: "text",
-                            text: buildSideNotePrompt(invocation.prompt),
+                            text: buildSideNotePrompt({
+                                promptText: invocation.prompt,
+                                vaultRootPath: invocation.vaultRootPath,
+                            }),
                             text_elements: [],
                         },
                     ],
                     personality: "none",
-                    sandboxPolicy: createWorkspaceWriteSandboxPolicy(invocation.cwd),
+                    sandboxPolicy: createWorkspaceWriteSandboxPolicy(
+                        invocation.cwd,
+                        invocation.vaultRootPath ? [invocation.vaultRootPath] : [],
+                    ),
                     threadId: activeThreadId,
                 });
                 activeTurnId = typeof turnStartResponse?.turn?.id === "string"

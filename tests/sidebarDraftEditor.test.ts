@@ -7,6 +7,10 @@ import {
     estimateDraftTextareaRows,
     getSidebarComments,
 } from "../src/ui/views/sidebarDraftEditor";
+import {
+    computePinnedDraftScrollTop,
+    pinDraftToTopOnMobile,
+} from "../src/ui/views/sidebarDraftComment";
 
 function createComment(overrides: Partial<Comment> = {}): Comment {
     return {
@@ -118,6 +122,96 @@ test("estimateDraftTextareaRows keeps draft editors within their intended bounds
     const longLine = "x".repeat(2_000);
     assert.equal(estimateDraftTextareaRows(longLine, false), 10);
     assert.equal(estimateDraftTextareaRows(longLine, true), 18);
+});
+
+test("computePinnedDraftScrollTop aligns the draft near the top of the sidebar", () => {
+    assert.equal(computePinnedDraftScrollTop(120, 260, 40), 332);
+    assert.equal(computePinnedDraftScrollTop(0, 4, 20), 0);
+});
+
+test("pinDraftToTopOnMobile performs a single scroll adjustment when the draft is offscreen", () => {
+    const originalHTMLElement = globalThis.HTMLElement;
+    class FakeElement {}
+    Object.assign(globalThis, {
+        HTMLElement: FakeElement,
+    });
+
+    try {
+    const scrollCalls: Array<{ top: number; behavior: string }> = [];
+        const scrollContainer = Object.assign(new FakeElement(), {
+            scrollTop: 120,
+            getBoundingClientRect: () => ({ top: 40 }),
+            scrollTo: (options: { top: number; behavior: string }) => {
+                scrollCalls.push(options);
+            },
+        }) as unknown as HTMLElement;
+        const draftEl = Object.assign(new FakeElement(), {
+            getBoundingClientRect: () => ({ top: 260 }),
+        }) as unknown as HTMLElement;
+        const textarea = {
+            closest: (selector: string) => {
+                if (selector === ".sidenote2-comment-draft") {
+                    return draftEl;
+                }
+                if (selector === ".sidenote2-view-container") {
+                    return scrollContainer;
+                }
+                return null;
+            },
+        } as unknown as HTMLTextAreaElement;
+
+        pinDraftToTopOnMobile(textarea);
+
+        assert.deepEqual(scrollCalls, [{
+            top: 332,
+            behavior: "auto",
+        }]);
+    } finally {
+        Object.assign(globalThis, {
+            HTMLElement: originalHTMLElement,
+        });
+    }
+});
+
+test("pinDraftToTopOnMobile skips no-op scroll corrections", () => {
+    const originalHTMLElement = globalThis.HTMLElement;
+    class FakeElement {}
+    Object.assign(globalThis, {
+        HTMLElement: FakeElement,
+    });
+
+    try {
+        const scrollCalls: Array<{ top: number; behavior: string }> = [];
+        const scrollContainer = Object.assign(new FakeElement(), {
+            scrollTop: 332,
+            getBoundingClientRect: () => ({ top: 40 }),
+            scrollTo: (options: { top: number; behavior: string }) => {
+                scrollCalls.push(options);
+            },
+        }) as unknown as HTMLElement;
+        const draftEl = Object.assign(new FakeElement(), {
+            getBoundingClientRect: () => ({ top: 48 }),
+        }) as unknown as HTMLElement;
+        const textarea = {
+            closest: (selector: string) => {
+                if (selector === ".sidenote2-comment-draft") {
+                    return draftEl;
+                }
+                if (selector === ".sidenote2-view-container") {
+                    return scrollContainer;
+                }
+                return null;
+            },
+        } as unknown as HTMLTextAreaElement;
+
+        pinDraftToTopOnMobile(textarea);
+
+        assert.deepEqual(scrollCalls, []);
+    } finally {
+        Object.assign(globalThis, {
+            HTMLElement: originalHTMLElement,
+        });
+    }
 });
 
 test("sidebar draft editor controller applies bold formatting directly", () => {

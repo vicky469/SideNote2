@@ -1,5 +1,6 @@
 {
   "compilerOptions": {
+    "allowJs": true,
     "target": "ES2020",
     "module": "CommonJS",
     "moduleResolution": "node",
@@ -14,6 +15,7 @@
   "include": [
     "tests/**/*.ts",
     "src/commentManager.ts",
-    "src/core/**/*.ts"
+    "src/core/**/*.ts",
+    "shared/sideNotePromptPolicy.js"
   ]
 }

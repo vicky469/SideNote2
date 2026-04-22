@@ -149,6 +149,20 @@ export class CommentMutationController {
         this.host.setDraftCommentValue(preparedDraft);
 
         let saved = false;
+        let finalizedDraftUi = false;
+        const finalizeDraftUi = async () => {
+            if (finalizedDraftUi) {
+                return;
+            }
+
+            if (saved && this.host.getDraftComment()?.id === commentId) {
+                this.host.clearDraftState();
+            }
+            this.host.setSavingDraftCommentId(null);
+            await this.host.refreshCommentViews();
+            this.host.refreshEditorDecorations();
+            finalizedDraftUi = true;
+        };
         try {
             if (preparedDraft.mode === "new") {
                 saved = await this.addComment(this.toPersistedComment(this.requireDraftSelectedTextHash(preparedDraft)), {
@@ -168,20 +182,10 @@ export class CommentMutationController {
                     draftMode: preparedDraft.mode,
                     filePath: preparedDraft.filePath,
                 });
-                if (preparedDraft.mode !== "edit" && preparedDraft.comment.trim().length > 0) {
-                    try {
-                        await this.host.handleSavedUserEntry?.({
-                            threadId: preparedDraft.threadId ?? preparedDraft.id,
-                            entryId: preparedDraft.id,
-                            filePath: preparedDraft.filePath,
-                            body: preparedDraft.comment,
-                        });
-                    } catch (agentError) {
-                        void this.host.log?.("error", "agents", "agents.dispatch.error", {
-                            commentId,
-                            filePath: preparedDraft.filePath,
-                            error: agentError,
-                        });
+                if (preparedDraft.mode !== "edit") {
+                    await finalizeDraftUi();
+                    if (preparedDraft.comment.trim().length > 0) {
+                        void this.dispatchSavedUserEntry(preparedDraft);
                     }
                 }
             }
@@ -194,12 +198,7 @@ export class CommentMutationController {
             });
             throw error;
         } finally {
-            if (saved && this.host.getDraftComment()?.id === commentId) {
-                this.host.clearDraftState();
-            }
-            this.host.setSavingDraftCommentId(null);
-            await this.host.refreshCommentViews();
-            this.host.refreshEditorDecorations();
+            await finalizeDraftUi();
         }
     }
 
@@ -266,6 +265,24 @@ export class CommentMutationController {
         await this.host.persistCommentsForFile(latestTarget.file, {
             immediateAggregateRefresh: true,
             skipCommentViewRefresh: options.skipCommentViewRefresh,
+        });
+        return true;
+    }
+
+    public async setCommentBookmarkState(commentId: string, isBookmark: boolean): Promise<boolean> {
+        const latestTarget = await this.loadLatestCommentTarget(commentId);
+        if (!latestTarget) {
+            return false;
+        }
+
+        const existingThread = this.host.getCommentManager().getThreadById(commentId);
+        if (existingThread?.isBookmark === isBookmark) {
+            return true;
+        }
+
+        this.host.getCommentManager().setCommentBookmarkState(commentId, isBookmark);
+        await this.host.persistCommentsForFile(latestTarget.file, {
+            immediateAggregateRefresh: true,
         });
         return true;
     }
@@ -662,5 +679,22 @@ export class CommentMutationController {
             comment.selectedText,
             comment.comment,
         ].join("|");
+    }
+
+    private async dispatchSavedUserEntry(draftComment: DraftComment): Promise<void> {
+        try {
+            await this.host.handleSavedUserEntry?.({
+                threadId: draftComment.threadId ?? draftComment.id,
+                entryId: draftComment.id,
+                filePath: draftComment.filePath,
+                body: draftComment.comment,
+            });
+        } catch (agentError) {
+            void this.host.log?.("error", "agents", "agents.dispatch.error", {
+                commentId: draftComment.id,
+                filePath: draftComment.filePath,
+                error: agentError,
+            });
+        }
     }
 }

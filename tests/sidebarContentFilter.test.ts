@@ -5,6 +5,7 @@ import {
     countAgentThreads,
     countBookmarkThreads,
     filterThreadsBySidebarContentFilter,
+    filterThreadsByStableSidebarContentFilter,
     filterThreadsBySidebarSearchQuery,
     isAgentThread,
     isBookmarkThread,
@@ -142,4 +143,38 @@ test("sidebar content filters unlock when a new draft starts", () => {
     assert.equal(unlockSidebarContentFilterForDraft("agents", { mode: "new" }), "all");
     assert.equal(unlockSidebarContentFilterForDraft("agents", { mode: "edit" }), "agents");
     assert.equal(unlockSidebarContentFilterForDraft("bookmarks", null), "bookmarks");
+});
+
+test("stable bookmark filter retains visible threads after they are unbookmarked", () => {
+    const retainedThread = createThread({ id: "thread-bookmark", isBookmark: false });
+    const freshBookmarkThread = createThread({ id: "thread-new-bookmark", isBookmark: true });
+    const noteThread = createThread({ id: "thread-note", isBookmark: false });
+
+    const filtered = filterThreadsByStableSidebarContentFilter(
+        [retainedThread, freshBookmarkThread, noteThread],
+        "bookmarks",
+        new Set(["thread-bookmark"]),
+    );
+
+    assert.deepEqual(
+        filtered.threads.map((thread) => thread.id),
+        ["thread-bookmark", "thread-new-bookmark"],
+    );
+    assert.deepEqual(
+        Array.from(filtered.retainedBookmarkThreadIds),
+        ["thread-bookmark", "thread-new-bookmark"],
+    );
+});
+
+test("stable bookmark filter clears retained ids when the filter is not bookmarks", () => {
+    const bookmarkThread = createThread({ id: "thread-bookmark", isBookmark: true });
+
+    const filtered = filterThreadsByStableSidebarContentFilter(
+        [bookmarkThread],
+        "all",
+        new Set(["thread-bookmark"]),
+    );
+
+    assert.deepEqual(filtered.threads.map((thread) => thread.id), ["thread-bookmark"]);
+    assert.equal(filtered.retainedBookmarkThreadIds.size, 0);
 });

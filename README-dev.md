@@ -93,8 +93,8 @@ npm run dev
 SIDENOTE2_HOT_RELOAD=0 npm run dev
 ```
 
-- `npm test` runs the Node test suite.
-- `npm run build` runs lint first, then creates the production bundle, and fails if UI lint or release-artifact checks would be violated downstream.
+- `npm test` runs the Node test suite. The DGX bridge socket integration tests auto-skip outside DGX Spark devices; set `SIDENOTE2_RUN_DGX_BRIDGE_SOCKET_TESTS=1` to force them.
+- `npm run build` runs the full test suite first, then lint, then creates the production bundle. It now fails on test failures instead of bypassing them.
 
 ## Release
 
@@ -108,7 +108,7 @@ git push origin main --follow-tags
 
 - Required: create `docs/releases/<version>.md` before tagging. `npm run release:check` and the GitHub release workflow both fail if the exact versioned notes file is missing or still contains template placeholders.
 - `npm version patch|minor|major` updates `package.json`, `manifest.json`, `versions.json`, and the README release badge.
-- `npm run release:check` runs the tests, the lint-enforced production build, the shipped-artifact inspection, and the required release-notes check.
+- `npm run release:check` runs the test-enforced production build, the shipped-artifact inspection, and the required release-notes check.
 - `origin` should point to the canonical public source repo: `SideNote2`.
 - The shipped-artifact inspection checks exactly `main.js`, `manifest.json`, and `styles.css`.
 - Releases should not ship `main.js.map`, `sourceMappingURL`, `sourcesContent`, private keys, certificates, tokens, or obvious local absolute paths.

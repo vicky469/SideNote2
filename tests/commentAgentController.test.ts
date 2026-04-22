@@ -63,6 +63,7 @@ function createHarness(options: {
         target: "codex" | "claude";
         prompt: string;
         cwd: string;
+        vaultRootPath?: string | null;
         onPartialText?: (partialText: string) => void;
         onProgressText?: (progressText: string) => void;
         abortSignal?: AbortSignal;
@@ -81,7 +82,7 @@ function createHarness(options: {
     const appendedEntries: Array<{ threadId: string; body: string; insertAfterCommentId?: string }> = [];
     const editedEntries: Array<{ commentId: string; body: string }> = [];
     const notices: string[] = [];
-    const runtimeCalls: Array<{ target: "codex" | "claude"; prompt: string; cwd: string }> = [];
+    const runtimeCalls: Array<{ target: "codex" | "claude"; prompt: string; cwd: string; vaultRootPath?: string | null }> = [];
     const remoteStartCalls: Array<{ agent: "codex" | "claude"; promptText: string; metadata: Record<string, unknown> }> = [];
     const remotePollCalls: Array<{ runId: string; afterCursor?: string | null; waitMs?: number }> = [];
     let refreshCount = 0;
@@ -100,6 +101,7 @@ function createHarness(options: {
         createCommentId: () => `generated-${idCounter++}`,
         now: () => ++now,
         getPluginVersion: () => "2.0.39",
+        getVaultRootPath: () => "/vault-root",
         refreshCommentViews: async () => {
             refreshCount += 1;
             options.onRefreshCommentViews?.(controller);
@@ -284,6 +286,7 @@ test("comment agent controller appends a reply and marks the run succeeded", asy
     }]);
     assert.equal(harness.runtimeCalls[0]?.target, "codex");
     assert.equal(harness.runtimeCalls[0]?.cwd, "/vault");
+    assert.equal(harness.runtimeCalls[0]?.vaultRootPath, "/vault-root");
 });
 
 test("comment agent controller blocks a run when runtime selection is unavailable", async () => {

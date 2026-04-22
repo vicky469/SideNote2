@@ -415,6 +415,46 @@ test("comment mutation controller dispatches saved new entries to the agent hook
     }]);
 });
 
+test("comment mutation controller closes a saved draft before a slow agent dispatch finishes", async () => {
+    const draft = toDraft(createComment({
+        id: "draft-agent-slow-1",
+        comment: "@codex fix the parser",
+    }));
+    let releaseDispatch!: () => void;
+    let dispatchResolved = false;
+    const dispatchPromise = new Promise<void>((resolve) => {
+        releaseDispatch = () => {
+            dispatchResolved = true;
+            resolve();
+        };
+    });
+    const host = createHost({
+        draftComment: draft,
+        knownComments: [draft],
+        currentNoteContentByPath: {
+            [draft.filePath]: "# Title\n\nAlpha beta gamma.\n",
+        },
+        handleSavedUserEntry: async () => dispatchPromise,
+    });
+
+    await host.controller.saveDraft(draft.id);
+
+    assert.equal(dispatchResolved, false);
+    assert.equal(host.getDraftComment(), null);
+    assert.equal(host.getSavingDraftCommentId(), null);
+    assert.equal(host.getRefreshCommentViewsCount(), 1);
+    assert.equal(host.getRefreshEditorDecorationsCount(), 1);
+    assert.deepEqual(host.savedUserEntryEvents, [{
+        threadId: draft.id,
+        entryId: draft.id,
+        filePath: draft.filePath,
+        body: "@codex fix the parser",
+    }]);
+
+    releaseDispatch();
+    await dispatchPromise;
+});
+
 test("comment mutation controller dispatches saved append entries to the agent hook after persistence", async () => {
     const existing = createComment({ id: "thread-1", comment: "Original" });
     const draft: DraftComment = {
@@ -587,6 +627,28 @@ test("comment mutation controller can convert an edited note thread to bookmark 
     assert.equal(host.manager.getCommentById(existing.id)?.comment, "Existing idea");
     assert.equal(host.manager.getThreadById(existing.id)?.isBookmark, true);
     assert.deepEqual(host.savedUserEntryEvents, []);
+});
+
+test("comment mutation controller can toggle bookmark state without entering edit mode", async () => {
+    const existing = createComment({
+        id: "thread-1",
+        comment: "Existing idea",
+        isBookmark: false,
+    });
+    const host = createHost({
+        knownComments: [existing],
+        loadedComments: [existing],
+    });
+
+    const updated = await host.controller.setCommentBookmarkState(existing.id, true);
+
+    assert.equal(updated, true);
+    assert.equal(host.getDraftComment(), null);
+    assert.equal(host.manager.getThreadById(existing.id)?.isBookmark, true);
+    assert.deepEqual(host.persistedFiles, [{
+        path: existing.filePath,
+        immediateAggregateRefresh: true,
+    }]);
 });
 
 test("comment mutation controller keeps child edit drafts attached to their parent thread", async () => {

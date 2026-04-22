@@ -53,7 +53,7 @@ import {
 } from "./sidebarPageRenderSignature";
 import {
     countBookmarkThreads,
-    filterThreadsBySidebarContentFilter,
+    filterThreadsByStableSidebarContentFilter,
     filterThreadsBySidebarSearchQuery,
     unlockSidebarContentFilterForDraft,
     type SidebarContentFilter,
@@ -198,6 +198,8 @@ export default class SideNote2View extends ItemView {
     private noteSidebarSearchInputValue = "";
     private noteSidebarSearchDebounceTimer: number | null = null;
     private noteSidebarSearchRequestVersion = 0;
+    private retainedBookmarkFilterFilePath: string | null = null;
+    private retainedBookmarkFilterThreadIds = new Set<string>();
     private selectedIndexFileFilterRootPath: string | null = null;
     private indexFileFilterGraph: IndexFileFilterGraph | null = null;
     private reorderDragState: SidebarReorderDragState | null = null;
@@ -335,6 +337,10 @@ export default class SideNote2View extends ItemView {
             revealComment: (comment) => this.plugin.revealComment(comment),
             getPreferredFileLeaf: () => this.plugin.getPreferredFileLeaf(),
             openLinkText: (href, sourcePath) => this.app.workspace.openLinkText(href, sourcePath, false),
+            shouldShowDeletedComments: () => this.plugin.shouldShowDeletedComments(),
+            setShowDeletedComments: async (showDeleted) => {
+                await this.plugin.setShowDeletedComments(showDeleted);
+            },
             log: (level, area, event, payload) => this.plugin.logEvent(level, area, event, payload),
         });
         this.draftEditorController = new SidebarDraftEditorController({
@@ -381,6 +387,7 @@ export default class SideNote2View extends ItemView {
         });
         await this.renderComments();
         document.addEventListener("keydown", this.interactionController.documentKeydownHandler, true);
+        document.addEventListener("mousedown", this.interactionController.documentMouseDownHandler, true);
         document.addEventListener("copy", this.interactionController.documentCopyHandler, true);
         document.addEventListener("selectionchange", this.interactionController.documentSelectionChangeHandler);
         this.containerEl.addEventListener("click", this.interactionController.sidebarClickHandler);
@@ -393,6 +400,7 @@ export default class SideNote2View extends ItemView {
         this.noteSidebarShell = null;
         this.resetStreamedReplyControllers();
         document.removeEventListener("keydown", this.interactionController.documentKeydownHandler, true);
+        document.removeEventListener("mousedown", this.interactionController.documentMouseDownHandler, true);
         document.removeEventListener("copy", this.interactionController.documentCopyHandler, true);
         document.removeEventListener("selectionchange", this.interactionController.documentSelectionChangeHandler);
         this.containerEl.removeEventListener("click", this.interactionController.sidebarClickHandler);
@@ -815,10 +823,7 @@ export default class SideNote2View extends ItemView {
         const showResolved = this.plugin.shouldShowResolvedComments();
         const bookmarkThreadCount = countBookmarkThreads(persistedThreads);
         const hasResolvedThreadsInFile = persistedThreads.some((thread) => thread.resolved);
-        const contentFilteredThreads = filterThreadsBySidebarContentFilter(
-            persistedThreads,
-            this.noteSidebarContentFilter,
-        );
+        const contentFilteredThreads = this.filterNoteSidebarThreadsByContentFilter(file.path, persistedThreads);
         const searchMatchedThreads = filterThreadsBySidebarSearchQuery(
             contentFilteredThreads,
             this.noteSidebarSearchQuery,
@@ -1387,6 +1392,24 @@ export default class SideNote2View extends ItemView {
         }
     }
 
+    private filterNoteSidebarThreadsByContentFilter(
+        filePath: string,
+        threads: readonly CommentThread[],
+    ): CommentThread[] {
+        const result = filterThreadsByStableSidebarContentFilter(
+            threads,
+            this.noteSidebarContentFilter,
+            this.retainedBookmarkFilterFilePath === filePath
+                ? this.retainedBookmarkFilterThreadIds
+                : new Set<string>(),
+        );
+        this.retainedBookmarkFilterFilePath = this.noteSidebarContentFilter === "bookmarks"
+            ? filePath
+            : null;
+        this.retainedBookmarkFilterThreadIds = result.retainedBookmarkThreadIds;
+        return result.threads;
+    }
+
     private resetStreamedReplyControllers(): void {
         for (const controller of this.streamedReplyControllers.values()) {
             controller.clear();
@@ -1450,6 +1473,9 @@ export default class SideNote2View extends ItemView {
             selectedIndexFileFilterRootPath: options.selectedIndexFileFilterRootPath,
             filteredIndexFileCount: options.filteredIndexFilePaths.length,
         });
+        const isDeletedToolbarMode = !options.isAllCommentsView
+            && showListOnlyToolbarChips
+            && showDeletedComments;
         const shouldRenderToolbar = options.isAllCommentsView
             || shouldShowResolvedChip
             || shouldShowContentFilterIcons
@@ -1463,6 +1489,7 @@ export default class SideNote2View extends ItemView {
         const toolbarEl = container.createDiv("sidenote2-sidebar-toolbar");
         toolbarEl.classList.toggle("is-index-toolbar", options.isAllCommentsView);
         toolbarEl.classList.toggle("is-note-toolbar", !options.isAllCommentsView);
+        toolbarEl.classList.toggle("is-deleted-toolbar-mode", isDeletedToolbarMode);
         let indexChipGroup: HTMLDivElement | null = null;
         let indexChipRow: HTMLDivElement | null = null;
         let noteFilterGroup: HTMLDivElement | null = null;
@@ -1522,6 +1549,21 @@ export default class SideNote2View extends ItemView {
         if (shouldShowNoteSearchInput) {
             this.renderNoteSearchInput(filterGroup);
         }
+        if (isDeletedToolbarMode) {
+            if (options.deletedCommentCount > 0) {
+                this.renderToolbarChip(actionGroup, {
+                    label: "Permanently delete notes",
+                    active: false,
+                    ariaLabel: `Permanently delete ${options.deletedCommentCount} deleted side note${options.deletedCommentCount === 1 ? "" : "s"} from this note`,
+                    count: String(options.deletedCommentCount),
+                    icon: "trash",
+                    onClick: () => {
+                        void this.clearDeletedCommentsForCurrentFile();
+                    },
+                });
+            }
+            return;
+        }
         if (shouldShowContentFilterIcons && showListOnlyToolbarChips) {
             this.renderToolbarIconButton(actionGroup, {
                 icon: "bookmark",
@@ -1552,6 +1594,7 @@ export default class SideNote2View extends ItemView {
                 icon: showNestedComments ? "chevrons-up" : "chevrons-down",
                 ariaLabel: showNestedComments ? "Hide nested comments" : "Show nested comments",
                 active: showNestedComments,
+                activeVisual: false,
                 onClick: () => {
                     void this.plugin.setShowNestedComments(!showNestedComments);
                 },
@@ -1653,12 +1696,14 @@ export default class SideNote2View extends ItemView {
             icon: string;
             ariaLabel: string;
             active?: boolean;
+            activeVisual?: boolean;
             disabled?: boolean;
             onClick: () => void;
         },
     ): void {
+        const showActiveVisual = options.activeVisual ?? options.active ?? false;
         const button = container.createEl("button", {
-            cls: `clickable-icon sidenote2-comment-section-add-button sidenote2-toolbar-icon-button${options.active ? " is-active" : ""}`,
+            cls: `clickable-icon sidenote2-comment-section-add-button sidenote2-toolbar-icon-button${showActiveVisual ? " is-active" : ""}`,
         });
         button.setAttribute("type", "button");
         button.setAttribute("aria-pressed", options.active ? "true" : "false");
@@ -2110,6 +2155,7 @@ export default class SideNote2View extends ItemView {
                 new Notice(copied ? "Copied side note link." : "Failed to copy side note link.");
             },
             getIncomingSideNoteReferenceBacklinks: (threadId) => this.plugin.getIncomingSideNoteReferenceBacklinks(threadId),
+            getSideNoteReferenceDocument: (commentId) => this.plugin.getSideNoteReferenceDocument(commentId),
             openSideNoteReference: async (url) => {
                 const opened = await this.plugin.openSideNoteReferenceUrl(url);
                 if (!opened) {
@@ -2138,12 +2184,13 @@ export default class SideNote2View extends ItemView {
             startEditDraft: (commentId, hostFilePath) => {
                 void this.plugin.startEditDraft(commentId, hostFilePath);
             },
+            setCommentBookmarkState: (commentId, isBookmark) => {
+                void this.plugin.setCommentBookmarkState(commentId, isBookmark);
+            },
             startAppendEntryDraft: (commentId, hostFilePath) => {
                 void this.plugin.startAppendEntryDraft(commentId, hostFilePath);
             },
-            retryAgentRun: (runId) => {
-                void this.plugin.retryAgentRun(runId);
-            },
+            retryAgentRun: (runId) => this.plugin.retryAgentRun(runId),
             reanchorCommentThreadToCurrentSelection: (commentId) => {
                 void this.plugin.reanchorCommentThreadToCurrentSelection(commentId);
             },

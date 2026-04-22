@@ -2,7 +2,12 @@ import type { Comment, CommentThread, CommentThreadEntry } from "../../commentMa
 import { getFirstThreadEntry, threadEntryToComment } from "../../commentManager";
 import { isOrphanedComment, isPageComment } from "../../core/anchors/commentAnchors";
 import { getAgentActorLabel } from "../../core/agents/agentActorRegistry";
-import { getAgentRunByOutputEntryId, type AgentRunRecord, type AgentRunStreamState } from "../../core/agents/agentRuns";
+import {
+    getAgentRunByOutputEntryId,
+    getLatestAgentRunForTriggerEntry,
+    type AgentRunRecord,
+    type AgentRunStreamState,
+} from "../../core/agents/agentRuns";
 import type { SideNote2AgentTarget } from "../../core/config/agentTargets";
 import { splitTrailingSideNoteReferenceSection, type TrailingSideNoteReferenceSection } from "../../core/text/commentReferences";
 import type { DraftComment } from "../../domain/drafts";
@@ -49,6 +54,11 @@ export interface PersistedCommentPresentation extends BasePersistedCommentPresen
     };
 }
 
+export interface PersistedCommentBookmarkActionPresentation {
+    active: boolean;
+    ariaLabel: string;
+}
+
 export type PersistedThreadEntryPresentation = BasePersistedCommentPresentation;
 
 export interface SidebarCommentAuthorPresentation {
@@ -93,6 +103,7 @@ export interface SidebarPersistedCommentHost {
     openCommentInEditor(comment: Comment): Promise<void>;
     shareComment(comment: Comment): Promise<void>;
     getIncomingSideNoteReferenceBacklinks(threadId: string): SidebarSideNoteReferenceBacklink[];
+    getSideNoteReferenceDocument(commentId: string): SideNoteReferenceSearchDocument | null;
     saveVisibleDraftIfPresent(): Promise<boolean>;
     setShowNestedCommentsForThread(threadId: string, showNestedComments: boolean): void;
     resolveComment(commentId: string): void;
@@ -100,8 +111,9 @@ export interface SidebarPersistedCommentHost {
     moveCommentThread(threadId: string, sourceFilePath: string): void;
     restoreComment(commentId: string): Promise<void> | void;
     startEditDraft(commentId: string, hostFilePath: string | null): void;
+    setCommentBookmarkState(commentId: string, isBookmark: boolean): Promise<void> | void;
     startAppendEntryDraft(commentId: string, hostFilePath: string | null): void;
-    retryAgentRun(runId: string): void;
+    retryAgentRun(runId: string): Promise<boolean> | boolean;
     reanchorCommentThreadToCurrentSelection(commentId: string): void;
     deleteCommentWithConfirm(commentId: string): Promise<void> | void;
     renderAppendDraft(container: HTMLDivElement, comment: DraftComment): void;
@@ -325,6 +337,38 @@ export function buildPersistedCommentPresentation(
     };
 }
 
+export function buildPersistedCommentBookmarkActionPresentation(
+    comment: Pick<Comment, "isBookmark">,
+): PersistedCommentBookmarkActionPresentation {
+    if (comment.isBookmark === true) {
+        return {
+            active: true,
+            ariaLabel: "Remove bookmark",
+        };
+    }
+
+    return {
+        active: false,
+        ariaLabel: "Mark as bookmark",
+    };
+}
+
+export function shouldRenderPersistedCommentBookmarkIndicator(
+    comment: Pick<Comment, "id" | "isBookmark">,
+    thread: Pick<CommentThread, "id">,
+): boolean {
+    return comment.id === thread.id && comment.isBookmark === true;
+}
+
+export function shouldRenderPersistedCommentBookmarkAction(
+    comment: Pick<Comment, "deletedAt" | "id">,
+    thread: Pick<CommentThread, "deletedAt" | "id">,
+): boolean {
+    return comment.id === thread.id
+        && !comment.deletedAt
+        && !thread.deletedAt;
+}
+
 export function resolveSidebarCommentAuthor(
     commentId: string,
     threadAgentRuns: readonly AgentRunRecord[],
@@ -334,6 +378,13 @@ export function resolveSidebarCommentAuthor(
         currentUserLabel,
         getAgentRunByOutputEntryId(threadAgentRuns, commentId),
     );
+}
+
+export function getRetryableAgentRunForSidebarComment(
+    commentId: string,
+    threadAgentRuns: readonly AgentRunRecord[],
+): AgentRunRecord | null {
+    return getLatestAgentRunForTriggerEntry(threadAgentRuns, commentId);
 }
 
 export function getInsertableSidebarCommentMarkdown(
@@ -347,6 +398,10 @@ export function getInsertableSidebarCommentMarkdown(
 
     const markdown = splitTrailingSideNoteReferenceSection(entryBody).body.trim();
     return markdown || null;
+}
+
+export function isRetryableAgentRunBusy(run: Pick<AgentRunRecord, "status"> | null): boolean {
+    return run?.status === "queued" || run?.status === "running";
 }
 
 export function buildPersistedThreadEntryPresentation(
@@ -390,16 +445,14 @@ export function getRenderableThreadEntries(
         : [getFirstThreadEntry(thread)];
 }
 
-function isActiveParentThread(thread: CommentThread, activeCommentId: string | null): boolean {
-    return !!activeCommentId && thread.id === activeCommentId;
-}
-
-function isActiveChildCommentInThread(thread: CommentThread, activeCommentId: string | null): boolean {
-    if (!activeCommentId) {
-        return false;
-    }
-
-    return getRenderableThreadEntries(thread).slice(1).some((entry) => entry.id === activeCommentId);
+export function threadHasLocalSideNoteReferences(
+    thread: CommentThread,
+    localVaultName: string | null,
+): boolean {
+    return getRenderableThreadEntries(thread).some((entry) => splitTrailingSideNoteReferenceSection(entry.body, {
+        localOnly: true,
+        localVaultName,
+    }).references.length > 0);
 }
 
 export function shouldRenderNestedThreadEntries(
@@ -411,33 +464,50 @@ export function shouldRenderNestedThreadEntries(
         hasEditDraftComment: boolean;
         hasAppendDraftComment: boolean;
         hasAgentStream: boolean;
+        hasAgentReplies?: boolean;
         hasDeletedEntriesVisible?: boolean;
+        hasOutgoingSideNoteReferences?: boolean;
+        hasIncomingSideNoteReferences?: boolean;
     },
 ): boolean {
     const childEntries = getRenderableThreadEntries(thread).slice(1);
     if (childEntries.length === 0) {
-        return options.hasEditDraftComment || options.hasAppendDraftComment || options.hasAgentStream || options.hasDeletedEntriesVisible === true;
+        return options.hasEditDraftComment
+            || options.hasAppendDraftComment
+            || options.hasAgentStream
+            || (
+                options.showNestedComments
+                && (
+                    options.hasOutgoingSideNoteReferences === true
+                    || options.hasIncomingSideNoteReferences === true
+                )
+            );
     }
 
-    if (options.showNestedComments || options.hasEditDraftComment || options.hasAppendDraftComment || options.hasAgentStream || options.hasDeletedEntriesVisible) {
+    if (
+        options.showNestedComments
+        || options.hasEditDraftComment
+        || options.hasAppendDraftComment
+        || options.hasAgentStream
+    ) {
         return true;
     }
-
-    if (isActiveChildCommentInThread(thread, options.activeCommentId)) {
-        return true;
-    }
-
-    return options.showNestedCommentsByDefault === false
-        && isActiveParentThread(thread, options.activeCommentId);
+    return false;
 }
 
 export function shouldRenderThreadNestedToggle(options: {
     hasStoredChildEntries: boolean;
+    hasOutgoingSideNoteReferences?: boolean;
+    hasIncomingSideNoteReferences?: boolean;
     hasInlineEditDraft: boolean;
     hasAppendDraftComment: boolean;
     hasChildEditDraft: boolean;
 }): boolean {
-    return options.hasStoredChildEntries
+    return (
+        options.hasStoredChildEntries
+        || options.hasOutgoingSideNoteReferences === true
+        || options.hasIncomingSideNoteReferences === true
+    )
         && !options.hasInlineEditDraft
         && !options.hasAppendDraftComment
         && !options.hasChildEditDraft;
@@ -617,30 +687,54 @@ function renderSideNoteReferenceSection(
     }
 }
 
-function renderIncomingSideNoteReferenceBacklinks(
-    commentEl: HTMLDivElement,
+function getIncomingSideNoteReferenceBacklinksForRender(
     threadId: string,
     host: SidebarPersistedCommentHost,
-): void {
+): SidebarResolvedSideNoteReference[] {
     const backlinks = host.getIncomingSideNoteReferenceBacklinks(threadId);
-    if (!backlinks.length) {
-        return;
+    return backlinks.map((backlink) => ({
+        presentation: {
+            preview: backlink.preview,
+            resolved: backlink.resolved,
+            title: backlink.fileTitle,
+            tooltip: [backlink.filePath, backlink.preview].filter(Boolean).join("\n"),
+        },
+        url: backlink.url,
+    }));
+}
+
+function getThreadLocalSideNoteReferences(
+    thread: CommentThread,
+    host: SidebarPersistedCommentHost,
+): SidebarResolvedSideNoteReference[] {
+    const references: SidebarResolvedSideNoteReference[] = [];
+    const seenUrls = new Set<string>();
+
+    for (const entry of getRenderableThreadEntries(thread)) {
+        const parsedEntry = splitTrailingSideNoteReferenceSection(entry.body || "", {
+            localOnly: true,
+            localVaultName: host.localVaultName,
+        });
+        for (const reference of parsedEntry.references) {
+            if (seenUrls.has(reference.url)) {
+                continue;
+            }
+
+            seenUrls.add(reference.url);
+            references.push({
+                presentation: buildSidebarSideNoteReferencePresentation(
+                    host.getSideNoteReferenceDocument(reference.target.commentId),
+                    {
+                        filePath: reference.target.filePath,
+                        label: reference.label,
+                    },
+                ),
+                url: reference.url,
+            });
+        }
     }
 
-    renderSideNoteReferenceSection(
-        commentEl,
-        "Mentioned by",
-        backlinks.map((backlink) => ({
-            presentation: {
-                preview: backlink.preview,
-                resolved: backlink.resolved,
-                title: backlink.fileTitle,
-                tooltip: [backlink.filePath, backlink.preview].filter(Boolean).join("\n"),
-            },
-            url: backlink.url,
-        })),
-        host,
-    );
+    return references;
 }
 
 function renderCommentAuthorIndicator(
@@ -681,18 +775,6 @@ function renderCommentHeaderIndicator(
     host.setIcon(indicatorEl, options.icon);
 }
 
-function renderBookmarkStateIndicator(
-    metaEl: HTMLElement,
-    host: SidebarPersistedCommentHost,
-): void {
-    renderCommentHeaderIndicator(metaEl, host, {
-        ariaLabel: "Bookmarked",
-        className: "sidenote2-comment-bookmark-indicator",
-        icon: "bookmark",
-        title: "Bookmarked",
-    });
-}
-
 function renderSideNoteReferenceStateIndicator(
     metaEl: HTMLElement,
     host: SidebarPersistedCommentHost,
@@ -701,6 +783,18 @@ function renderSideNoteReferenceStateIndicator(
         ariaLabel: "Contains side note links",
         className: "sidenote2-comment-reference-indicator",
         icon: "link-2",
+    });
+}
+
+function renderBookmarkStateIndicator(
+    metaEl: HTMLElement,
+    host: SidebarPersistedCommentHost,
+): void {
+    renderCommentHeaderIndicator(metaEl, host, {
+        ariaLabel: "Bookmarked side note",
+        className: "sidenote2-comment-bookmark-indicator",
+        icon: "bookmark",
+        title: "Bookmarked",
     });
 }
 
@@ -808,6 +902,35 @@ function renderEditButton(
             return;
         }
         host.startEditDraft(commentId, host.currentFilePath);
+    };
+}
+
+function renderBookmarkButton(
+    actionsEl: HTMLDivElement,
+    commentId: string,
+    isBookmark: boolean,
+    host: SidebarPersistedCommentHost,
+): void {
+    const presentation = buildPersistedCommentBookmarkActionPresentation({ isBookmark });
+    const bookmarkButton = actionsEl.createEl("button", {
+        cls: [
+            "clickable-icon",
+            "sidenote2-comment-action-button",
+            "sidenote2-comment-action-bookmark",
+            presentation.active ? "is-active" : "",
+        ].filter((value) => value.length > 0).join(" "),
+    });
+    attachSidebarActionButtonInteractions(bookmarkButton, host);
+    bookmarkButton.setAttribute("type", "button");
+    bookmarkButton.setAttribute("aria-label", presentation.ariaLabel);
+    bookmarkButton.setAttribute("aria-pressed", presentation.active ? "true" : "false");
+    host.setIcon(bookmarkButton, "bookmark");
+    bookmarkButton.onclick = async (event) => {
+        event.stopPropagation();
+        if (!(await host.saveVisibleDraftIfPresent())) {
+            return;
+        }
+        await host.setCommentBookmarkState(commentId, !presentation.active);
     };
 }
 
@@ -954,6 +1077,7 @@ function renderPersistedEntryCard(
         host: SidebarPersistedCommentHost;
         interactive?: boolean;
         inlineEditDraft?: DraftComment | null;
+        showSideNoteReferenceState?: boolean;
     },
 ): {
     commentEl: HTMLDivElement;
@@ -975,8 +1099,8 @@ function renderPersistedEntryCard(
     const headerEl = commentEl.createDiv("sidenote2-comment-header");
     const headerMainEl = headerEl.createDiv("sidenote2-comment-header-main");
     renderCommentMeta(headerMainEl, options.comment, options.presentation, options.host, {
-        showBookmarkState: options.comment.isBookmark === true && options.comment.id === options.thread.id,
-        showSideNoteReferenceState: parsedEntryBody.references.length > 0,
+        showBookmarkState: shouldRenderPersistedCommentBookmarkIndicator(options.comment, options.thread),
+        showSideNoteReferenceState: options.showSideNoteReferenceState ?? parsedEntryBody.references.length > 0,
     });
     const actionsEl = headerEl.createDiv("sidenote2-comment-actions");
 
@@ -1006,6 +1130,13 @@ function renderThreadFooterActions(
         showShareAction: boolean;
         showAddEntryAction: boolean;
         showRetryAction?: boolean;
+        disableRetryAction?: boolean;
+        moveAction?: {
+            threadId: string;
+            sourceFilePath: string;
+            ariaLabel: string;
+            icon: string;
+        } | null;
         insertAction?: {
             filePath: string;
             markdown: string;
@@ -1052,11 +1183,18 @@ function renderThreadFooterActions(
         });
     }
 
-    if (!(options.showShareAction || options.showAddEntryAction || options.showRetryAction)) {
+    if (!(options.showShareAction || options.showAddEntryAction || options.showRetryAction || options.moveAction)) {
         return;
     }
 
     const footerActionsEl = footerEl.createDiv("sidenote2-thread-footer-actions");
+    if (options.moveAction) {
+        renderMoveThreadButton(footerActionsEl, options.moveAction.threadId, options.moveAction.sourceFilePath, host, {
+            ariaLabel: options.moveAction.ariaLabel,
+            icon: options.moveAction.icon,
+        });
+    }
+
     if (options.showShareAction) {
         const shareButton = footerActionsEl.createEl("button", {
             cls: "clickable-icon sidenote2-comment-action-button sidenote2-comment-action-share sidenote2-thread-share-button",
@@ -1091,15 +1229,26 @@ function renderThreadFooterActions(
     attachSidebarActionButtonInteractions(retryButton, host);
     retryButton.setAttribute("type", "button");
     retryButton.setAttribute("aria-label", "Generate");
+    retryButton.disabled = options.disableRetryAction === true;
     host.setIcon(retryButton, SIDE_NOTE2_REGENERATE_ICON_ID);
     retryButton.onclick = async (event) => {
         event.stopPropagation();
+        if (retryButton.disabled) {
+            return;
+        }
+        retryButton.disabled = true;
         if (!(await host.saveVisibleDraftIfPresent())) {
+            retryButton.disabled = options.disableRetryAction === true;
             return;
         }
         if (retryRunId) {
-            host.retryAgentRun(retryRunId);
+            const started = await host.retryAgentRun(retryRunId);
+            if (!started) {
+                retryButton.disabled = options.disableRetryAction === true;
+            }
+            return;
         }
+        retryButton.disabled = options.disableRetryAction === true;
     };
 }
 
@@ -1114,7 +1263,9 @@ function renderThreadNestedToggleButton(
     });
     attachSidebarActionButtonInteractions(toggleButton, host);
     toggleButton.setAttribute("type", "button");
-    toggleButton.setAttribute("aria-label", showNestedComments ? "Hide thread comments" : "Show thread comments");
+    toggleButton.classList.toggle("is-expanded", showNestedComments);
+    toggleButton.setAttribute("aria-expanded", showNestedComments ? "true" : "false");
+    toggleButton.setAttribute("aria-label", showNestedComments ? "Collapse details" : "Expand details");
     host.setIcon(toggleButton, showNestedComments ? "chevrons-up" : "chevrons-down");
     toggleButton.onclick = async (event) => {
         event.stopPropagation();
@@ -1170,15 +1321,17 @@ export async function renderPersistedCommentCard(
         threadEl.setAttribute("data-sidenote2-page-thread", "true");
     }
     const hasChildEditDraft = !!host.editDraftComment && host.editDraftComment.id !== comment.id;
-    const isActiveParent = isActiveParentThread(thread, host.activeCommentId);
-    const shouldKeepActiveParentExpanded = host.showNestedCommentsByDefault === false
-        && host.showNestedComments === false
-        && isActiveParent;
+    const hasAgentReplyEntries = entries.slice(1).some((entry) =>
+        !!getAgentRunByOutputEntryId(host.threadAgentRuns, entry.id)
+    );
+    const outgoingSideNoteReferences = getThreadLocalSideNoteReferences(thread, host);
+    const incomingSideNoteReferenceBacklinks = getIncomingSideNoteReferenceBacklinksForRender(thread.id, host);
+    const threadHasOutgoingSideNoteReferences = outgoingSideNoteReferences.length > 0;
+    const threadHasIncomingSideNoteReferences = incomingSideNoteReferenceBacklinks.length > 0;
     const shouldRenderStoredChildren = host.showNestedComments
         || hasChildEditDraft
-        || isActiveChildCommentInThread(thread, host.activeCommentId)
-        || shouldKeepActiveParentExpanded
-        || hasVisibleDeletedEntries(thread);
+        || host.agentStream !== null
+        || !!host.appendDraftComment;
     const shouldRenderChildComments = shouldRenderNestedThreadEntries(thread, {
         activeCommentId: host.activeCommentId,
         showNestedComments: host.showNestedComments,
@@ -1186,7 +1339,10 @@ export async function renderPersistedCommentCard(
         hasEditDraftComment: hasChildEditDraft,
         hasAppendDraftComment: !!host.appendDraftComment,
         hasAgentStream: !!host.agentStream,
+        hasAgentReplies: hasAgentReplyEntries,
         hasDeletedEntriesVisible: hasVisibleDeletedEntries(thread),
+        hasOutgoingSideNoteReferences: threadHasOutgoingSideNoteReferences,
+        hasIncomingSideNoteReferences: threadHasIncomingSideNoteReferences,
     });
     const appendDraftAfterEntryId = getAppendDraftInsertAfterEntryId(thread, host.appendDraftComment);
     const hasStoredChildEntries = entries.length > 1;
@@ -1202,6 +1358,7 @@ export async function renderPersistedCommentCard(
         presentation,
         host,
         inlineEditDraft: parentEditDraft,
+        showSideNoteReferenceState: threadHasOutgoingSideNoteReferences,
     });
     const commentEl = renderedParent.commentEl;
     const actionsEl = renderedParent.actionsEl;
@@ -1209,11 +1366,8 @@ export async function renderPersistedCommentCard(
     if (isDraggablePageThread && !parentEditDraft) {
         renderReorderHandle(actionsEl, thread.id, host);
     }
-    if (!comment.deletedAt && !thread.deletedAt && !!parentEditDraft) {
-        renderIncomingSideNoteReferenceBacklinks(commentEl, thread.id, host);
-    }
-
     if (!parentEditDraft) {
+        const parentRetryRun = getRetryableAgentRunForSidebarComment(comment.id, host.threadAgentRuns);
         const parentInsertMarkdown = !comment.deletedAt && !thread.deletedAt
             ? getInsertableSidebarCommentMarkdown(comment.id, entries[0]?.body || "", host.threadAgentRuns)
             : null;
@@ -1239,10 +1393,10 @@ export async function renderPersistedCommentCard(
                 }
             };
 
-            renderEditButton(actionsEl, comment.id, host, "Edit side note");
-            if (!comment.deletedAt && !thread.deletedAt) {
-                renderMoveThreadButton(actionsEl, thread.id, thread.filePath, host, presentation.moveAction);
+            if (shouldRenderPersistedCommentBookmarkAction(comment, thread)) {
+                renderBookmarkButton(actionsEl, thread.id, comment.isBookmark === true, host);
             }
+            renderEditButton(actionsEl, comment.id, host, "Edit side note");
             if (host.enableSoftDeleteActions) {
                 renderDeleteButton(actionsEl, comment.id, host, "Delete side note thread");
             }
@@ -1259,20 +1413,31 @@ export async function renderPersistedCommentCard(
         if (presentation.reanchorAction && !comment.deletedAt) {
             renderThreadReanchorAction(commentEl, thread.id, presentation.reanchorAction.label, host);
         }
-        renderThreadFooterActions(commentEl, comment, null, parentAuthor, null, {
+        renderThreadFooterActions(commentEl, comment, parentRetryRun?.id ?? null, parentAuthor, null, {
             showShareAction: !comment.deletedAt,
             showAddEntryAction: !comment.deletedAt,
+            showRetryAction: !!parentRetryRun && !comment.deletedAt && !thread.deletedAt,
+            disableRetryAction: isRetryableAgentRunBusy(parentRetryRun),
+            moveAction: !comment.deletedAt && !thread.deletedAt
+                ? {
+                    threadId: thread.id,
+                    sourceFilePath: thread.filePath,
+                    ariaLabel: presentation.moveAction.ariaLabel,
+                    icon: presentation.moveAction.icon,
+                }
+                : null,
             insertAction: parentInsertMarkdown
                 ? {
                     filePath: comment.filePath,
                     markdown: parentInsertMarkdown,
                 }
                 : null,
-            showRetryAction: false,
         }, host);
     }
     if (shouldRenderThreadNestedToggle({
         hasStoredChildEntries,
+        hasOutgoingSideNoteReferences: threadHasOutgoingSideNoteReferences,
+        hasIncomingSideNoteReferences: threadHasIncomingSideNoteReferences,
         hasInlineEditDraft: !!parentEditDraft,
         hasAppendDraftComment: !!host.appendDraftComment,
         hasChildEditDraft,
@@ -1321,25 +1486,28 @@ export async function renderPersistedCommentCard(
                 }
                 const entryAuthor = resolveSidebarCommentAuthor(entryComment.id, host.threadAgentRuns, host.currentUserLabel);
                 const entryAgentRun = getAgentRunByOutputEntryId(host.threadAgentRuns, entryComment.id);
+                const entryRetryRun = getRetryableAgentRunForSidebarComment(entryComment.id, host.threadAgentRuns);
                 const entryInsertMarkdown = !entryComment.deletedAt && !thread.deletedAt
                     ? getInsertableSidebarCommentMarkdown(entryComment.id, entry.body || "", host.threadAgentRuns)
                     : null;
                 renderThreadFooterActions(
                     entryEl,
                     entryComment,
-                    entryAgentRun?.id ?? null,
+                    entryRetryRun?.id ?? null,
                     entryAuthor,
                     entryAgentRun,
                     {
                         showShareAction: !entryComment.deletedAt && !thread.deletedAt,
                         showAddEntryAction: !entryComment.deletedAt && !thread.deletedAt,
+                        showRetryAction: !!entryRetryRun && !entryComment.deletedAt && !thread.deletedAt,
+                        disableRetryAction: isRetryableAgentRunBusy(entryRetryRun),
+                        moveAction: null,
                         insertAction: entryInsertMarkdown
                             ? {
                                 filePath: entryComment.filePath,
                                 markdown: entryInsertMarkdown,
                             }
                             : null,
-                        showRetryAction: !!entryAgentRun && !entryComment.deletedAt && !thread.deletedAt,
                     },
                     host,
                 );
@@ -1354,6 +1522,13 @@ export async function renderPersistedCommentCard(
 
     if (host.appendDraftComment && !renderedAppendDraft) {
         host.renderAppendDraft(childCommentsEl, host.appendDraftComment);
+    }
+
+    if (outgoingSideNoteReferences.length > 0) {
+        renderSideNoteReferenceSection(childCommentsEl, "Mentioned", outgoingSideNoteReferences, host);
+    }
+    if (incomingSideNoteReferenceBacklinks.length > 0) {
+        renderSideNoteReferenceSection(childCommentsEl, "Mentioned by", incomingSideNoteReferenceBacklinks, host);
     }
 
     await Promise.all(renderTasks);

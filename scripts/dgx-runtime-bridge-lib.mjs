@@ -7,6 +7,7 @@ import { homedir as getOsHomeDir } from "node:os";
 import path from "node:path";
 import process from "node:process";
 import { execFile, spawn } from "node:child_process";
+import sideNotePromptPolicy from "../shared/sideNotePromptPolicy.js";
 
 function parseEnvText(text) {
     const env = {};
@@ -147,28 +148,6 @@ export function createBridgeConfig(options = {}) {
         requestBodyLimitBytes: parseInteger(env.SIDENOTE2_DGX_REQUEST_BODY_LIMIT_BYTES, 512 * 1024),
         rootDir,
     };
-}
-
-function buildSideNotePrompt(promptText) {
-    return [
-        "You are responding to a SideNote2 thread in Obsidian.",
-        "Answer the user's request directly.",
-        "Only inspect or modify workspace files when the request actually needs that context.",
-        "If the request asks for file changes, make them directly in the workspace before replying.",
-        "Return only the reply text that should be appended back into the SideNote2 thread.",
-        "Keep the side-note reply compact and easy to scan.",
-        "Use plain paragraphs or one simple list; avoid headings, long multi-section layouts, and excess blank lines.",
-        "Keep the reply at or under 250 words.",
-        "If you include a diagram in a side note, render it as a compact ASCII diagram that fits comfortably in the sidebar.",
-        "Do not use Mermaid or other large diagram syntax in side-note replies.",
-        "If the best useful answer would exceed 250 words, create or update a short linked wiki note with the full detail and return a concise side note that points to it.",
-        "Do not mention skills, prompts, searches, files, tools, AGENTS instructions, or your process.",
-        "Do not narrate what you are doing.",
-        "Do not include thinking steps or tool logs.",
-        "Do not mention reading notes, locating threads, loading context, or using the workspace.",
-        "",
-        promptText,
-    ].join("\n");
 }
 
 function normalizeNarrationSegment(value) {
@@ -1009,7 +988,11 @@ export async function runCodexAppServer(options) {
                     input: [
                         {
                             type: "text",
-                            text: buildSideNotePrompt(options.promptText),
+                            text: sideNotePromptPolicy.buildSideNotePrompt({
+                                promptText: options.promptText,
+                                rootLabel: "workspace root",
+                                rootPath: options.cwd,
+                            }),
                             text_elements: [],
                         },
                     ],

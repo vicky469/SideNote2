@@ -53,6 +53,32 @@ export function filterThreadsBySidebarContentFilter<T extends Pick<CommentThread
     return threads.filter((thread) => matchesSidebarContentFilter(thread, filter));
 }
 
+export function filterThreadsByStableSidebarContentFilter<
+    T extends Pick<CommentThread, "entries" | "id" | "isBookmark">,
+>(
+    threads: readonly T[],
+    filter: SidebarContentFilter,
+    retainedBookmarkThreadIds: ReadonlySet<string> = new Set(),
+): {
+    retainedBookmarkThreadIds: Set<string>;
+    threads: T[];
+} {
+    if (filter !== "bookmarks") {
+        return {
+            retainedBookmarkThreadIds: new Set(),
+            threads: filterThreadsBySidebarContentFilter(threads, filter),
+        };
+    }
+
+    const filteredThreads = threads.filter((thread) =>
+        isBookmarkThread(thread) || retainedBookmarkThreadIds.has(thread.id)
+    );
+    return {
+        retainedBookmarkThreadIds: new Set(filteredThreads.map((thread) => thread.id)),
+        threads: filteredThreads,
+    };
+}
+
 export function matchesSidebarThreadSearchQuery<T extends Pick<CommentThread, "selectedText" | "entries">>(
     thread: T,
     query: string,

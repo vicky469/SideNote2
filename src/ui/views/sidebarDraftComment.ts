@@ -181,7 +181,18 @@ function getSidebarScrollContainer(textarea: HTMLTextAreaElement): HTMLElement |
         : null;
 }
 
-function pinDraftToTopOnMobile(textarea: HTMLTextAreaElement): void {
+export function computePinnedDraftScrollTop(
+    currentScrollTop: number,
+    draftTop: number,
+    containerTop: number,
+): number {
+    return Math.max(
+        0,
+        currentScrollTop + (draftTop - containerTop) - 8,
+    );
+}
+
+export function pinDraftToTopOnMobile(textarea: HTMLTextAreaElement): void {
     const draftEl = textarea.closest(".sidenote2-comment-draft");
     const scrollContainer = getSidebarScrollContainer(textarea);
     if (!(draftEl instanceof HTMLElement) || !scrollContainer) {
@@ -190,18 +201,17 @@ function pinDraftToTopOnMobile(textarea: HTMLTextAreaElement): void {
 
     const draftRect = draftEl.getBoundingClientRect();
     const containerRect = scrollContainer.getBoundingClientRect();
-    const nextScrollTop = Math.max(
-        0,
-        scrollContainer.scrollTop + (draftRect.top - containerRect.top) - 8,
+    const nextScrollTop = computePinnedDraftScrollTop(
+        scrollContainer.scrollTop,
+        draftRect.top,
+        containerRect.top,
     );
+    if (Math.abs(scrollContainer.scrollTop - nextScrollTop) < 2) {
+        return;
+    }
     scrollContainer.scrollTo({
         top: nextScrollTop,
         behavior: "auto",
-    });
-    draftEl.scrollIntoView({
-        behavior: "auto",
-        block: "start",
-        inline: "nearest",
     });
 }
 

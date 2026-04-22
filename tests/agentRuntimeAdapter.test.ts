@@ -1,6 +1,8 @@
 import * as assert from "node:assert/strict";
 import test from "node:test";
 import {
+    buildSideNotePrompt,
+    createWorkspaceWriteSandboxPolicy,
     extractCodexProgressTextFromJsonEvent,
     extractCodexTextDeltaFromJsonEvent,
     getCodexRuntimeDiagnostics,
@@ -209,6 +211,25 @@ test("extractCodexProgressTextFromJsonEvent reads reasoning summaries and plan u
             },
         }),
         "Draft the reply",
+    );
+});
+
+test("buildSideNotePrompt allows visual assets and points them to vault-root Attachments", () => {
+    const prompt = buildSideNotePrompt({
+        promptText: "@codex generate a math diagram for covariance",
+        vaultRootPath: "/vault",
+    });
+
+    assert.match(prompt, /Do not force visual requests into ASCII-only diagrams\./);
+    assert.match(prompt, /place it under `Attachments\/` at the active vault root/i);
+    assert.match(prompt, /The active vault root is: \/vault/);
+    assert.doesNotMatch(prompt, /compact ASCII diagram that fits comfortably in the sidebar/);
+});
+
+test("createWorkspaceWriteSandboxPolicy includes extra writable roots without duplicates", () => {
+    assert.deepEqual(
+        createWorkspaceWriteSandboxPolicy("/vault/project", ["/vault", "/vault/project", "/vault"]).writableRoots,
+        ["/vault/project", "/vault"],
     );
 });
 

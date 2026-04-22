@@ -48,6 +48,8 @@ export interface SidebarInteractionHost {
     revealComment(comment: Comment): Promise<void>;
     getPreferredFileLeaf(): WorkspaceLeaf | null;
     openLinkText(href: string, sourcePath: string): Promise<void>;
+    shouldShowDeletedComments?(): boolean;
+    setShowDeletedComments?(showDeleted: boolean): Promise<void> | void;
     log?(level: "info" | "warn" | "error", area: string, event: string, payload?: Record<string, unknown>): Promise<void>;
 }
 
@@ -116,12 +118,23 @@ export class SidebarInteractionController {
         void this.handleSidebarClick(event);
     };
 
-    private async handleSidebarClick(event: MouseEvent): Promise<void> {
-        const file = this.host.getCurrentFile();
-        if (!file) {
+    public readonly documentMouseDownHandler = (event: MouseEvent) => {
+        if (event.button !== 0) {
             return;
         }
 
+        const target = event.target as Node | null;
+        if (!target || this.host.containerEl.contains(target) || this.isDraftDismissalExemptTarget(target)) {
+            return;
+        }
+
+        void this.handleDraftDismissal(target, {
+            clickedComment: false,
+            clickedSectionChrome: false,
+        });
+    };
+
+    private async handleSidebarClick(event: MouseEvent): Promise<void> {
         const target = event.target as Node | null;
         const clickedComment = target instanceof HTMLElement
             ? target.closest(".sidenote2-comment-item")
@@ -129,6 +142,46 @@ export class SidebarInteractionController {
         const clickedSectionChrome = target instanceof HTMLElement
             ? target.closest(".sidenote2-comments-list-actions, .sidenote2-sidebar-toolbar, .sidenote2-active-file-filters")
             : null;
+        await this.handleDraftDismissal(target, {
+            clickedComment: !!clickedComment,
+            clickedSectionChrome: !!clickedSectionChrome,
+        });
+        await this.exitDeletedModeIfNeeded(target);
+    }
+
+    private async exitDeletedModeIfNeeded(target: Node | null): Promise<void> {
+        if (!this.host.shouldShowDeletedComments?.() || !this.host.setShowDeletedComments) {
+            return;
+        }
+
+        const targetEl = this.getEventTargetElement(target);
+        if (!targetEl?.closest(".sidenote2-sidebar-toolbar.is-deleted-toolbar-mode")) {
+            return;
+        }
+
+        await this.host.setShowDeletedComments(false);
+    }
+
+    private isDraftDismissalExemptTarget(target: Node | null): boolean {
+        const targetEl = this.getEventTargetElement(target);
+        if (!targetEl) {
+            return false;
+        }
+
+        return !!targetEl.closest(".suggestion-container, .modal-container, .prompt, .menu");
+    }
+
+    private async handleDraftDismissal(
+        target: Node | null,
+        options: {
+            clickedComment: boolean;
+            clickedSectionChrome: boolean;
+        },
+    ): Promise<void> {
+        const file = this.host.getCurrentFile();
+        if (!file) {
+            return;
+        }
 
         const draft = this.host.getDraftForView(file.path);
         if (draft) {
@@ -139,8 +192,8 @@ export class SidebarInteractionController {
 
             const decision = decideEditDismissal(
                 !!(target && draftEl.contains(target)),
-                !!clickedComment,
-                !!clickedSectionChrome,
+                options.clickedComment,
+                options.clickedSectionChrome,
             );
             if (!decision.shouldSaveDraft) {
                 return;
@@ -163,7 +216,7 @@ export class SidebarInteractionController {
             return;
         }
 
-        if (!clickedComment && !clickedSectionChrome) {
+        if (!options.clickedComment && !options.clickedSectionChrome) {
             this.clearActiveState();
             this.host.clearRevealedCommentSelection();
         }

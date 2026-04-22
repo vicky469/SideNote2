@@ -1,21 +1,27 @@
 import * as assert from "node:assert/strict";
 import test from "node:test";
-import { commentToThread, type Comment, type CommentThread } from "../src/commentManager";
+import { commentToThread, threadEntryToComment, type Comment, type CommentThread } from "../src/commentManager";
 import type { AgentRunRecord } from "../src/core/agents/agentRuns";
 import {
     buildSidebarSideNoteReferencePresentation,
     buildPersistedCommentPresentation,
+    buildPersistedCommentBookmarkActionPresentation,
     buildPersistedThreadEntryPresentation,
     formatSidebarCommentIndexLeadLabel,
     formatSidebarCommentSourceFileLabel,
     getInsertableSidebarCommentMarkdown,
+    getRetryableAgentRunForSidebarComment,
+    isRetryableAgentRunBusy,
     getAppendDraftInsertAfterEntryId,
     getRenderableThreadEntries,
     getAgentRunStatusPresentation,
     resolveSidebarCommentAuthor,
+    shouldRenderPersistedCommentBookmarkAction,
+    shouldRenderPersistedCommentBookmarkIndicator,
     shouldRenderSidebarCommentAuthor,
     shouldRenderNestedThreadEntries,
     shouldRenderThreadNestedToggle,
+    threadHasLocalSideNoteReferences,
 } from "../src/ui/views/sidebarPersistedComment";
 import { formatSidebarCommentMeta } from "../src/ui/views/sidebarCommentSections";
 
@@ -35,6 +41,7 @@ function createComment(overrides: Partial<Comment> = {}): Comment {
         isBookmark: overrides.isBookmark ?? false,
         orphaned: overrides.orphaned ?? false,
         resolved: overrides.resolved ?? false,
+        deletedAt: overrides.deletedAt,
     };
 }
 
@@ -111,6 +118,82 @@ test("buildPersistedCommentPresentation includes bookmark class for bookmark thr
         "sidenote2-thread-item",
         "bookmark",
     ]);
+});
+
+test("buildPersistedCommentBookmarkActionPresentation marks bookmarked threads as active", () => {
+    assert.deepEqual(
+        buildPersistedCommentBookmarkActionPresentation({ isBookmark: true }),
+        {
+            active: true,
+            ariaLabel: "Remove bookmark",
+        },
+    );
+    assert.deepEqual(
+        buildPersistedCommentBookmarkActionPresentation({ isBookmark: false }),
+        {
+            active: false,
+            ariaLabel: "Mark as bookmark",
+        },
+    );
+});
+
+test("shouldRenderPersistedCommentBookmarkIndicator only enables bookmarked cards", () => {
+    const rootThread = createThread({ id: "thread-1", isBookmark: true });
+    const childThread = createThreadWithEntries({
+        id: "thread-2",
+        isBookmark: true,
+        entries: [
+            { id: "thread-2", body: "Parent", timestamp: 100 },
+            { id: "entry-2", body: "Child", timestamp: 200 },
+        ],
+    });
+    const childComment = threadEntryToComment(childThread, childThread.entries[1]);
+
+    assert.equal(
+        shouldRenderPersistedCommentBookmarkIndicator(createComment({ id: "thread-1", isBookmark: true }), rootThread),
+        true,
+    );
+    assert.equal(
+        shouldRenderPersistedCommentBookmarkIndicator(createComment({ id: "thread-1", isBookmark: false }), rootThread),
+        false,
+    );
+    assert.equal(shouldRenderPersistedCommentBookmarkIndicator(childComment, childThread), false);
+});
+
+test("threadHasLocalSideNoteReferences detects links anywhere in the thread", () => {
+    const thread = createThreadWithEntries({
+        entries: [
+            { id: "entry-1", body: "Parent", timestamp: 100 },
+            {
+                id: "entry-2",
+                body: "Child body\n\nMentioned:\n- [Target](obsidian://side-note2-comment?vault=dev&file=docs%2Ftarget.md&commentId=target-1)",
+                timestamp: 200,
+            },
+        ],
+    });
+
+    assert.equal(threadHasLocalSideNoteReferences(thread, "dev"), true);
+    assert.equal(threadHasLocalSideNoteReferences(thread, "other-vault"), false);
+});
+
+test("shouldRenderPersistedCommentBookmarkAction enables root cards and excludes child or deleted cards", () => {
+    const rootComment = createComment({ id: "thread-1", anchorKind: "selection" });
+    const rootThread = createThread({ id: "thread-1", anchorKind: "selection" });
+    rootThread.entries.push({ id: "entry-2", body: "Child", timestamp: 200 });
+    const childComment = threadEntryToComment(rootThread, rootThread.entries[1]);
+    const pageComment = createComment({ id: "thread-2", anchorKind: "page" });
+    const pageThread = createThread({ id: "thread-2", anchorKind: "page" });
+
+    assert.equal(shouldRenderPersistedCommentBookmarkAction(rootComment, rootThread), true);
+    assert.equal(shouldRenderPersistedCommentBookmarkAction(childComment, rootThread), false);
+    assert.equal(shouldRenderPersistedCommentBookmarkAction(pageComment, pageThread), true);
+    assert.equal(
+        shouldRenderPersistedCommentBookmarkAction(
+            createComment({ id: "thread-3", deletedAt: 123 }),
+            createThread({ id: "thread-3" }),
+        ),
+        false,
+    );
 });
 
 test("buildPersistedCommentPresentation omits re-anchor action for page notes", () => {
@@ -278,7 +361,7 @@ test("shouldRenderNestedThreadEntries hides stored child comments when nested co
     }), false);
 });
 
-test("shouldRenderNestedThreadEntries keeps a targeted child comment visible even when nested comments are off", () => {
+test("shouldRenderNestedThreadEntries hides a targeted child comment when nested comments are off", () => {
     const thread = createThreadWithEntries({
         entries: [
             { id: "entry-1", body: "Parent", timestamp: 100 },
@@ -295,10 +378,10 @@ test("shouldRenderNestedThreadEntries keeps a targeted child comment visible eve
         hasEditDraftComment: false,
         hasAppendDraftComment: false,
         hasAgentStream: false,
-    }), true);
+    }), false);
 });
 
-test("shouldRenderNestedThreadEntries keeps an active parent thread visible when nested comments are hidden by the global default", () => {
+test("shouldRenderNestedThreadEntries hides an active parent thread when nested comments are hidden", () => {
     const thread = createThreadWithEntries({
         id: "entry-1",
         entries: [
@@ -316,7 +399,7 @@ test("shouldRenderNestedThreadEntries keeps an active parent thread visible when
         hasEditDraftComment: false,
         hasAppendDraftComment: false,
         hasAgentStream: false,
-    }), true);
+    }), false);
 });
 
 test("shouldRenderNestedThreadEntries does not keep an active parent thread visible after the thread was explicitly hidden", () => {
@@ -386,6 +469,94 @@ test("shouldRenderNestedThreadEntries keeps streamed agent replies visible even 
     }), true);
 });
 
+test("shouldRenderNestedThreadEntries shows outgoing mention details when expanded even without child comments", () => {
+    const thread = createThreadWithEntries({
+        entries: [
+            {
+                id: "entry-1",
+                body: [
+                    "Parent",
+                    "",
+                    "Mentioned:",
+                    "- [linked note](obsidian://side-note2-comment?vault=dev&file=docs%2Flinked.md&commentId=linked-1)",
+                ].join("\n"),
+                timestamp: 100,
+            },
+        ],
+        createdAt: 100,
+        updatedAt: 100,
+    });
+
+    assert.equal(shouldRenderNestedThreadEntries(thread, {
+        activeCommentId: null,
+        showNestedComments: true,
+        showNestedCommentsByDefault: false,
+        hasEditDraftComment: false,
+        hasAppendDraftComment: false,
+        hasAgentStream: false,
+        hasOutgoingSideNoteReferences: true,
+    }), true);
+});
+
+test("shouldRenderNestedThreadEntries shows incoming mention details when expanded even without child comments", () => {
+    const thread = createThreadWithEntries({
+        entries: [
+            {
+                id: "entry-1",
+                body: "Parent",
+                timestamp: 100,
+            },
+        ],
+        createdAt: 100,
+        updatedAt: 100,
+    });
+
+    assert.equal(shouldRenderNestedThreadEntries(thread, {
+        activeCommentId: null,
+        showNestedComments: true,
+        showNestedCommentsByDefault: false,
+        hasEditDraftComment: false,
+        hasAppendDraftComment: false,
+        hasAgentStream: false,
+        hasIncomingSideNoteReferences: true,
+    }), true);
+});
+
+test("shouldRenderNestedThreadEntries hides finished agent replies when nested comments are off", () => {
+    const thread = createThreadWithEntries();
+
+    assert.equal(shouldRenderNestedThreadEntries(thread, {
+        activeCommentId: null,
+        showNestedComments: false,
+        showNestedCommentsByDefault: false,
+        hasEditDraftComment: false,
+        hasAppendDraftComment: false,
+        hasAgentStream: false,
+        hasAgentReplies: true,
+    }), false);
+});
+
+test("shouldRenderNestedThreadEntries hides deleted child entries when nested comments are off", () => {
+    const thread = createThreadWithEntries({
+        entries: [
+            { id: "entry-1", body: "Parent", timestamp: 100 },
+            { id: "entry-2", body: "Deleted child", timestamp: 200, deletedAt: 250 },
+        ],
+        createdAt: 100,
+        updatedAt: 250,
+    });
+
+    assert.equal(shouldRenderNestedThreadEntries(thread, {
+        activeCommentId: null,
+        showNestedComments: false,
+        showNestedCommentsByDefault: false,
+        hasEditDraftComment: false,
+        hasAppendDraftComment: false,
+        hasAgentStream: false,
+        hasDeletedEntriesVisible: true,
+    }), false);
+});
+
 test("shouldRenderThreadNestedToggle hides the toggle only while visible drafts are open", () => {
     assert.equal(shouldRenderThreadNestedToggle({
         hasStoredChildEntries: true,
@@ -413,6 +584,20 @@ test("shouldRenderThreadNestedToggle hides the toggle only while visible drafts 
     }), false);
     assert.equal(shouldRenderThreadNestedToggle({
         hasStoredChildEntries: true,
+        hasInlineEditDraft: false,
+        hasAppendDraftComment: false,
+        hasChildEditDraft: false,
+    }), true);
+    assert.equal(shouldRenderThreadNestedToggle({
+        hasStoredChildEntries: false,
+        hasOutgoingSideNoteReferences: true,
+        hasInlineEditDraft: false,
+        hasAppendDraftComment: false,
+        hasChildEditDraft: false,
+    }), true);
+    assert.equal(shouldRenderThreadNestedToggle({
+        hasStoredChildEntries: false,
+        hasIncomingSideNoteReferences: true,
         hasInlineEditDraft: false,
         hasAppendDraftComment: false,
         hasChildEditDraft: false,
@@ -598,6 +783,54 @@ test("resolveSidebarCommentAuthor labels agent-produced replies from their outpu
             label: "Claude",
         },
     );
+});
+
+test("getRetryableAgentRunForSidebarComment resolves runs from the trigger entry instead of the output entry", () => {
+    const run = createAgentRun({
+        id: "run-1",
+        triggerEntryId: "entry-1",
+        outputEntryId: "entry-2",
+    });
+
+    assert.equal(
+        getRetryableAgentRunForSidebarComment("entry-1", [run])?.id,
+        "run-1",
+    );
+    assert.equal(
+        getRetryableAgentRunForSidebarComment("entry-2", [run]),
+        null,
+    );
+});
+
+test("getRetryableAgentRunForSidebarComment keeps the newest retryable run for the same ask entry", () => {
+    const olderRun = createAgentRun({
+        id: "run-1",
+        triggerEntryId: "entry-1",
+        outputEntryId: "entry-2",
+        createdAt: 100,
+        endedAt: 150,
+    });
+    const newerRun = createAgentRun({
+        id: "run-2",
+        triggerEntryId: "entry-1",
+        outputEntryId: "entry-3",
+        createdAt: 200,
+        endedAt: 250,
+        retryOfRunId: "run-1",
+    });
+
+    assert.equal(
+        getRetryableAgentRunForSidebarComment("entry-1", [olderRun, newerRun])?.id,
+        "run-2",
+    );
+});
+
+test("isRetryableAgentRunBusy disables regenerate while a run is queued or running", () => {
+    assert.equal(isRetryableAgentRunBusy(createAgentRun({ status: "queued" })), true);
+    assert.equal(isRetryableAgentRunBusy(createAgentRun({ status: "running" })), true);
+    assert.equal(isRetryableAgentRunBusy(createAgentRun({ status: "succeeded" })), false);
+    assert.equal(isRetryableAgentRunBusy(createAgentRun({ status: "failed" })), false);
+    assert.equal(isRetryableAgentRunBusy(null), false);
 });
 
 test("getAgentRunStatusPresentation uses compact success and failure markers", () => {

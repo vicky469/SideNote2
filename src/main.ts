@@ -317,6 +317,7 @@ export default class SideNote2 extends Plugin {
         createCommentId: () => generateCommentId(),
         now: () => Date.now(),
         getPluginVersion: () => this.manifest.version,
+        getVaultRootPath: () => this.getVaultRootPath(),
         refreshCommentViews: () => this.workspaceViewController.refreshCommentViews(),
         getRuntimeWorkingDirectory: (filePath: string) => this.getRuntimeWorkingDirectory(filePath),
         getCommentManager: () => this.commentManager,
@@ -1130,6 +1131,10 @@ export default class SideNote2 extends Plugin {
 
     public async saveDraft(commentId: string, options?: SaveDraftOptions) {
         await this.commentMutationController.saveDraft(commentId, options);
+    }
+
+    public async setCommentBookmarkState(commentId: string, isBookmark: boolean) {
+        await this.commentMutationController.setCommentBookmarkState(commentId, isBookmark);
     }
 
     public async startPageCommentDraft(file: TFile | null = this.getPinnedCommentableFile()) {

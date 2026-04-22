@@ -1,5 +1,5 @@
 import * as assert from "node:assert/strict";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import http from "node:http";
 import https from "node:https";
 import os from "node:os";
@@ -79,6 +79,69 @@ function createTlsFiles(t) {
 
 function sleep(ms) {
     return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function parseBooleanEnv(value) {
+    if (typeof value !== "string" || !value.trim()) {
+        return null;
+    }
+
+    switch (value.trim().toLowerCase()) {
+        case "1":
+        case "true":
+        case "yes":
+        case "on":
+            return true;
+        case "0":
+        case "false":
+        case "no":
+        case "off":
+            return false;
+        default:
+            return null;
+    }
+}
+
+function readTrimmedFile(filePath) {
+    try {
+        const value = readFileSync(filePath, "utf8").trim();
+        return value || null;
+    } catch {
+        return null;
+    }
+}
+
+function isDgxSparkDevice() {
+    const forcedEnabled = parseBooleanEnv(process.env.SIDENOTE2_RUN_DGX_BRIDGE_SOCKET_TESTS);
+    if (forcedEnabled !== null) {
+        return forcedEnabled;
+    }
+
+    const forcedDisabled = parseBooleanEnv(process.env.SIDENOTE2_SKIP_DGX_BRIDGE_SOCKET_TESTS);
+    if (forcedDisabled === true) {
+        return false;
+    }
+
+    if (process.platform !== "linux") {
+        return false;
+    }
+
+    const hardwareMarkers = [
+        readTrimmedFile("/sys/class/dmi/id/product_name"),
+        readTrimmedFile("/sys/class/dmi/id/product_version"),
+        readTrimmedFile("/proc/device-tree/model"),
+    ]
+        .filter((value) => typeof value === "string")
+        .map((value) => value.toLowerCase());
+
+    return hardwareMarkers.some((value) => value.includes("dgx spark"));
+}
+
+const SHOULD_RUN_DGX_BRIDGE_SOCKET_TESTS = isDgxSparkDevice();
+const DGX_BRIDGE_SOCKET_SKIP_REASON = "DGX bridge socket integration tests run only on DGX Spark devices. Set SIDENOTE2_RUN_DGX_BRIDGE_SOCKET_TESTS=1 to force them.";
+
+function dgxBridgeSocketTest(name, fn) {
+    test(name, { skip: SHOULD_RUN_DGX_BRIDGE_SOCKET_TESTS ? false : DGX_BRIDGE_SOCKET_SKIP_REASON }, fn);
 }
 
 async function startBridge(t, options = {}) {
@@ -221,7 +284,7 @@ test("createBridgeConfig enables HTTPS when TLS files are configured", (t) => {
     assert.equal(config.tlsCertPath, tls.certPath);
 });
 
-test("DGX bridge serves HTTPS when TLS files are configured", async (t) => {
+dgxBridgeSocketTest("DGX bridge serves HTTPS when TLS files are configured", async (t) => {
     const tls = createTlsFiles(t);
     const { baseUrl } = await startBridge(t, {
         env: {
@@ -242,7 +305,7 @@ test("DGX bridge serves HTTPS when TLS files are configured", async (t) => {
     assert.equal(healthResponse.json.listenProtocol, "https");
 });
 
-test("DGX bridge accepts HEAD health checks without auth", async (t) => {
+dgxBridgeSocketTest("DGX bridge accepts HEAD health checks without auth", async (t) => {
     const { baseUrl } = await startBridge(t, {
         executeRun: async () => ({ replyText: "Done" }),
     });
@@ -259,7 +322,7 @@ test("DGX bridge accepts HEAD health checks without auth", async (t) => {
     assert.match(String(healthResponse.headers["content-type"]), /^application\/json/u);
 });
 
-test("DGX bridge starts, streams, completes, and honors cursors", async (t) => {
+dgxBridgeSocketTest("DGX bridge starts, streams, completes, and honors cursors", async (t) => {
     const { baseUrl, token } = await startBridge(t, {
         executeRun: async ({ onProgressText, onOutputDelta }) => {
             onProgressText?.("Preparing context");
@@ -307,7 +370,7 @@ test("DGX bridge starts, streams, completes, and honors cursors", async (t) => {
     assert.equal(afterCursorResponse.json.cursor, completedResponse.json.cursor);
 });
 
-test("DGX bridge long-polls until the next event when waitMs is provided", async (t) => {
+dgxBridgeSocketTest("DGX bridge long-polls until the next event when waitMs is provided", async (t) => {
     const { baseUrl, token } = await startBridge(t, {
         executeRun: async ({ onProgressText }) => {
             await sleep(120);
@@ -346,7 +409,7 @@ test("DGX bridge long-polls until the next event when waitMs is provided", async
     assert.ok(pollResponse.json.events.some((event) => event.type === "progress"));
 });
 
-test("DGX bridge responds to CORS preflight and includes CORS headers", async (t) => {
+dgxBridgeSocketTest("DGX bridge responds to CORS preflight and includes CORS headers", async (t) => {
     const { baseUrl } = await startBridge(t, {
         executeRun: async () => ({ replyText: "Done" }),
     });
@@ -371,7 +434,7 @@ test("DGX bridge responds to CORS preflight and includes CORS headers", async (t
     assert.equal(healthResponse.headers["access-control-allow-origin"], "*");
 });
 
-test("DGX bridge cancels an in-flight run", async (t) => {
+dgxBridgeSocketTest("DGX bridge cancels an in-flight run", async (t) => {
     const { baseUrl, token } = await startBridge(t, {
         executeRun: async ({ signal, onProgressText }) => {
             onProgressText?.("Preparing context");
@@ -414,7 +477,7 @@ test("DGX bridge cancels an in-flight run", async (t) => {
     assert.ok(finalResponse.json.events.some((event) => event.type === "cancelled"));
 });
 
-test("DGX bridge enforces auth and free-allowance limits", async (t) => {
+dgxBridgeSocketTest("DGX bridge enforces auth and free-allowance limits", async (t) => {
     const { baseUrl, token } = await startBridge(t, {
         env: {
             SIDENOTE2_DGX_FREE_ALLOWANCE_ENABLED: "true",

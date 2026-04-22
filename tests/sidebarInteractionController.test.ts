@@ -42,7 +42,10 @@ class FakeSidebarElement extends FakeNode {
     constructor(
         private readonly options: {
             isCommentItem?: boolean;
+            isDismissalExemptSurface?: boolean;
             isSectionChrome?: boolean;
+            isToolbar?: boolean;
+            isDeletedToolbarMode?: boolean;
         } = {},
     ) {
         super();
@@ -55,6 +58,18 @@ class FakeSidebarElement extends FakeNode {
 
         if (selector === ".sidenote2-comments-list-actions, .sidenote2-sidebar-toolbar, .sidenote2-active-file-filters") {
             return this.options.isSectionChrome ? this : null;
+        }
+
+        if (selector === ".sidenote2-sidebar-toolbar") {
+            return this.options.isToolbar ? this : null;
+        }
+
+        if (selector === ".sidenote2-sidebar-toolbar.is-deleted-toolbar-mode") {
+            return this.options.isToolbar && this.options.isDeletedToolbarMode ? this : null;
+        }
+
+        if (selector === ".suggestion-container, .modal-container, .prompt, .menu") {
+            return this.options.isDismissalExemptSurface ? this : null;
         }
 
         return null;
@@ -435,6 +450,178 @@ test("sidebar interaction controller autosaves draft edits on sidebar background
     }
 });
 
+test("sidebar interaction controller autosaves draft edits on document clicks outside the sidebar", async () => {
+    const originalHTMLElement = globalThis.HTMLElement;
+    const originalNode = globalThis.Node;
+    Object.assign(globalThis, {
+        HTMLElement: FakeSidebarElement,
+        Node: FakeNode,
+    });
+
+    try {
+        let currentDraft: DraftComment | null = createDraft({ id: "draft-1" });
+        const activeEl = createCommentElement({ draftId: "draft-1" });
+        const draftEl = new FakeSidebarElement();
+        const outsideEl = new FakeSidebarElement();
+        const saveDraftCalls: string[] = [];
+        let clearRevealedCommentSelectionCalls = 0;
+
+        const controller = new SidebarInteractionController({
+            app: {
+                workspace: {
+                    activeLeaf: null,
+                    setActiveLeaf: () => {},
+                },
+            } as never,
+            leaf: {} as never,
+            containerEl: {
+                querySelector: (selector: string) => selector.includes("draft-1") ? draftEl : null,
+                querySelectorAll: () => [activeEl],
+                contains: (target: unknown) => target !== outsideEl,
+            } as never,
+            getCurrentFile: () => ({ path: "docs/architecture.md" }) as never,
+            getDraftForView: () => currentDraft,
+            renderComments: async () => {},
+            saveDraft: async (commentId) => {
+                saveDraftCalls.push(commentId);
+                currentDraft = null;
+            },
+            cancelDraft: () => {},
+            clearRevealedCommentSelection: () => {
+                clearRevealedCommentSelectionCalls += 1;
+            },
+            revealComment: async () => {},
+            getPreferredFileLeaf: () => null,
+            openLinkText: async () => {},
+        });
+
+        controller.setActiveComment("draft-1");
+        controller.documentMouseDownHandler({
+            button: 0,
+            target: outsideEl,
+        } as unknown as MouseEvent);
+        await Promise.resolve();
+
+        assert.deepEqual(saveDraftCalls, ["draft-1"]);
+        assert.equal(controller.getActiveCommentId(), null);
+        assert.equal(clearRevealedCommentSelectionCalls, 1);
+        assert.deepEqual(activeEl.removeClassCalls, ["active"]);
+    } finally {
+        Object.assign(globalThis, {
+            HTMLElement: originalHTMLElement,
+            Node: originalNode,
+        });
+    }
+});
+
+test("sidebar interaction controller ignores document clicks that start inside the sidebar", async () => {
+    const originalHTMLElement = globalThis.HTMLElement;
+    const originalNode = globalThis.Node;
+    Object.assign(globalThis, {
+        HTMLElement: FakeSidebarElement,
+        Node: FakeNode,
+    });
+
+    try {
+        const currentDraft = createDraft({ id: "draft-1" });
+        const insideEl = new FakeSidebarElement();
+        const saveDraftCalls: string[] = [];
+
+        const controller = new SidebarInteractionController({
+            app: {
+                workspace: {
+                    activeLeaf: null,
+                    setActiveLeaf: () => {},
+                },
+            } as never,
+            leaf: {} as never,
+            containerEl: {
+                querySelector: (selector: string) => selector.includes("draft-1") ? insideEl : null,
+                querySelectorAll: () => [],
+                contains: (target: unknown) => target === insideEl,
+            } as never,
+            getCurrentFile: () => ({ path: "docs/architecture.md" }) as never,
+            getDraftForView: () => currentDraft,
+            renderComments: async () => {},
+            saveDraft: async (commentId) => {
+                saveDraftCalls.push(commentId);
+            },
+            cancelDraft: () => {},
+            clearRevealedCommentSelection: () => {},
+            revealComment: async () => {},
+            getPreferredFileLeaf: () => null,
+            openLinkText: async () => {},
+        });
+
+        controller.documentMouseDownHandler({
+            button: 0,
+            target: insideEl,
+        } as unknown as MouseEvent);
+        await Promise.resolve();
+
+        assert.deepEqual(saveDraftCalls, []);
+    } finally {
+        Object.assign(globalThis, {
+            HTMLElement: originalHTMLElement,
+            Node: originalNode,
+        });
+    }
+});
+
+test("sidebar interaction controller keeps draft editing open while clicking a picker modal", async () => {
+    const originalHTMLElement = globalThis.HTMLElement;
+    const originalNode = globalThis.Node;
+    Object.assign(globalThis, {
+        HTMLElement: FakeSidebarElement,
+        Node: FakeNode,
+    });
+
+    try {
+        const currentDraft = createDraft({ id: "draft-1" });
+        const modalEl = new FakeSidebarElement({ isDismissalExemptSurface: true });
+        const saveDraftCalls: string[] = [];
+
+        const controller = new SidebarInteractionController({
+            app: {
+                workspace: {
+                    activeLeaf: null,
+                    setActiveLeaf: () => {},
+                },
+            } as never,
+            leaf: {} as never,
+            containerEl: {
+                querySelector: () => null,
+                querySelectorAll: () => [],
+                contains: (target: unknown) => false && target === modalEl,
+            } as never,
+            getCurrentFile: () => ({ path: "docs/architecture.md" }) as never,
+            getDraftForView: () => currentDraft,
+            renderComments: async () => {},
+            saveDraft: async (commentId) => {
+                saveDraftCalls.push(commentId);
+            },
+            cancelDraft: () => {},
+            clearRevealedCommentSelection: () => {},
+            revealComment: async () => {},
+            getPreferredFileLeaf: () => null,
+            openLinkText: async () => {},
+        });
+
+        controller.documentMouseDownHandler({
+            button: 0,
+            target: modalEl,
+        } as unknown as MouseEvent);
+        await Promise.resolve();
+
+        assert.deepEqual(saveDraftCalls, []);
+    } finally {
+        Object.assign(globalThis, {
+            HTMLElement: originalHTMLElement,
+            Node: originalNode,
+        });
+    }
+});
+
 test("sidebar interaction controller autosaves without clearing active state when clicking another comment", async () => {
     const originalHTMLElement = globalThis.HTMLElement;
     const originalNode = globalThis.Node;
@@ -487,6 +674,221 @@ test("sidebar interaction controller autosaves without clearing active state whe
         assert.equal(controller.getActiveCommentId(), "draft-1");
         assert.equal(clearRevealedCommentSelectionCalls, 0);
         assert.deepEqual(activeEl.removeClassCalls, []);
+    } finally {
+        Object.assign(globalThis, {
+            HTMLElement: originalHTMLElement,
+            Node: originalNode,
+        });
+    }
+});
+
+test("sidebar interaction controller keeps deleted mode on sidebar background click", async () => {
+    const originalHTMLElement = globalThis.HTMLElement;
+    const originalNode = globalThis.Node;
+    Object.assign(globalThis, {
+        HTMLElement: FakeSidebarElement,
+        Node: FakeNode,
+    });
+
+    try {
+        const backgroundEl = new FakeSidebarElement();
+        const setShowDeletedCommentsCalls: boolean[] = [];
+
+        const controller = new SidebarInteractionController({
+            app: {
+                workspace: {
+                    activeLeaf: null,
+                    setActiveLeaf: () => {},
+                },
+            } as never,
+            leaf: {} as never,
+            containerEl: {
+                querySelector: () => null,
+                querySelectorAll: () => [],
+                contains: () => true,
+            } as never,
+            getCurrentFile: () => null,
+            getDraftForView: () => null,
+            renderComments: async () => {},
+            saveDraft: () => {},
+            cancelDraft: () => {},
+            clearRevealedCommentSelection: () => {},
+            revealComment: async () => {},
+            getPreferredFileLeaf: () => null,
+            openLinkText: async () => {},
+            shouldShowDeletedComments: () => true,
+            setShowDeletedComments: async (showDeleted) => {
+                setShowDeletedCommentsCalls.push(showDeleted);
+            },
+        });
+
+        await controller.sidebarClickHandler({ target: backgroundEl } as unknown as MouseEvent);
+
+        assert.deepEqual(setShowDeletedCommentsCalls, []);
+    } finally {
+        Object.assign(globalThis, {
+            HTMLElement: originalHTMLElement,
+            Node: originalNode,
+        });
+    }
+});
+
+test("sidebar interaction controller keeps deleted mode while clicking a normal toolbar", async () => {
+    const originalHTMLElement = globalThis.HTMLElement;
+    const originalNode = globalThis.Node;
+    Object.assign(globalThis, {
+        HTMLElement: FakeSidebarElement,
+        Node: FakeNode,
+    });
+
+    try {
+        const toolbarEl = new FakeSidebarElement({
+            isSectionChrome: true,
+            isToolbar: true,
+        });
+        const setShowDeletedCommentsCalls: boolean[] = [];
+
+        const controller = new SidebarInteractionController({
+            app: {
+                workspace: {
+                    activeLeaf: null,
+                    setActiveLeaf: () => {},
+                },
+            } as never,
+            leaf: {} as never,
+            containerEl: {
+                querySelector: () => null,
+                querySelectorAll: () => [],
+                contains: () => true,
+            } as never,
+            getCurrentFile: () => null,
+            getDraftForView: () => null,
+            renderComments: async () => {},
+            saveDraft: () => {},
+            cancelDraft: () => {},
+            clearRevealedCommentSelection: () => {},
+            revealComment: async () => {},
+            getPreferredFileLeaf: () => null,
+            openLinkText: async () => {},
+            shouldShowDeletedComments: () => true,
+            setShowDeletedComments: async (showDeleted) => {
+                setShowDeletedCommentsCalls.push(showDeleted);
+            },
+        });
+
+        await controller.sidebarClickHandler({ target: toolbarEl } as unknown as MouseEvent);
+
+        assert.deepEqual(setShowDeletedCommentsCalls, []);
+    } finally {
+        Object.assign(globalThis, {
+            HTMLElement: originalHTMLElement,
+            Node: originalNode,
+        });
+    }
+});
+
+test("sidebar interaction controller exits deleted mode while clicking the deleted toolbar", async () => {
+    const originalHTMLElement = globalThis.HTMLElement;
+    const originalNode = globalThis.Node;
+    Object.assign(globalThis, {
+        HTMLElement: FakeSidebarElement,
+        Node: FakeNode,
+    });
+
+    try {
+        const toolbarEl = new FakeSidebarElement({
+            isSectionChrome: true,
+            isToolbar: true,
+            isDeletedToolbarMode: true,
+        });
+        const setShowDeletedCommentsCalls: boolean[] = [];
+
+        const controller = new SidebarInteractionController({
+            app: {
+                workspace: {
+                    activeLeaf: null,
+                    setActiveLeaf: () => {},
+                },
+            } as never,
+            leaf: {} as never,
+            containerEl: {
+                querySelector: () => null,
+                querySelectorAll: () => [],
+                contains: () => true,
+            } as never,
+            getCurrentFile: () => null,
+            getDraftForView: () => null,
+            renderComments: async () => {},
+            saveDraft: () => {},
+            cancelDraft: () => {},
+            clearRevealedCommentSelection: () => {},
+            revealComment: async () => {},
+            getPreferredFileLeaf: () => null,
+            openLinkText: async () => {},
+            shouldShowDeletedComments: () => true,
+            setShowDeletedComments: async (showDeleted) => {
+                setShowDeletedCommentsCalls.push(showDeleted);
+            },
+        });
+
+        await controller.sidebarClickHandler({ target: toolbarEl } as unknown as MouseEvent);
+
+        assert.deepEqual(setShowDeletedCommentsCalls, [false]);
+    } finally {
+        Object.assign(globalThis, {
+            HTMLElement: originalHTMLElement,
+            Node: originalNode,
+        });
+    }
+});
+
+test("sidebar interaction controller keeps deleted mode on document clicks outside the sidebar", async () => {
+    const originalHTMLElement = globalThis.HTMLElement;
+    const originalNode = globalThis.Node;
+    Object.assign(globalThis, {
+        HTMLElement: FakeSidebarElement,
+        Node: FakeNode,
+    });
+
+    try {
+        const outsideEl = new FakeSidebarElement();
+        const setShowDeletedCommentsCalls: boolean[] = [];
+
+        const controller = new SidebarInteractionController({
+            app: {
+                workspace: {
+                    activeLeaf: null,
+                    setActiveLeaf: () => {},
+                },
+            } as never,
+            leaf: {} as never,
+            containerEl: {
+                querySelector: () => null,
+                querySelectorAll: () => [],
+                contains: (target: unknown) => target !== outsideEl,
+            } as never,
+            getCurrentFile: () => null,
+            getDraftForView: () => null,
+            renderComments: async () => {},
+            saveDraft: () => {},
+            cancelDraft: () => {},
+            clearRevealedCommentSelection: () => {},
+            revealComment: async () => {},
+            getPreferredFileLeaf: () => null,
+            openLinkText: async () => {},
+            shouldShowDeletedComments: () => true,
+            setShowDeletedComments: async (showDeleted) => {
+                setShowDeletedCommentsCalls.push(showDeleted);
+            },
+        });
+
+        controller.documentMouseDownHandler({
+            button: 0,
+            target: outsideEl,
+        } as unknown as MouseEvent);
+        await Promise.resolve();
+
+        assert.deepEqual(setShowDeletedCommentsCalls, []);
     } finally {
         Object.assign(globalThis, {
             HTMLElement: originalHTMLElement,
