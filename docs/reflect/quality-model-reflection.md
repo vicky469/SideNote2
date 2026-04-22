@@ -357,6 +357,17 @@ for these first machines:
 
 Those three cover most of the regressions we have been seeing.
 
+## Sidebar Toolbar State
+
+This concern now lives in its own note:
+
+- [button-state.md](button-state.md)
+
+That split is intentional.
+
+- `quality-model-reflection.md` stays about the cross-cutting modeling approach
+- `button-state.md` is the concrete toolbar-state reference
+
 ## Bottom line
 
 We do not only need better implementation.
