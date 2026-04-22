@@ -3,6 +3,7 @@ import test from "node:test";
 import {
     normalizeSidebarPrimaryMode,
     normalizeIndexFileFilterRootPath,
+    resolvePinnedSidebarStateByFilePathFromState,
     resolveIndexFileFilterRootPathFromState,
 } from "../src/ui/views/viewState";
 
@@ -49,6 +50,59 @@ test("resolveIndexFileFilterRootPathFromState migrates the first legacy file pat
 test("resolveIndexFileFilterRootPathFromState returns undefined when no filter state is present", () => {
     assert.equal(
         resolveIndexFileFilterRootPathFromState({}),
+        undefined,
+    );
+});
+
+test("resolvePinnedSidebarStateByFilePathFromState normalizes file paths and thread ids", () => {
+    assert.deepEqual(
+        resolvePinnedSidebarStateByFilePathFromState({
+            pinnedSidebarStateByFilePath: {
+                " docs\\a.md ": {
+                    threadIds: [" thread-1 ", "thread-1", "", 2],
+                    showPinnedThreadsOnly: true,
+                },
+                "": {
+                    threadIds: ["thread-ignored"],
+                    showPinnedThreadsOnly: true,
+                },
+            },
+        } as unknown as Parameters<typeof resolvePinnedSidebarStateByFilePathFromState>[0]),
+        {
+            "docs/a.md": {
+                threadIds: ["thread-1"],
+                showPinnedThreadsOnly: true,
+            },
+        },
+    );
+});
+
+test("resolvePinnedSidebarStateByFilePathFromState keeps pinned-only empty views but drops empty inactive entries", () => {
+    assert.deepEqual(
+        resolvePinnedSidebarStateByFilePathFromState({
+            pinnedSidebarStateByFilePath: {
+                "docs/a.md": {
+                    threadIds: [],
+                    showPinnedThreadsOnly: true,
+                },
+                "docs/b.md": {
+                    threadIds: [],
+                    showPinnedThreadsOnly: false,
+                },
+            },
+        } as unknown as Parameters<typeof resolvePinnedSidebarStateByFilePathFromState>[0]),
+        {
+            "docs/a.md": {
+                threadIds: [],
+                showPinnedThreadsOnly: true,
+            },
+        },
+    );
+});
+
+test("resolvePinnedSidebarStateByFilePathFromState returns undefined when pin state is absent", () => {
+    assert.equal(
+        resolvePinnedSidebarStateByFilePathFromState({}),
         undefined,
     );
 });

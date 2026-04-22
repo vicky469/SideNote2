@@ -4,12 +4,18 @@ export type SidebarPrimaryMode = "list" | "thought-trail";
 export type IndexSidebarMode = SidebarPrimaryMode;
 export type NoteSidebarMode = SidebarPrimaryMode;
 
+export interface PinnedSidebarFileState {
+    threadIds: string[];
+    showPinnedThreadsOnly: boolean;
+}
+
 export interface CustomViewState extends Record<string, unknown> {
     filePath: string | null;
     indexSidebarMode?: IndexSidebarMode;
     noteSidebarMode?: NoteSidebarMode;
     indexFileFilterRootPath?: string | null;
     indexFileFilterPaths?: string[];
+    pinnedSidebarStateByFilePath?: Record<string, PinnedSidebarFileState>;
 }
 
 export function normalizeSidebarPrimaryMode(value: unknown): SidebarPrimaryMode | null {
@@ -49,4 +55,66 @@ export function resolveIndexFileFilterRootPathFromState(state: Pick<CustomViewSt
     }
 
     return undefined;
+}
+
+function hasOwn(target: object, key: string): boolean {
+    return Boolean(Object.prototype.hasOwnProperty.call(target, key));
+}
+
+function normalizePinnedSidebarThreadIds(value: unknown): string[] {
+    if (!Array.isArray(value)) {
+        return [];
+    }
+
+    const uniqueThreadIds = new Set<string>();
+    for (const candidate of value) {
+        if (typeof candidate !== "string") {
+            continue;
+        }
+
+        const normalized = candidate.trim();
+        if (!normalized) {
+            continue;
+        }
+
+        uniqueThreadIds.add(normalized);
+    }
+
+    return Array.from(uniqueThreadIds);
+}
+
+export function resolvePinnedSidebarStateByFilePathFromState(
+    state: Pick<CustomViewState, "pinnedSidebarStateByFilePath">,
+): Record<string, PinnedSidebarFileState> | undefined {
+    if (!hasOwn(state, "pinnedSidebarStateByFilePath")) {
+        return undefined;
+    }
+
+    const rawState = state.pinnedSidebarStateByFilePath;
+    if (!rawState || typeof rawState !== "object" || Array.isArray(rawState)) {
+        return {};
+    }
+
+    const normalizedState: Record<string, PinnedSidebarFileState> = {};
+    for (const [filePath, rawFileState] of Object.entries(rawState)) {
+        const normalizedFilePath = getNormalizedFilterPath(filePath);
+        if (!normalizedFilePath || !rawFileState || typeof rawFileState !== "object" || Array.isArray(rawFileState)) {
+            continue;
+        }
+
+        const threadIds = normalizePinnedSidebarThreadIds(
+            (rawFileState as { threadIds?: unknown }).threadIds,
+        );
+        const showPinnedThreadsOnly = (rawFileState as { showPinnedThreadsOnly?: unknown }).showPinnedThreadsOnly === true;
+        if (threadIds.length === 0 && !showPinnedThreadsOnly) {
+            continue;
+        }
+
+        normalizedState[normalizedFilePath] = {
+            threadIds,
+            showPinnedThreadsOnly,
+        };
+    }
+
+    return normalizedState;
 }

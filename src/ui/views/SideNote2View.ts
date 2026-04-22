@@ -95,8 +95,10 @@ import {
     normalizeSidebarPrimaryMode,
     normalizeIndexFileFilterRootPath,
     resolveIndexFileFilterRootPathFromState,
+    resolvePinnedSidebarStateByFilePathFromState,
     type CustomViewState,
     type IndexSidebarMode,
+    type PinnedSidebarFileState,
     type SidebarPrimaryMode,
 } from "./viewState";
 import { normalizeSidebarViewFile } from "./sidebarViewFileState";
@@ -207,6 +209,7 @@ export default class SideNote2View extends ItemView {
     private noteSidebarSearchRequestVersion = 0;
     private pinnedSidebarThreadIds = new Set<string>();
     private showPinnedSidebarThreadsOnly = false;
+    private pinnedSidebarStateByFilePath: Record<string, PinnedSidebarFileState> = {};
     private selectedIndexFileFilterRootPath: string | null = null;
     private indexFileFilterGraph: IndexFileFilterGraph | null = null;
     private reorderDragState: SidebarReorderDragState | null = null;
@@ -229,24 +232,67 @@ export default class SideNote2View extends ItemView {
         this.containerEl.classList.toggle("is-non-desktop", this.isNonDesktopClient());
     }
 
+    private getNormalizedPinnedSidebarStateFilePath(filePath: string | null | undefined): string | null {
+        return normalizeIndexFileFilterRootPath(filePath);
+    }
+
+    private savePinnedSidebarStateForFilePath(filePath: string | null | undefined): void {
+        const normalizedFilePath = this.getNormalizedPinnedSidebarStateFilePath(filePath);
+        if (!normalizedFilePath) {
+            return;
+        }
+
+        if (this.pinnedSidebarThreadIds.size === 0 && !this.showPinnedSidebarThreadsOnly) {
+            delete this.pinnedSidebarStateByFilePath[normalizedFilePath];
+            return;
+        }
+
+        this.pinnedSidebarStateByFilePath[normalizedFilePath] = {
+            threadIds: Array.from(this.pinnedSidebarThreadIds),
+            showPinnedThreadsOnly: this.showPinnedSidebarThreadsOnly,
+        };
+    }
+
+    private restorePinnedSidebarStateForFilePath(filePath: string | null | undefined): void {
+        const normalizedFilePath = this.getNormalizedPinnedSidebarStateFilePath(filePath);
+        if (!normalizedFilePath) {
+            this.pinnedSidebarThreadIds.clear();
+            this.showPinnedSidebarThreadsOnly = false;
+            return;
+        }
+
+        const fileState = this.pinnedSidebarStateByFilePath[normalizedFilePath];
+        if (!fileState) {
+            this.pinnedSidebarThreadIds.clear();
+            this.showPinnedSidebarThreadsOnly = false;
+            return;
+        }
+
+        this.pinnedSidebarThreadIds = new Set(fileState.threadIds);
+        this.showPinnedSidebarThreadsOnly = fileState.showPinnedThreadsOnly;
+    }
+
     private setCurrentFile(nextFile: TFile | null): void {
         const currentFilePath = this.file?.path ?? null;
         const nextFilePath = nextFile?.path ?? null;
         if (currentFilePath !== nextFilePath) {
+            this.savePinnedSidebarStateForFilePath(currentFilePath);
             this.clearNoteSidebarSearchDebounceTimer();
             this.noteSidebarSearchRequestVersion += 1;
             this.noteSidebarSearchQuery = "";
             this.noteSidebarSearchInputValue = "";
-            this.pinnedSidebarThreadIds.clear();
-            this.showPinnedSidebarThreadsOnly = false;
         }
         this.file = nextFile;
+        if (currentFilePath !== nextFilePath) {
+            this.restorePinnedSidebarStateForFilePath(nextFilePath);
+        }
     }
 
     private syncPinnedSidebarThreadIds<T extends Pick<CommentThread, "id">>(threads: readonly T[]): void {
         const pinnedThreads = filterThreadsByPinnedSidebarThreadIds(threads, this.pinnedSidebarThreadIds);
         if (this.pinnedSidebarThreadIds.size > 0) {
             this.pinnedSidebarThreadIds = new Set(pinnedThreads.map((thread) => thread.id));
+            this.savePinnedSidebarStateForFilePath(this.file?.path ?? null);
         }
     }
 
@@ -266,11 +312,13 @@ export default class SideNote2View extends ItemView {
         } else {
             this.pinnedSidebarThreadIds.add(threadId);
         }
+        this.savePinnedSidebarStateForFilePath(this.file?.path ?? null);
         await this.renderComments();
     }
 
     private async togglePinnedSidebarMode(): Promise<void> {
         this.showPinnedSidebarThreadsOnly = !this.showPinnedSidebarThreadsOnly;
+        this.savePinnedSidebarStateForFilePath(this.file?.path ?? null);
         await this.renderComments();
     }
 
@@ -449,6 +497,15 @@ export default class SideNote2View extends ItemView {
 
     async setState(state: CustomViewState, result: ViewStateResult): Promise<void> {
         let shouldRender = false;
+        const nextPinnedSidebarStateByFilePath = resolvePinnedSidebarStateByFilePathFromState(state);
+        if (nextPinnedSidebarStateByFilePath !== undefined) {
+            this.pinnedSidebarStateByFilePath = nextPinnedSidebarStateByFilePath;
+            if (this.file) {
+                this.restorePinnedSidebarStateForFilePath(this.file.path);
+                shouldRender = true;
+            }
+        }
+
         const nextMode = parseSidebarPrimaryMode(state.indexSidebarMode);
         if (nextMode && nextMode !== this.indexSidebarMode) {
             this.indexSidebarMode = nextMode;
@@ -1502,6 +1559,7 @@ export default class SideNote2View extends ItemView {
         this.noteSidebarContentFilter = nextState.contentFilter;
         this.showPinnedSidebarThreadsOnly = nextState.showPinnedThreadsOnly;
         this.pinnedSidebarThreadIds = nextState.pinnedThreadIds;
+        this.savePinnedSidebarStateForFilePath(this.file?.path ?? null);
         this.clearNoteSidebarSearchDebounceTimer();
         this.noteSidebarSearchQuery = nextState.searchQuery;
         this.noteSidebarSearchInputValue = nextState.searchInputValue;
@@ -1919,6 +1977,7 @@ export default class SideNote2View extends ItemView {
                 this.indexSidebarMode = mode;
                 if (mode !== "list") {
                     this.showPinnedSidebarThreadsOnly = false;
+                    this.savePinnedSidebarStateForFilePath(this.file?.path ?? null);
                 }
                 void this.plugin.logEvent("info", "index", "index.mode.changed", {
                     mode,
@@ -1940,6 +1999,7 @@ export default class SideNote2View extends ItemView {
                 this.noteSidebarMode = mode;
                 if (mode !== "list") {
                     this.showPinnedSidebarThreadsOnly = false;
+                    this.savePinnedSidebarStateForFilePath(this.file?.path ?? null);
                 }
                 void this.plugin.logEvent("info", "note", "note.mode.changed", {
                     mode,
@@ -2787,11 +2847,15 @@ export default class SideNote2View extends ItemView {
     }
 
     getState(): CustomViewState {
+        this.savePinnedSidebarStateForFilePath(this.file?.path ?? null);
         return {
             filePath: this.file ? this.file.path : null,
             indexSidebarMode: this.indexSidebarMode,
             noteSidebarMode: this.noteSidebarMode,
             indexFileFilterRootPath: this.selectedIndexFileFilterRootPath,
+            pinnedSidebarStateByFilePath: {
+                ...this.pinnedSidebarStateByFilePath,
+            },
         };
     }
 
