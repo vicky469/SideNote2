@@ -40,3 +40,5 @@ data.json
 
 # Dev-only Obsidian skill references stay on the dedicated skills-dev branch
 /skills/dev
+
+.env
