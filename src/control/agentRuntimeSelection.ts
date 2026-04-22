@@ -42,7 +42,7 @@ export function getAgentRuntimeOwnershipMessage(runtime: AgentRunRuntime): strin
 export function getAgentRuntimeStatusLabel(runtime: AgentRunRuntime): string {
     return runtime === "openclaw-acp"
         ? "Runtime: Your remote runtime"
-        : "Runtime: Local desktop";
+        : "Runtime: Local";
 }
 
 export function getAgentRuntimeCapabilityLabel(runtime: AgentRunRuntime): string {
@@ -170,7 +170,7 @@ function getLocalRuntimeUnavailableNotice(localDiagnostics: CodexRuntimeDiagnost
     const message = typeof localDiagnostics.message === "string"
         ? localDiagnostics.message.trim()
         : "";
-    return message || "Local desktop runtime is unavailable on this device.";
+    return message || "Local runtime is unavailable on this device.";
 }
 
 export function resolveAgentRuntimeSelection(context: RuntimeAvailabilityContext): AgentRuntimeSelection {

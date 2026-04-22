@@ -207,7 +207,7 @@ test("getRemoteRuntimeAvailability allows HTTP for localhost and private LAN add
 test("agent runtime labels stay ownership-explicit", () => {
     assert.equal(getAgentRuntimeOwnershipMessage("direct-cli"), "Using your local Codex setup");
     assert.equal(getAgentRuntimeOwnershipMessage("openclaw-acp"), "Using remote runtime");
-    assert.equal(getAgentRuntimeStatusLabel("direct-cli"), "Runtime: Local desktop");
+    assert.equal(getAgentRuntimeStatusLabel("direct-cli"), "Runtime: Local");
     assert.equal(getAgentRuntimeStatusLabel("openclaw-acp"), "Runtime: Your remote runtime");
     assert.equal(getAgentRuntimeCapabilityLabel("direct-cli"), "Capability: Workspace-aware");
     assert.equal(getAgentRuntimeCapabilityLabel("openclaw-acp"), "Capability: Workspace-aware");

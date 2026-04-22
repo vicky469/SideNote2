@@ -1,9 +1,18 @@
 import type { CodexRuntimeDiagnostics } from "../../control/agentRuntimeAdapter";
-import type { AgentRuntimeSelection } from "../../control/agentRuntimeSelection";
+import type {
+    AgentRuntimeSelection,
+    RemoteRuntimeAvailability,
+} from "../../control/agentRuntimeSelection";
 
 export interface CodexRuntimeStatusPresentation {
     title: string;
     description: string;
+}
+
+export interface RuntimeOptionStatusPresentation {
+    label: string;
+    description: string;
+    available: boolean;
 }
 
 const CHECKING_MESSAGE = "Checking whether @codex is available...";
@@ -53,5 +62,54 @@ export function createCheckingCodexRuntimeDiagnostics(): CodexRuntimeDiagnostics
     return {
         status: "checking",
         message: CHECKING_MESSAGE,
+    };
+}
+
+export function getLocalRuntimeOptionStatusPresentation(
+    diagnostics: CodexRuntimeDiagnostics,
+): RuntimeOptionStatusPresentation {
+    switch (diagnostics.status) {
+        case "available":
+            return {
+                label: "Local ✅",
+                description: "Built-in @codex can run in this Obsidian environment.",
+                available: true,
+            };
+        case "checking":
+            return {
+                label: "Local ...",
+                description: CHECKING_MESSAGE,
+                available: false,
+            };
+        case "missing":
+        case "unsupported":
+        case "unavailable":
+        default:
+            return {
+                label: "Local ❌",
+                description: diagnostics.message || CHECKING_MESSAGE,
+                available: false,
+            };
+    }
+}
+
+export function getRemoteRuntimeOptionStatusPresentation(
+    availability: RemoteRuntimeAvailability,
+): RuntimeOptionStatusPresentation {
+    if (availability.status === "available") {
+        const description = availability.originHost
+            ? `Remote bridge configured at ${availability.originHost}.`
+            : "Remote bridge is configured.";
+        return {
+            label: "Remote ✅",
+            description,
+            available: true,
+        };
+    }
+
+    return {
+        label: "Remote ❌",
+        description: availability.message,
+        available: false,
     };
 }

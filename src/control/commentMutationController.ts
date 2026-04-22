@@ -17,6 +17,7 @@ type PersistOptions = {
 
 type AppendThreadEntryOptions = PersistOptions & {
     insertAfterCommentId?: string;
+    alwaysInsertAfterTarget?: boolean;
 };
 
 export type SaveDraftOptions = {
@@ -317,7 +318,10 @@ export class CommentMutationController {
             body: entry.body,
             timestamp: entry.timestamp,
         });
-        if (options.insertAfterCommentId && options.insertAfterCommentId !== threadId) {
+        if (
+            options.insertAfterCommentId
+            && (options.alwaysInsertAfterTarget || options.insertAfterCommentId !== threadId)
+        ) {
             this.host.getCommentManager().reorderThreadEntries(
                 threadId,
                 entry.id,

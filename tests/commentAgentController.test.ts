@@ -119,7 +119,10 @@ function createHarness(options: {
                     : {}),
             });
             commentManager.appendEntry(threadId, entry);
-            if (appendOptions?.insertAfterCommentId && appendOptions.insertAfterCommentId !== threadId) {
+            if (
+                appendOptions?.insertAfterCommentId
+                && (appendOptions.alwaysInsertAfterTarget || appendOptions.insertAfterCommentId !== threadId)
+            ) {
                 commentManager.reorderThreadEntries(
                     threadId,
                     entry.id,
@@ -582,7 +585,7 @@ test("comment agent controller runs local jobs in parallel within the same threa
     }]);
     assert.deepEqual(
         harness.commentManager.getThreadById("thread-1")?.entries.map((entry) => entry.id),
-        ["thread-1", "entry-2", childOutputEntryId, "entry-3", parentOutputEntryId],
+        ["thread-1", parentOutputEntryId, "entry-2", childOutputEntryId, "entry-3"],
     );
 
     runtimeResolvers.splice(0).forEach((resolve) => resolve());

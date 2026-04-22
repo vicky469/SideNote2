@@ -391,12 +391,30 @@ export class CommentManager {
     ): boolean {
         const thread = this.threads.find((candidate) =>
             candidate.id === threadId || candidate.entries.some((entry) => entry.id === threadId));
-        if (!thread || thread.entries.length < 3) {
+        if (!thread || thread.entries.length < 2) {
             return false;
         }
 
         const parentEntry = thread.entries[0];
+        if (!parentEntry || movedEntryId === parentEntry.id) {
+            return false;
+        }
+
         const childEntries = thread.entries.slice(1);
+        if (targetEntryId === parentEntry.id) {
+            if (placement !== "after") {
+                return false;
+            }
+
+            const movedEntry = childEntries.find((entry) => entry.id === movedEntryId);
+            if (!movedEntry) {
+                return false;
+            }
+
+            thread.entries = [parentEntry, movedEntry, ...childEntries.filter((entry) => entry.id !== movedEntryId)];
+            return true;
+        }
+
         const reorderedChildEntries = moveItemByIdRelative(childEntries, movedEntryId, targetEntryId, placement);
         if (!reorderedChildEntries) {
             return false;

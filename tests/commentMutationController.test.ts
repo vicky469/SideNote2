@@ -508,6 +508,39 @@ test("comment mutation controller inserts appended thread entries after the targ
     );
 });
 
+test("comment mutation controller can insert appended thread entries immediately after the thread root", async () => {
+    const existing = createComment({ id: "thread-1", comment: "Original" });
+    const host = createHost({
+        knownComments: [existing],
+        loadedComments: [existing],
+    });
+    host.manager.appendEntry(existing.id, {
+        id: "entry-2",
+        body: "Later child",
+        timestamp: 200,
+    });
+    host.manager.appendEntry(existing.id, {
+        id: "entry-3",
+        body: "Even later child",
+        timestamp: 300,
+    });
+
+    const appended = await host.controller.appendThreadEntry(existing.id, {
+        id: "entry-4",
+        body: "",
+        timestamp: 400,
+    }, {
+        insertAfterCommentId: existing.id,
+        alwaysInsertAfterTarget: true,
+    });
+
+    assert.equal(appended, true);
+    assert.deepEqual(
+        host.manager.getThreadById(existing.id)?.entries.map((entry) => entry.id),
+        ["thread-1", "entry-4", "entry-2", "entry-3"],
+    );
+});
+
 test("comment mutation controller does not dispatch edited entries to the agent hook", async () => {
     const existing = createComment({ id: "thread-1", comment: "@codex original" });
     const draft = toDraft(existing, {

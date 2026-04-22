@@ -1,9 +1,20 @@
-import { App, Notice, PluginSettingTab, Setting } from "obsidian";
+import {
+    App,
+    ButtonComponent,
+    FileSystemAdapter,
+    Notice,
+    PluginSettingTab,
+    Setting,
+} from "obsidian";
 import {
     normalizeAgentRuntimeModePreference,
     normalizeRemoteRuntimeBaseUrl,
     type AgentRuntimeModePreference,
 } from "../../core/agents/agentRuntimePreferences";
+import {
+    resolveAgentRuntimeSelection,
+    type AgentRuntimeSelection,
+} from "../../control/agentRuntimeSelection";
 import {
     normalizeAllCommentsNoteImageCaption,
     normalizeAllCommentsNoteImageUrl,
@@ -12,8 +23,9 @@ import {
 import type { CodexRuntimeDiagnostics } from "../../control/agentRuntimeAdapter";
 import {
     createCheckingCodexRuntimeDiagnostics,
-    getCodexRuntimeStatusPresentation,
-    getCodexRuntimeStatusPresentationForSelection,
+    getLocalRuntimeOptionStatusPresentation,
+    getRemoteRuntimeOptionStatusPresentation,
+    type RuntimeOptionStatusPresentation,
 } from "./codexRuntimeStatus";
 import type SideNote2 from "../../main";
 
@@ -50,55 +62,150 @@ export default class SideNote2SettingTab extends PluginSettingTab {
             .setName("Agent runtime")
             .setHeading();
 
-        const codexStatusSetting = new Setting(containerEl)
-            .setName("Codex runtime: checking...")
-            .setDesc("Checking whether the Codex runtime is available...");
-        const applyCodexStatus = (diagnostics: CodexRuntimeDiagnostics) => {
-            const presentation = getCodexRuntimeStatusPresentation(diagnostics);
-            codexStatusSetting.setName(presentation.title);
-            codexStatusSetting.setDesc(presentation.description);
-        };
-        const refreshCodexStatus = async () => {
-            const refreshToken = ++this.codexStatusRefreshToken;
-            applyCodexStatus(createCheckingCodexRuntimeDiagnostics());
-            try {
-                const selection = await this.plugin.resolveAgentRuntimeSelection();
-                if (refreshToken !== this.codexStatusRefreshToken) {
-                    return;
-                }
+        const isDesktopWithFilesystem = this.app.vault.adapter instanceof FileSystemAdapter;
+        let localDiagnostics: CodexRuntimeDiagnostics = createCheckingCodexRuntimeDiagnostics();
+        let runtimeSelection: AgentRuntimeSelection = this.resolveRuntimeSelection(
+            localDiagnostics,
+            isDesktopWithFilesystem,
+        );
+        let localRuntimeButton: ButtonComponent | null = null;
+        let remoteRuntimeButton: ButtonComponent | null = null;
+        let recheckRuntimeButton: ButtonComponent | null = null;
 
-                const presentation = getCodexRuntimeStatusPresentationForSelection(selection);
-                codexStatusSetting.setName(presentation.title);
-                codexStatusSetting.setDesc(presentation.description);
-            } catch {
-                const diagnostics = await this.plugin.getCodexRuntimeDiagnostics();
-                if (refreshToken !== this.codexStatusRefreshToken) {
-                    return;
-                }
+        const preferredRuntimeSetting = new Setting(containerEl)
+            .setName("Preferred runtime")
+            .setDesc("Checking runtime availability...");
 
-                applyCodexStatus(diagnostics);
+        const getDisplayedRuntimeMode = (): "local" | "remote" => {
+            const storedMode = this.plugin.getAgentRuntimeMode();
+            if (storedMode === "local" || storedMode === "remote") {
+                return storedMode;
             }
-        };
-        codexStatusSetting.addButton((button) => {
-            button
-                .setButtonText("Re-check")
-                .onClick(async () => {
-                    await refreshCodexStatus();
-                });
 
-            // Obsidian can land initial focus on the first settings action button.
-            // Clear that one-time autofocus so the row does not render as highlighted on open.
+            return runtimeSelection.kind === "resolved" && runtimeSelection.runtime === "openclaw-acp"
+                ? "remote"
+                : "local";
+        };
+        const buildRuntimeSelectionDescription = (): string => {
+            const storedMode = this.plugin.getAgentRuntimeMode();
+            if (storedMode === "auto") {
+                const activeLabel = getDisplayedRuntimeMode() === "remote" ? "Remote" : "Local";
+                if (runtimeSelection.kind === "resolved") {
+                    return `Automatic mode currently resolves to ${activeLabel}. Choose one below to make it explicit.`;
+                }
+
+                return `Automatic mode is currently blocked. ${runtimeSelection.notice}`;
+            }
+
+            return runtimeSelection.kind === "resolved"
+                ? runtimeSelection.ownershipMessage
+                : runtimeSelection.notice;
+        };
+        const updateRuntimeButton = (
+            button: ButtonComponent | null,
+            mode: "local" | "remote",
+            presentation: RuntimeOptionStatusPresentation,
+        ): void => {
+            if (!button) {
+                return;
+            }
+
+            const selected = getDisplayedRuntimeMode() === mode;
+            button.setButtonText(presentation.label);
+            button.setTooltip(presentation.description);
+            button.buttonEl.classList.toggle("mod-cta", selected);
+            button.buttonEl.setAttribute("aria-pressed", selected ? "true" : "false");
+        };
+        const renderRuntimeSetting = (): void => {
+            preferredRuntimeSetting.setDesc(buildRuntimeSelectionDescription());
+            updateRuntimeButton(
+                localRuntimeButton,
+                "local",
+                getLocalRuntimeOptionStatusPresentation(localDiagnostics),
+            );
+            updateRuntimeButton(
+                remoteRuntimeButton,
+                "remote",
+                getRemoteRuntimeOptionStatusPresentation(this.plugin.getRemoteRuntimeAvailability()),
+            );
+        };
+        const setRuntimeButtonsDisabled = (disabled: boolean): void => {
+            localRuntimeButton?.setDisabled(disabled);
+            remoteRuntimeButton?.setDisabled(disabled);
+            recheckRuntimeButton?.setDisabled(disabled);
+        };
+        const blurIfAutoFocused = (button: ButtonComponent): void => {
             window.setTimeout(() => {
                 if (document.activeElement === button.buttonEl) {
                     button.buttonEl.blur();
                 }
             }, 0);
+        };
+        const refreshRuntimeSetting = async () => {
+            const refreshToken = ++this.codexStatusRefreshToken;
+            localDiagnostics = createCheckingCodexRuntimeDiagnostics();
+            runtimeSelection = this.resolveRuntimeSelection(localDiagnostics, isDesktopWithFilesystem);
+            renderRuntimeSetting();
+            try {
+                localDiagnostics = await this.plugin.getCodexRuntimeDiagnostics();
+                if (refreshToken !== this.codexStatusRefreshToken) {
+                    return;
+                }
+            } catch {
+                if (refreshToken !== this.codexStatusRefreshToken) {
+                    return;
+                }
+                localDiagnostics = {
+                    status: "unavailable",
+                    message: "Codex could not be launched from this Obsidian environment.",
+                };
+            }
+            runtimeSelection = this.resolveRuntimeSelection(localDiagnostics, isDesktopWithFilesystem);
+            renderRuntimeSetting();
+        };
+        const persistRuntimeMode = async (mode: "local" | "remote") => {
+            setRuntimeButtonsDisabled(true);
+            try {
+                await this.plugin.setAgentRuntimeMode(mode);
+                runtimeSelection = this.resolveRuntimeSelection(localDiagnostics, isDesktopWithFilesystem);
+                renderRuntimeSetting();
+            } finally {
+                setRuntimeButtonsDisabled(false);
+            }
+        };
+
+        preferredRuntimeSetting.addButton((button) => {
+            localRuntimeButton = button;
+            button.onClick(async () => {
+                await persistRuntimeMode("local");
+            });
+            blurIfAutoFocused(button);
         });
-        void refreshCodexStatus();
+        preferredRuntimeSetting.addButton((button) => {
+            remoteRuntimeButton = button;
+            button.onClick(async () => {
+                await persistRuntimeMode("remote");
+            });
+        });
+        preferredRuntimeSetting.addButton((button) => {
+            recheckRuntimeButton = button;
+            button
+                .setButtonText("Re-check")
+                .onClick(async () => {
+                    setRuntimeButtonsDisabled(true);
+                    try {
+                        await refreshRuntimeSetting();
+                    } finally {
+                        setRuntimeButtonsDisabled(false);
+                    }
+                });
+        });
+        renderRuntimeSetting();
+        void refreshRuntimeSetting();
 
         const hasRemoteBridgeConfig = !!this.plugin.getRemoteRuntimeBaseUrl() || !!this.plugin.getRemoteRuntimeBearerToken();
         const remoteBridgeDetails = containerEl.createEl("details");
-        if (hasRemoteBridgeConfig) {
+        if (hasRemoteBridgeConfig || this.plugin.getAgentRuntimeMode() === "remote") {
             remoteBridgeDetails.open = true;
         }
 
@@ -113,12 +220,14 @@ export default class SideNote2SettingTab extends PluginSettingTab {
                     .onChange(async (value) => {
                         await this.plugin.setRemoteRuntimeBaseUrl(value);
                         text.setValue(this.plugin.getRemoteRuntimeBaseUrl());
+                        runtimeSelection = this.resolveRuntimeSelection(localDiagnostics, isDesktopWithFilesystem);
+                        renderRuntimeSetting();
                     })
             );
 
         new Setting(remoteBridgeDetails)
             .setName("Remote bridge token")
-            .setDesc("Stored only on this device. For developer-managed remote testing only.")
+            .setDesc("Stored only on this device.")
             .addText((text) => {
                 text.inputEl.type = "password";
                 text
@@ -127,12 +236,13 @@ export default class SideNote2SettingTab extends PluginSettingTab {
                     .onChange(async (value) => {
                         await this.plugin.setRemoteRuntimeBearerToken(value);
                         text.setValue(this.plugin.getRemoteRuntimeBearerToken());
+                        runtimeSelection = this.resolveRuntimeSelection(localDiagnostics, isDesktopWithFilesystem);
+                        renderRuntimeSetting();
                     });
             });
 
         new Setting(remoteBridgeDetails)
             .setName("Test remote bridge")
-            .setDesc("Checks the bridge from inside Obsidian on this device.")
             .addButton((button) =>
                 button
                     .setButtonText("Test connection")
@@ -185,5 +295,18 @@ export default class SideNote2SettingTab extends PluginSettingTab {
                         text.setValue(this.plugin.settings.indexHeaderImageCaption);
                     })
             );
+    }
+
+    private resolveRuntimeSelection(
+        localDiagnostics: CodexRuntimeDiagnostics,
+        isDesktopWithFilesystem: boolean,
+    ): AgentRuntimeSelection {
+        return resolveAgentRuntimeSelection({
+            modePreference: this.plugin.getAgentRuntimeMode(),
+            isDesktopWithFilesystem,
+            localDiagnostics,
+            remoteRuntimeBaseUrl: this.plugin.getRemoteRuntimeBaseUrl(),
+            remoteRuntimeBearerToken: this.plugin.getRemoteRuntimeBearerToken(),
+        });
     }
 }

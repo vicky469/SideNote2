@@ -64,6 +64,7 @@ export interface CommentAgentHost {
         },
         options?: {
             insertAfterCommentId?: string;
+            alwaysInsertAfterTarget?: boolean;
             skipCommentViewRefresh?: boolean;
         },
     ): Promise<boolean>;
@@ -485,6 +486,7 @@ export class CommentAgentController {
                 timestamp: startedAt,
             }, {
                 insertAfterCommentId: queuedRun.triggerEntryId,
+                alwaysInsertAfterTarget: true,
                 skipCommentViewRefresh: true,
             });
             if (!appended) {

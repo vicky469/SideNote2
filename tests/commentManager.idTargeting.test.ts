@@ -164,6 +164,12 @@ test("CommentManager reorders child entries only within their parent thread", ()
         ["thread-1", "entry-4", "entry-2", "entry-3"],
     );
 
+    assert.equal(manager.reorderThreadEntries("thread-1", "entry-3", "thread-1", "after"), true);
+    assert.deepEqual(
+        manager.getThreadById("thread-1")?.entries.map((entry) => entry.id),
+        ["thread-1", "entry-3", "entry-4", "entry-2"],
+    );
+
     assert.equal(manager.reorderThreadEntries("thread-1", "thread-1", "entry-2", "before"), false);
     assert.equal(manager.reorderThreadEntries("thread-1", "entry-4", "thread-1", "before"), false);
 });
