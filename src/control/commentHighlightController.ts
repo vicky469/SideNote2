@@ -119,11 +119,55 @@ export interface CommentHighlightHost {
     log?(level: "info" | "warn" | "error", area: string, event: string, payload?: Record<string, unknown>): Promise<void>;
 }
 
+interface PreviewManagedSectionStartLineCacheEntry {
+    fileMtime: number;
+    value: number | null;
+    pending: Promise<number | null> | null;
+}
+
 export class CommentHighlightController {
     constructor(private readonly host: CommentHighlightHost) {}
 
     private readonly indexPreviewLinkSelector = "a.sidenote2-index-comment-link[data-sidenote2-comment-url]";
     private readonly indexPreviewFileHeadingSelector = ".sidenote2-index-heading-label[title]";
+    private readonly previewManagedSectionStartLineCache =
+        new Map<string, PreviewManagedSectionStartLineCacheEntry>();
+
+    private async getPreviewManagedSectionStartLine(file: TFile): Promise<number | null> {
+        const cached = this.previewManagedSectionStartLineCache.get(file.path);
+        const fileMtime = file.stat.mtime;
+        if (cached?.fileMtime === fileMtime) {
+            return cached.pending ?? cached.value;
+        }
+
+        const pending = this.host.getCurrentNoteContent(file)
+            .then((noteContent) => getManagedSectionStartLine(noteContent))
+            .then((value) => {
+                const current = this.previewManagedSectionStartLineCache.get(file.path);
+                if (current?.pending === pending) {
+                    this.previewManagedSectionStartLineCache.set(file.path, {
+                        fileMtime,
+                        value,
+                        pending: null,
+                    });
+                }
+                return value;
+            })
+            .catch((error) => {
+                const current = this.previewManagedSectionStartLineCache.get(file.path);
+                if (current?.pending === pending) {
+                    this.previewManagedSectionStartLineCache.delete(file.path);
+                }
+                throw error;
+            });
+
+        this.previewManagedSectionStartLineCache.set(file.path, {
+            fileMtime,
+            value: null,
+            pending,
+        });
+        return pending;
+    }
 
     private findIndexMarkdownViewForEventTarget(target: EventTarget | null): MarkdownView | null {
         if (!(target instanceof Node)) {
@@ -712,7 +756,15 @@ export class CommentHighlightController {
                     this.syncScheduled = false;
                 }
 
-                update(_update: ViewUpdate) {
+                update(update: ViewUpdate) {
+                    if (
+                        !update.docChanged
+                        && !update.selectionSet
+                        && update.transactions.length === 0
+                    ) {
+                        return;
+                    }
+
                     this.scheduleManagedBlockSync();
                 }
 
@@ -774,7 +826,6 @@ export class CommentHighlightController {
                 update(update: ViewUpdate) {
                     if (
                         update.docChanged ||
-                        update.viewportChanged ||
                         update.transactions.some((tr) =>
                             tr.effects.some((effect) => effect.is(forceHighlightRefreshEffect))
                         )
@@ -1018,8 +1069,7 @@ export class CommentHighlightController {
 
         const file = this.host.getMarkdownFileByPath(context.sourcePath);
         if (file) {
-            const noteContent = await this.host.getCurrentNoteContent(file);
-            const managedSectionStartLine = getManagedSectionStartLine(noteContent);
+            const managedSectionStartLine = await this.getPreviewManagedSectionStartLine(file);
             if (managedSectionStartLine !== null && sectionInfo.lineStart >= managedSectionStartLine) {
                 element.remove();
                 return;
