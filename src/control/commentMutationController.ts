@@ -598,6 +598,10 @@ export class CommentMutationController {
             this.host.showNotice("Choose a different parent side note.");
             return false;
         }
+        if (targetThread.deletedAt || targetThread.resolved) {
+            this.host.showNotice("Choose an active parent side note.");
+            return false;
+        }
         if (sourceThread.filePath !== targetThread.filePath || sourceThread.filePath !== latestTarget.file.path) {
             this.host.showNotice("Nested side notes can only move within the same file.");
             return false;

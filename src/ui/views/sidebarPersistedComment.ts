@@ -116,7 +116,6 @@ export interface SidebarPersistedCommentHost {
     setShowNestedCommentsForThread(threadId: string, showNestedComments: boolean): void;
     resolveComment(commentId: string): Promise<boolean> | Promise<void> | boolean | void;
     unresolveComment(commentId: string): Promise<boolean> | Promise<void> | boolean | void;
-    moveCommentEntry(commentId: string, sourceThreadId: string, sourceFilePath: string): void;
     moveCommentThread(threadId: string, sourceFilePath: string): void;
     restoreComment(commentId: string): Promise<boolean> | Promise<void> | boolean | void;
     startEditDraft(commentId: string, hostFilePath: string | null): void;
@@ -1171,18 +1170,46 @@ function renderReorderHandle(
     threadId: string,
     host: SidebarPersistedCommentHost,
 ): void {
-    const handleEl = actionsEl.createDiv("sidenote2-comment-drag-handle");
+    const handleEl = actionsEl.createEl("button", {
+        cls: "clickable-icon sidenote2-comment-action-button sidenote2-comment-drag-handle",
+    });
+    attachSidebarActionButtonInteractions(handleEl, host);
+    handleEl.setAttribute("type", "button");
     handleEl.setAttribute("draggable", "true");
-    handleEl.setAttribute("aria-hidden", "true");
+    handleEl.setAttribute("aria-label", "Drag to reorder");
     handleEl.setAttribute("data-sidenote2-drag-kind", "thread");
     handleEl.setAttribute("data-sidenote2-thread-id", threadId);
-    handleEl.setAttribute("title", "Drag to reorder page notes");
 
-    const stopPropagation = (event: Event) => {
+    const blockClick = (event: Event) => {
+        event.preventDefault();
         event.stopPropagation();
     };
-    handleEl.addEventListener("mousedown", stopPropagation);
-    handleEl.addEventListener("click", stopPropagation);
+    handleEl.addEventListener("click", blockClick);
+    host.setIcon(handleEl, "grip-vertical");
+}
+
+function renderEntryMoveHandle(
+    actionsEl: HTMLDivElement,
+    entryId: string,
+    sourceThreadId: string,
+    host: SidebarPersistedCommentHost,
+): void {
+    const handleEl = actionsEl.createEl("button", {
+        cls: "clickable-icon sidenote2-comment-action-button sidenote2-comment-drag-handle",
+    });
+    attachSidebarActionButtonInteractions(handleEl, host);
+    handleEl.setAttribute("type", "button");
+    handleEl.setAttribute("draggable", "true");
+    handleEl.setAttribute("aria-label", "Drag to reorder");
+    handleEl.setAttribute("data-sidenote2-drag-kind", "thread-entry");
+    handleEl.setAttribute("data-sidenote2-thread-id", sourceThreadId);
+    handleEl.setAttribute("data-sidenote2-entry-id", entryId);
+
+    const blockClick = (event: Event) => {
+        event.preventDefault();
+        event.stopPropagation();
+    };
+    handleEl.addEventListener("click", blockClick);
     host.setIcon(handleEl, "grip-vertical");
 }
 
@@ -1497,6 +1524,9 @@ function renderStoredThreadEntry(
         if (host.showSourceRedirectAction && !entryComment.deletedAt && !thread.deletedAt) {
             renderSourceRedirectButton(entryActionsEl, entryComment, "Open source note", "obsidian-external-link", host);
         }
+        if (host.enableChildEntryMove && !entryComment.deletedAt && !thread.deletedAt) {
+            renderEntryMoveHandle(entryActionsEl, entryComment.id, thread.id, host);
+        }
         const entryAuthor = resolveSidebarCommentAuthor(entryComment.id, host.threadAgentRuns, host.currentUserLabel);
         const entryAgentRun = getAgentRunByOutputEntryId(host.threadAgentRuns, entryComment.id);
         const entryRetryRun = getRetryableAgentRunForSidebarComment(entryComment.id, host.threadAgentRuns);
@@ -1514,15 +1544,7 @@ function renderStoredThreadEntry(
                 showAddEntryAction: !entryComment.deletedAt && !thread.deletedAt,
                 showRetryAction: !!entryRetryRun && !entryComment.deletedAt && !thread.deletedAt,
                 disableRetryAction: isRetryableAgentRunBusy(entryRetryRun),
-                moveAction: host.enableChildEntryMove && !entryComment.deletedAt && !thread.deletedAt
-                    ? {
-                        ariaLabel: "Move under another side note",
-                        icon: "arrow-right-left",
-                        onMove: () => {
-                            host.moveCommentEntry(entryComment.id, thread.id, thread.filePath);
-                        },
-                    }
-                    : null,
+                moveAction: null,
                 insertAction: entryInsertMarkdown
                     ? {
                         markdown: entryInsertMarkdown,
@@ -1609,9 +1631,6 @@ export async function renderPersistedCommentCard(
     const commentEl = renderedParent.commentEl;
     const actionsEl = renderedParent.actionsEl;
     renderTasks.push(renderedParent.renderTask);
-    if (isDraggablePageThread && !parentEditDraft) {
-        renderReorderHandle(actionsEl, thread.id, host);
-    }
     if (!parentEditDraft) {
         const parentRetryRun = getRetryableAgentRunForSidebarComment(comment.id, host.threadAgentRuns);
         const parentInsertMarkdown = !comment.deletedAt && !thread.deletedAt
@@ -1662,6 +1681,9 @@ export async function renderPersistedCommentCard(
                 presentation.redirectHint.icon,
                 host,
             );
+        }
+        if (isDraggablePageThread) {
+            renderReorderHandle(actionsEl, thread.id, host);
         }
         if (presentation.reanchorAction && !comment.deletedAt) {
             renderThreadReanchorAction(commentEl, thread.id, presentation.reanchorAction.label, host);

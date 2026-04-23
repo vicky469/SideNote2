@@ -31,7 +31,6 @@ import SideNoteFileFilterModal from "../modals/SideNoteFileFilterModal";
 import SideNoteLinkSuggestModal from "../modals/SideNoteLinkSuggestModal";
 import SideNoteOpenFileSuggestModal from "../modals/SideNoteOpenFileSuggestModal";
 import SideNoteReferenceSuggestModal from "../modals/SideNoteReferenceSuggestModal";
-import SideNoteThreadSuggestModal from "../modals/SideNoteThreadSuggestModal";
 import SideNoteTagSuggestModal from "../modals/SideNoteTagSuggestModal";
 import { SIDE_NOTE2_ICON_ID } from "../sideNote2Icon";
 import { copyTextToClipboard } from "../copyTextToClipboard";
@@ -134,10 +133,18 @@ function parseSidebarPrimaryMode(value: unknown): SidebarPrimaryMode | null {
     return normalizeSidebarPrimaryMode(value);
 }
 
-type SidebarReorderDragState = {
-    filePath: string;
-    threadId: string;
-};
+type SidebarReorderDragState =
+    | {
+        kind: "thread";
+        filePath: string;
+        threadId: string;
+    }
+    | {
+        kind: "thread-entry";
+        entryId: string;
+        filePath: string;
+        sourceThreadId: string;
+    };
 
 type NoteSidebarShell = {
     filePath: string;
@@ -1189,6 +1196,7 @@ export default class SideNote2View extends ItemView {
             }
 
             const commentsBody = this.renderCommentsList(commentsContainer);
+            this.setupPageThreadReorderInteractions(commentsBody, file.path);
             const renderPromises = renderedItems.map(async (item) => {
                 if (item.kind === "draft") {
                     this.renderDraftComment(commentsBody, item.draft);
@@ -2751,30 +2759,6 @@ export default class SideNote2View extends ItemView {
         }).open();
     }
 
-    private openMoveCommentEntryModal(entryId: string, sourceThreadId: string, sourceFilePath: string): void {
-        const availableThreads = this.plugin.getThreadsForFile(sourceFilePath)
-            .filter((thread) =>
-                thread.id !== sourceThreadId
-                && !thread.deletedAt
-                && thread.resolved !== true
-            );
-        if (!availableThreads.length) {
-            new Notice("No other parent side notes are available in this file.");
-            return;
-        }
-
-        new SideNoteThreadSuggestModal(this.app, {
-            availableThreads,
-            emptyStateText: "No other parent side notes are available in this file.",
-            onChooseThread: async (targetThread) => {
-                await this.moveSidebarCommentEntryToThread(entryId, targetThread.id);
-            },
-            onCloseModal: () => {},
-            placeholder: "Find a parent side note",
-            title: "Move nested side note",
-        }).open();
-    }
-
     private getOpenMarkdownFileInsertTargets(): OpenMarkdownFileInsertTarget[] {
         const workspace = this.app.workspace;
         const activeLeaf = workspace.getActiveViewOfType(MarkdownView)?.leaf ?? null;
@@ -2935,7 +2919,7 @@ export default class SideNote2View extends ItemView {
             showBookmarkAndPinControls: !isIndexView,
             showDeletedComments: this.plugin.shouldShowDeletedComments(),
             enablePageThreadReorder,
-            enableChildEntryMove: !isIndexView,
+            enableChildEntryMove: true,
             enableSoftDeleteActions: !isIndexView,
             showNestedComments: this.plugin.shouldShowNestedCommentsForThread(thread.id),
             showNestedCommentsByDefault: this.plugin.shouldShowNestedComments(),
@@ -2986,9 +2970,6 @@ export default class SideNote2View extends ItemView {
             },
             resolveComment: (commentId) => this.setSidebarCommentResolvedState(commentId, true),
             unresolveComment: (commentId) => this.setSidebarCommentResolvedState(commentId, false),
-            moveCommentEntry: (commentId, sourceThreadId, sourceFilePath) => {
-                this.openMoveCommentEntryModal(commentId, sourceThreadId, sourceFilePath);
-            },
             moveCommentThread: (threadId, sourceFilePath) => {
                 this.openMoveCommentThreadModal(threadId, sourceFilePath);
             },
@@ -3035,7 +3016,7 @@ export default class SideNote2View extends ItemView {
 
     private setupPageThreadReorderInteractions(commentsBody: HTMLDivElement, filePath: string): void {
         commentsBody.addEventListener("dragstart", (event: DragEvent) => {
-            const dragState = this.getPageThreadDragStateFromEventTarget(event.target, filePath);
+            const dragState = this.getSidebarDragStateFromEventTarget(event.target, filePath);
             if (!dragState) {
                 return;
             }
@@ -3046,13 +3027,19 @@ export default class SideNote2View extends ItemView {
             this.reorderDragSourceEl?.addClass("is-drag-source");
             if (event.dataTransfer) {
                 event.dataTransfer.effectAllowed = "move";
-                event.dataTransfer.setData("text/plain", dragState.threadId);
+                event.dataTransfer.setData(
+                    "text/plain",
+                    dragState.kind === "thread"
+                        ? dragState.threadId
+                        : dragState.entryId,
+                );
             }
         });
 
         commentsBody.addEventListener("dragover", (event: DragEvent) => {
-            const dropTarget = this.resolvePageThreadDropTarget(event);
-            if (!dropTarget) {
+            const threadDropTarget = this.resolvePageThreadDropTarget(event);
+            const entryDropTarget = this.resolveChildEntryMoveDropTarget(event);
+            if (!threadDropTarget && !entryDropTarget) {
                 this.clearReorderDropIndicator();
                 return;
             }
@@ -3061,25 +3048,38 @@ export default class SideNote2View extends ItemView {
             if (event.dataTransfer) {
                 event.dataTransfer.dropEffect = "move";
             }
-            this.setReorderDropIndicator(dropTarget.element, dropTarget.placement);
+            if (threadDropTarget) {
+                this.setReorderDropIndicator(threadDropTarget.element, threadDropTarget.placement);
+                return;
+            }
+            if (entryDropTarget) {
+                this.setReorderDropIndicator(entryDropTarget.element, "after");
+            }
         });
 
         commentsBody.addEventListener("drop", (event: DragEvent) => {
             const dragState = this.reorderDragState;
-            const dropTarget = this.resolvePageThreadDropTarget(event);
+            const threadDropTarget = this.resolvePageThreadDropTarget(event);
+            const entryDropTarget = this.resolveChildEntryMoveDropTarget(event);
             this.clearReorderDropIndicator();
-            if (!dragState || !dropTarget) {
+            if (!dragState || (!threadDropTarget && !entryDropTarget)) {
                 return;
             }
 
             event.preventDefault();
             this.clearReorderDragState();
-            void this.plugin.reorderThreadsForFile(
-                dragState.filePath,
-                dragState.threadId,
-                dropTarget.targetId,
-                dropTarget.placement,
-            );
+            if (dragState.kind === "thread" && threadDropTarget) {
+                void this.plugin.reorderThreadsForFile(
+                    dragState.filePath,
+                    dragState.threadId,
+                    threadDropTarget.targetId,
+                    threadDropTarget.placement,
+                );
+                return;
+            }
+            if (dragState.kind === "thread-entry" && entryDropTarget) {
+                void this.moveSidebarCommentEntryToThread(dragState.entryId, entryDropTarget.targetThreadId);
+            }
         });
 
         commentsBody.addEventListener("dragend", () => {
@@ -3093,7 +3093,7 @@ export default class SideNote2View extends ItemView {
             : null;
     }
 
-    private getPageThreadDragStateFromEventTarget(
+    private getSidebarDragStateFromEventTarget(
         target: EventTarget | null,
         filePath: string,
     ): SidebarReorderDragState | null {
@@ -3101,19 +3101,44 @@ export default class SideNote2View extends ItemView {
             return null;
         }
 
-        const handleEl = target.closest("[data-sidenote2-drag-kind='thread']");
+        const handleEl = target.closest("[data-sidenote2-drag-kind]");
         if (!(handleEl instanceof HTMLElement)) {
             return null;
         }
 
-        const threadId = handleEl.getAttribute("data-sidenote2-thread-id");
-        if (!threadId) {
+        const dragKind = handleEl.getAttribute("data-sidenote2-drag-kind");
+        if (dragKind === "thread") {
+            const threadId = handleEl.getAttribute("data-sidenote2-thread-id");
+            if (!threadId) {
+                return null;
+            }
+
+            return {
+                kind: "thread",
+                filePath,
+                threadId,
+            };
+        }
+
+        if (dragKind !== "thread-entry") {
+            return null;
+        }
+
+        const sourceThreadId = handleEl.getAttribute("data-sidenote2-thread-id");
+        const entryId = handleEl.getAttribute("data-sidenote2-entry-id");
+        if (!sourceThreadId || !entryId) {
+            return null;
+        }
+        const sourceThread = this.plugin.getThreadById(sourceThreadId);
+        if (!sourceThread) {
             return null;
         }
 
         return {
-            filePath,
-            threadId,
+            kind: "thread-entry",
+            entryId,
+            filePath: sourceThread.filePath,
+            sourceThreadId,
         };
     }
 
@@ -3123,7 +3148,7 @@ export default class SideNote2View extends ItemView {
         placement: ReorderPlacement;
     } | null {
         const dragState = this.reorderDragState;
-        if (!dragState || !(event.target instanceof Element)) {
+        if (!dragState || dragState.kind !== "thread" || !(event.target instanceof Element)) {
             return null;
         }
 
@@ -3145,6 +3170,44 @@ export default class SideNote2View extends ItemView {
             element: targetCommentEl,
             targetId: targetThreadId,
             placement: this.resolveReorderPlacement(threadStackEl, event.clientY),
+        };
+    }
+
+    private resolveChildEntryMoveDropTarget(event: DragEvent): {
+        element: HTMLElement;
+        targetThreadId: string;
+    } | null {
+        const dragState = this.reorderDragState;
+        if (!dragState || dragState.kind !== "thread-entry" || !(event.target instanceof Element)) {
+            return null;
+        }
+
+        const threadStackEl = event.target.closest(".sidenote2-thread-stack");
+        if (!(threadStackEl instanceof HTMLElement)) {
+            return null;
+        }
+
+        const targetThreadId = threadStackEl.getAttribute("data-thread-id");
+        const targetCommentEl = threadStackEl.firstElementChild;
+        if (!targetThreadId || targetThreadId === dragState.sourceThreadId) {
+            return null;
+        }
+        const targetThread = this.plugin.getThreadById(targetThreadId);
+        if (
+            !targetThread
+            || targetThread.deletedAt
+            || targetThread.resolved
+            || targetThread.filePath !== dragState.filePath
+        ) {
+            return null;
+        }
+        if (!(targetCommentEl instanceof HTMLElement)) {
+            return null;
+        }
+
+        return {
+            element: targetCommentEl,
+            targetThreadId,
         };
     }
 

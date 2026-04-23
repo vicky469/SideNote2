@@ -1667,23 +1667,11 @@ button.sidenote2-comment-pin-indicator:focus-visible {
 }
 
 .sidenote2-comment-drag-handle {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    width: 18px;
-    height: 18px;
-    color: var(--icon-color, var(--text-faint, var(--text-muted)));
     cursor: grab;
-    opacity: 0.75;
 }
 
 .sidenote2-comment-drag-handle:active {
     cursor: grabbing;
-}
-
-.sidenote2-comment-drag-handle .svg-icon {
-    width: 14px;
-    height: 14px;
 }
 
 .sidenote2-comment-item:not(.sidenote2-agent-stream-item) .sidenote2-comment-actions {

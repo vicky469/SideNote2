@@ -1311,6 +1311,34 @@ test("comment mutation controller rejects moving a child entry onto the same par
     assert.deepEqual(host.notices, ["Choose a different parent side note."]);
 });
 
+test("comment mutation controller rejects moving a child entry under a resolved parent thread", async () => {
+    const source = createComment({
+        id: "thread-1",
+        filePath: "Folder/Source.md",
+    });
+    const target = createComment({
+        id: "thread-2",
+        filePath: "Folder/Source.md",
+        resolved: true,
+    });
+    const host = createHost({
+        knownComments: [source, target],
+        loadedComments: [source, target],
+    });
+    host.manager.appendEntry(source.id, {
+        id: "entry-2",
+        body: "Child reply",
+        timestamp: 400,
+    });
+
+    const moved = await host.controller.moveCommentEntryToThread("entry-2", target.id);
+
+    assert.equal(moved, false);
+    assert.deepEqual(host.loadedFiles, []);
+    assert.deepEqual(host.persistedFiles, []);
+    assert.deepEqual(host.notices, ["Choose an active parent side note."]);
+});
+
 test("comment mutation controller rejects moving a thread into the same file", async () => {
     const comment = createComment({
         id: "thread-1",
