@@ -10,6 +10,7 @@ import {
     buildPersistedThreadEntryPresentation,
     formatSidebarCommentIndexLeadLabel,
     formatSidebarCommentSourceFileLabel,
+    getDeletedRenderableThreadEntries,
     getInsertableSidebarCommentMarkdown,
     getRetryableAgentRunForSidebarComment,
     isRetryableAgentRunBusy,
@@ -752,6 +753,40 @@ test("getRenderableThreadEntries keeps the persisted agent output entry visible 
         }),
         thread.entries,
     );
+});
+
+test("getDeletedRenderableThreadEntries keeps only deleted child entries for deleted mode", () => {
+    const thread = createThreadWithEntries({
+        entries: [
+            { id: "entry-1", body: "Parent", timestamp: 100 },
+            { id: "entry-2", body: "Deleted child", timestamp: 200, deletedAt: 250 },
+            { id: "entry-3", body: "Active child", timestamp: 300 },
+        ],
+        createdAt: 100,
+        updatedAt: 300,
+    });
+
+    assert.deepEqual(getDeletedRenderableThreadEntries(thread), {
+        parentEntry: null,
+        childEntries: [thread.entries[1]],
+    });
+});
+
+test("getDeletedRenderableThreadEntries keeps the deleted root only for a deleted thread", () => {
+    const thread = createThreadWithEntries({
+        deletedAt: 250,
+        entries: [
+            { id: "entry-1", body: "Parent", timestamp: 100, deletedAt: 250 },
+            { id: "entry-2", body: "Deleted child", timestamp: 200, deletedAt: 240 },
+        ],
+        createdAt: 100,
+        updatedAt: 250,
+    });
+
+    assert.deepEqual(getDeletedRenderableThreadEntries(thread), {
+        parentEntry: thread.entries[0],
+        childEntries: [],
+    });
 });
 
 test("formatSidebarCommentSourceFileLabel keeps the basename without md, even for long paths", () => {
