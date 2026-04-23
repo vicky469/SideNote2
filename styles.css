@@ -1078,6 +1078,12 @@ button.sidenote2-tab-button.sidenote2-tab-button--active {
     align-self: flex-start;
 }
 
+.sidenote2-comment-item.page-note .sidenote2-comment-meta-indicators {
+    flex-direction: row;
+    align-items: center;
+    align-self: center;
+}
+
 .sidenote2-comment-meta-indicators .sidenote2-comment-header-indicator {
     width: 16px;
     height: 16px;
@@ -1090,11 +1096,11 @@ button.sidenote2-tab-button.sidenote2-tab-button--active {
 }
 
 .sidenote2-comment-bookmark-indicator {
-    color: var(--text-accent, var(--interactive-accent));
+    color: var(--text-faint, var(--text-muted));
 }
 
 .sidenote2-comment-pin-indicator {
-    color: var(--interactive-accent, var(--text-accent));
+    color: var(--text-faint, var(--text-muted));
 }
 
 button.sidenote2-comment-bookmark-indicator {
@@ -1118,9 +1124,17 @@ button.sidenote2-comment-bookmark-indicator:focus-visible {
     color: var(--interactive-accent-hover, var(--text-accent, var(--interactive-accent)));
 }
 
+button.sidenote2-comment-bookmark-indicator.is-active {
+    color: var(--text-accent, var(--interactive-accent));
+}
+
 button.sidenote2-comment-pin-indicator:hover,
 button.sidenote2-comment-pin-indicator:focus-visible {
     color: var(--interactive-accent-hover, var(--interactive-accent, var(--text-accent)));
+}
+
+button.sidenote2-comment-pin-indicator.is-active {
+    color: var(--interactive-accent, var(--text-accent));
 }
 
 .sidenote2-comment-header-indicator .svg-icon {
@@ -1681,11 +1695,19 @@ button.sidenote2-comment-pin-indicator:focus-visible {
     pointer-events: none;
 }
 
+.sidenote2-comment-item:not(.sidenote2-agent-stream-item) .sidenote2-comment-meta-toggle-control {
+    display: none;
+}
+
 .sidenote2-comment-item:not(.sidenote2-agent-stream-item).active .sidenote2-comment-actions {
     display: flex;
     opacity: 1;
     visibility: visible;
     pointer-events: auto;
+}
+
+.sidenote2-comment-item:not(.sidenote2-agent-stream-item).active .sidenote2-comment-meta-toggle-control {
+    display: inline-flex;
 }
 
 .sidenote2-comment-item:not(.sidenote2-agent-stream-item) .sidenote2-thread-footer-actions,

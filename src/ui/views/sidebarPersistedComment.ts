@@ -20,7 +20,6 @@ import {
     isSidebarCommentOpenBlockingTarget,
     shouldRefocusSidebarCommentContent,
     shouldActivateSidebarComment,
-    shouldOpenSidebarCommentOnDoubleClick,
 } from "./commentPointerAction";
 import {
     formatSidebarCommentMeta,
@@ -106,7 +105,6 @@ export interface SidebarPersistedCommentHost {
     renderMarkdown(markdown: string, container: HTMLElement, sourcePath: string): Promise<void>;
     openSidebarInternalLink(href: string, sourcePath: string, focusTarget: HTMLElement): Promise<void>;
     openSideNoteReference(url: string): Promise<void>;
-    activateComment(comment: Comment): Promise<void>;
     openCommentFromCard(comment: Comment): Promise<void>;
     openCommentInEditor(comment: Comment): Promise<void>;
     shareComment(comment: Comment): Promise<void>;
@@ -605,10 +603,17 @@ function attachSidebarCommentCardInteractions(
     comment: Comment,
     host: SidebarPersistedCommentHost,
 ): void {
-    const openCommentOnDoubleClick = (event: MouseEvent): boolean => {
+    const openCommentFromClick = (
+        event: MouseEvent,
+        clickedInsideCommentContent?: boolean,
+    ): boolean => {
         const target = host.getEventTargetElement(event.target);
-        if (!shouldOpenSidebarCommentOnDoubleClick({
+        const selection = window.getSelection();
+        if (!shouldActivateSidebarComment({
             clickedInteractiveElement: isSidebarCommentOpenBlockingTarget(target),
+            clickedInsideCommentContent: clickedInsideCommentContent ?? !!target?.closest(".sidenote2-comment-content"),
+            selection,
+            selectionInsideSidebarCommentContent: host.isSelectionInsideSidebarContent(selection),
         })) {
             return false;
         }
@@ -620,20 +625,8 @@ function attachSidebarCommentCardInteractions(
     };
 
     commentEl.addEventListener("click", (event: MouseEvent) => {
-        const target = host.getEventTargetElement(event.target);
-        const selection = window.getSelection();
-        if (!shouldActivateSidebarComment({
-            clickedInteractiveElement: isSidebarCommentOpenBlockingTarget(target),
-            clickedInsideCommentContent: !!target?.closest(".sidenote2-comment-content"),
-            selection,
-            selectionInsideSidebarCommentContent: host.isSelectionInsideSidebarContent(selection),
-        })) {
-            return;
-        }
-
-        void host.activateComment(comment);
+        openCommentFromClick(event);
     });
-    commentEl.addEventListener("dblclick", openCommentOnDoubleClick);
 
     const claimContentOwnership = (target: HTMLElement | null) => {
         host.claimSidebarInteractionOwnership(
@@ -648,29 +641,14 @@ function attachSidebarCommentCardInteractions(
 
     contentWrapper.addEventListener("mousedown", stopContentPointerPropagation);
     contentWrapper.addEventListener("mouseup", stopContentPointerPropagation);
-    contentWrapper.addEventListener("dblclick", (event: MouseEvent) => {
-        const target = host.getEventTargetElement(event.target);
-        claimContentOwnership(target);
-        if (!openCommentOnDoubleClick(event)) {
-            event.stopPropagation();
-        }
-    });
     contentWrapper.addEventListener("click", (event: MouseEvent) => {
         const target = host.getEventTargetElement(event.target);
         const link = target?.closest("a") as HTMLAnchorElement | null;
-        const selection = window.getSelection();
 
         claimContentOwnership(target);
         event.stopPropagation();
         if (!link) {
-            if (shouldActivateSidebarComment({
-                clickedInteractiveElement: isSidebarCommentOpenBlockingTarget(target),
-                clickedInsideCommentContent: false,
-                selection,
-                selectionInsideSidebarCommentContent: host.isSelectionInsideSidebarContent(selection),
-            })) {
-                void host.activateComment(comment);
-            }
+            openCommentFromClick(event, false);
             return;
         }
 
@@ -857,20 +835,26 @@ function renderSideNoteReferenceStateIndicator(
 function renderBookmarkStateIndicator(
     metaEl: HTMLElement,
     commentId: string,
+    isActive: boolean,
     host: SidebarPersistedCommentHost,
 ): void {
     const indicatorEl = metaEl.createEl("button", {
-        cls: "sidenote2-comment-header-indicator sidenote2-comment-bookmark-indicator is-interactive",
+        cls: [
+            "sidenote2-comment-header-indicator",
+            "sidenote2-comment-bookmark-indicator",
+            "sidenote2-comment-meta-toggle-control",
+            "is-interactive",
+            isActive ? "is-active" : "",
+        ].filter((value) => value.length > 0).join(" "),
     });
     attachSidebarActionButtonInteractions(indicatorEl, host);
     indicatorEl.setAttribute("type", "button");
-    indicatorEl.setAttribute("aria-label", "Remove bookmark");
-    indicatorEl.setAttribute("aria-pressed", "true");
-    indicatorEl.setAttribute("title", "Remove bookmark");
+    indicatorEl.setAttribute("aria-label", isActive ? "Remove bookmark" : "Mark as bookmark");
+    indicatorEl.setAttribute("aria-pressed", isActive ? "true" : "false");
     host.setIcon(indicatorEl, "bookmark");
     indicatorEl.onclick = async (event) => {
         await runSidebarPendingButtonAction(indicatorEl, host, event, async () => {
-            await host.setCommentBookmarkState(commentId, false);
+            await host.setCommentBookmarkState(commentId, !isActive);
         });
     };
 }
@@ -878,15 +862,22 @@ function renderBookmarkStateIndicator(
 function renderPinStateIndicator(
     metaEl: HTMLElement,
     threadId: string,
+    isActive: boolean,
     host: SidebarPersistedCommentHost,
 ): void {
     const indicatorEl = metaEl.createEl("button", {
-        cls: "sidenote2-comment-header-indicator sidenote2-comment-pin-indicator is-interactive",
+        cls: [
+            "sidenote2-comment-header-indicator",
+            "sidenote2-comment-pin-indicator",
+            "sidenote2-comment-meta-toggle-control",
+            "is-interactive",
+            isActive ? "is-active" : "",
+        ].filter((value) => value.length > 0).join(" "),
     });
     attachSidebarActionButtonInteractions(indicatorEl, host);
     indicatorEl.setAttribute("type", "button");
-    indicatorEl.setAttribute("aria-label", "Unpin this side note");
-    indicatorEl.setAttribute("aria-pressed", "true");
+    indicatorEl.setAttribute("aria-label", isActive ? "Unpin this side note" : "Pin this side note");
+    indicatorEl.setAttribute("aria-pressed", isActive ? "true" : "false");
     host.setIcon(indicatorEl, "pin");
     indicatorEl.onclick = async (event) => {
         await runSidebarPendingButtonAction(indicatorEl, host, event, async () => {
@@ -901,8 +892,12 @@ function renderCommentMeta(
     meta: Pick<BasePersistedCommentPresentation, "metaText" | "metaPreviewText">,
     host: SidebarPersistedCommentHost,
     options: {
-        showPinState?: boolean;
-        showBookmarkState?: boolean;
+        pinAction?: {
+            active: boolean;
+        } | null;
+        bookmarkAction?: {
+            active: boolean;
+        } | null;
         showSideNoteReferenceState?: boolean;
     } = {},
 ): void {
@@ -910,18 +905,18 @@ function renderCommentMeta(
         cls: "sidenote2-timestamp sidenote2-comment-meta",
     });
     const renderLeadingIndicators = () => {
-        if (!options.showPinState && !options.showBookmarkState && !options.showSideNoteReferenceState) {
+        if (!options.pinAction && !options.bookmarkAction && !options.showSideNoteReferenceState) {
             return;
         }
 
         const indicatorsEl = metaEl.createSpan({
             cls: "sidenote2-comment-meta-indicators",
         });
-        if (options.showPinState) {
-            renderPinStateIndicator(indicatorsEl, comment.id, host);
+        if (options.pinAction) {
+            renderPinStateIndicator(indicatorsEl, comment.id, options.pinAction.active, host);
         }
-        if (options.showBookmarkState) {
-            renderBookmarkStateIndicator(indicatorsEl, comment.id, host);
+        if (options.bookmarkAction) {
+            renderBookmarkStateIndicator(indicatorsEl, comment.id, options.bookmarkAction.active, host);
         }
         if (options.showSideNoteReferenceState) {
             renderSideNoteReferenceStateIndicator(indicatorsEl, host);
@@ -1010,59 +1005,6 @@ function renderEditButton(
             return;
         }
         host.startEditDraft(commentId, host.currentFilePath);
-    };
-}
-
-function renderBookmarkButton(
-    actionsEl: HTMLDivElement,
-    commentId: string,
-    isBookmark: boolean,
-    host: SidebarPersistedCommentHost,
-): void {
-    const presentation = buildPersistedCommentBookmarkActionPresentation({ isBookmark });
-    const bookmarkButton = actionsEl.createEl("button", {
-        cls: [
-            "clickable-icon",
-            "sidenote2-comment-action-button",
-            "sidenote2-comment-action-bookmark",
-            presentation.active ? "is-active" : "",
-        ].filter((value) => value.length > 0).join(" "),
-    });
-    attachSidebarActionButtonInteractions(bookmarkButton, host);
-    bookmarkButton.setAttribute("type", "button");
-    bookmarkButton.setAttribute("aria-label", presentation.ariaLabel);
-    bookmarkButton.setAttribute("aria-pressed", presentation.active ? "true" : "false");
-    host.setIcon(bookmarkButton, "bookmark");
-    bookmarkButton.onclick = async (event) => {
-        await runSidebarPendingButtonAction(bookmarkButton, host, event, async () => {
-            await host.setCommentBookmarkState(commentId, !presentation.active);
-        });
-    };
-}
-
-function renderPinButton(
-    actionsEl: HTMLDivElement,
-    threadId: string,
-    host: SidebarPersistedCommentHost,
-): void {
-    const presentation = buildPersistedCommentPinActionPresentation(host.isPinnedThread(threadId));
-    const pinButton = actionsEl.createEl("button", {
-        cls: [
-            "clickable-icon",
-            "sidenote2-comment-action-button",
-            "sidenote2-comment-action-pin",
-            presentation.active ? "is-active" : "",
-        ].filter((value) => value.length > 0).join(" "),
-    });
-    attachSidebarActionButtonInteractions(pinButton, host);
-    pinButton.setAttribute("type", "button");
-    pinButton.setAttribute("aria-label", presentation.ariaLabel);
-    pinButton.setAttribute("aria-pressed", presentation.active ? "true" : "false");
-    host.setIcon(pinButton, "pin");
-    pinButton.onclick = async (event) => {
-        await runSidebarPendingButtonAction(pinButton, host, event, async () => {
-            await host.togglePinnedThread(threadId);
-        });
     };
 }
 
@@ -1256,8 +1198,14 @@ function renderPersistedEntryCard(
         entryBody: string;
         presentation: BasePersistedCommentPresentation;
         host: SidebarPersistedCommentHost;
+        bookmarkAction?: {
+            active: boolean;
+        } | null;
         interactive?: boolean;
         inlineEditDraft?: DraftComment | null;
+        pinAction?: {
+            active: boolean;
+        } | null;
         showSideNoteReferenceState?: boolean;
     },
 ): {
@@ -1280,13 +1228,8 @@ function renderPersistedEntryCard(
     const headerEl = commentEl.createDiv("sidenote2-comment-header");
     const headerMainEl = headerEl.createDiv("sidenote2-comment-header-main");
     renderCommentMeta(headerMainEl, options.comment, options.presentation, options.host, {
-        showPinState: options.host.showBookmarkAndPinControls && shouldRenderPersistedCommentPinIndicator(
-            options.comment,
-            options.thread,
-            options.host.isPinnedThread(options.thread.id),
-        ),
-        showBookmarkState: options.host.showBookmarkAndPinControls
-            && shouldRenderPersistedCommentBookmarkIndicator(options.comment, options.thread),
+        pinAction: options.pinAction ?? null,
+        bookmarkAction: options.bookmarkAction ?? null,
         showSideNoteReferenceState: options.showSideNoteReferenceState ?? parsedEntryBody.references.length > 0,
     });
     const actionsEl = headerEl.createDiv("sidenote2-comment-actions");
@@ -1619,13 +1562,27 @@ export async function renderPersistedCommentCard(
     const parentEditDraft = host.editDraftComment?.id === comment.id
         ? host.editDraftComment
         : null;
+    const canShowHeaderBookmarkAndPinActions = host.showBookmarkAndPinControls
+        && comment.id === thread.id
+        && !comment.deletedAt
+        && !thread.deletedAt;
     const renderedParent = renderPersistedEntryCard(threadEl, {
         comment,
         thread,
         entryBody: entries[0]?.body || "",
         presentation,
         host,
+        bookmarkAction: canShowHeaderBookmarkAndPinActions
+            ? {
+                active: comment.isBookmark === true,
+            }
+            : null,
         inlineEditDraft: parentEditDraft,
+        pinAction: canShowHeaderBookmarkAndPinActions
+            ? {
+                active: host.isPinnedThread(thread.id),
+            }
+            : null,
         showSideNoteReferenceState: threadHasOutgoingSideNoteReferences,
     });
     const commentEl = renderedParent.commentEl;
@@ -1656,18 +1613,6 @@ export async function renderPersistedCommentCard(
                 });
             };
 
-            if (
-                host.showBookmarkAndPinControls
-                && shouldRenderPersistedCommentBookmarkAction(comment, thread)
-            ) {
-                renderBookmarkButton(actionsEl, thread.id, comment.isBookmark === true, host);
-            }
-            if (
-                host.showBookmarkAndPinControls
-                && shouldRenderPersistedCommentPinAction(comment, thread, host.isPinnedThread(thread.id))
-            ) {
-                renderPinButton(actionsEl, thread.id, host);
-            }
             renderEditButton(actionsEl, comment.id, host, "Edit side note");
             if (host.enableSoftDeleteActions) {
                 renderDeleteButton(actionsEl, comment.id, host, "Delete side note thread");
