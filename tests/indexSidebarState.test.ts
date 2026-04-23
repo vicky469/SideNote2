@@ -4,6 +4,7 @@ import { commentToThread, type Comment } from "../src/commentManager";
 import {
     filterIndexThreadsByExistingSourceFiles,
     scopeIndexThreadsByFilePaths,
+    shouldShowActiveIndexEmptyState,
     shouldShowIndexListToolbarChips,
     shouldShowNestedToolbarChip,
     shouldShowResolvedIndexEmptyState,
@@ -113,4 +114,11 @@ test("shouldShowResolvedIndexEmptyState points back to active notes when resolve
     assert.equal(shouldShowResolvedIndexEmptyState(true, 0, 0), false);
     assert.equal(shouldShowResolvedIndexEmptyState(false, 3, 0), false);
     assert.equal(shouldShowResolvedIndexEmptyState(true, 3, 1), false);
+});
+
+test("shouldShowActiveIndexEmptyState points to resolved notes when active mode hides all scoped items", () => {
+    assert.equal(shouldShowActiveIndexEmptyState(false, 3, 0), true);
+    assert.equal(shouldShowActiveIndexEmptyState(true, 3, 0), false);
+    assert.equal(shouldShowActiveIndexEmptyState(false, 0, 0), false);
+    assert.equal(shouldShowActiveIndexEmptyState(false, 3, 1), false);
 });

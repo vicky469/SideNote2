@@ -342,6 +342,9 @@
 
 .sidenote2-sidebar-toolbar-row.is-index-secondary-row {
     justify-content: flex-start;
+    flex-wrap: nowrap;
+    gap: 6px;
+    align-items: center;
 }
 
 .sidenote2-sidebar-toolbar-row.is-note-secondary-row {

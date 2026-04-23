@@ -101,9 +101,10 @@ test("deriveIndexSidebarScopedFilePaths uses the same connected scope for any ro
     );
 });
 
-test("shouldLimitIndexSidebarList applies the cap only when no root scope is active", () => {
+test("shouldLimitIndexSidebarList applies the cap only when no root scope or search is active", () => {
     assert.equal(shouldLimitIndexSidebarList(null), true);
     assert.equal(shouldLimitIndexSidebarList("docs/a.md"), false);
+    assert.equal(shouldLimitIndexSidebarList(null, "design"), false);
 });
 
 test("getIndexFileFilterSuggestions keeps selected files visible and orders them first", () => {

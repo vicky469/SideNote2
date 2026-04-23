@@ -61,3 +61,11 @@ export function shouldShowResolvedIndexEmptyState(
 ): boolean {
     return showResolved && totalScopedCount > 0 && renderedItemCount === 0;
 }
+
+export function shouldShowActiveIndexEmptyState(
+    showResolved: boolean,
+    resolvedCount: number,
+    renderedItemCount: number,
+): boolean {
+    return !showResolved && resolvedCount > 0 && renderedItemCount === 0;
+}

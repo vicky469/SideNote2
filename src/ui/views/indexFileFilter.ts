@@ -69,8 +69,11 @@ export function deriveIndexSidebarScopedFilePaths(
     return getIndexFileFilterConnectedComponent(graph, normalizedRootPath);
 }
 
-export function shouldLimitIndexSidebarList(rootFilePath: string | null | undefined): boolean {
-    return !rootFilePath;
+export function shouldLimitIndexSidebarList(
+    rootFilePath: string | null | undefined,
+    searchQuery = "",
+): boolean {
+    return !rootFilePath && !searchQuery.trim();
 }
 
 export function buildIndexFileFilterOptions(comments: Comment[]): IndexFileFilterOption[] {
