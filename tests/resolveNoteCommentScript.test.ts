@@ -43,17 +43,16 @@ function createComment(overrides: Partial<Comment> = {}): Comment {
     };
 }
 
-test("comment:resolve marks the targeted thread resolved", async () => {
+test("resolve-note-comment script marks the targeted thread resolved", async () => {
     const tempDir = await mkdtemp(path.join(tmpdir(), "sidenote2-comment-resolve-script-"));
     const notePath = path.join(tempDir, "note.md");
-    const scriptPath = path.resolve(process.cwd(), "bin/sidenote2.mjs");
+    const scriptPath = path.resolve(process.cwd(), "scripts/resolve-note-comment.mjs");
     const original = serializeNoteComments("# Title\n\nBody text.\n", [createComment()]);
 
     await writeFile(notePath, original, "utf8");
 
     const { stdout } = await execFile("node", [
         scriptPath,
-        "comment:resolve",
         "--file",
         notePath,
         "--id",
@@ -70,12 +69,12 @@ test("comment:resolve marks the targeted thread resolved", async () => {
     assert.equal(parsed.threads[0].resolved, true);
 });
 
-test("comment:resolve can target a stored comment by obsidian side-note URI", async () => {
+test("resolve-note-comment script can target a stored comment by obsidian side-note URI", async () => {
     const tempDir = await mkdtemp(path.join(tmpdir(), "sidenote2-comment-resolve-uri-script-"));
     const homeDir = path.join(tempDir, "home");
     const vaultRoot = path.join(tempDir, "Public Vault");
     const notePath = path.join(vaultRoot, "Folder", "Note.md");
-    const scriptPath = path.resolve(process.cwd(), "bin/sidenote2.mjs");
+    const scriptPath = path.resolve(process.cwd(), "scripts/resolve-note-comment.mjs");
     const noteFilePath = "Folder/Note.md";
     const original = serializeNoteComments("# Title\n\nBody text.\n", [createComment({
         filePath: noteFilePath,
@@ -87,7 +86,6 @@ test("comment:resolve can target a stored comment by obsidian side-note URI", as
 
     const { stdout } = await execFile("node", [
         scriptPath,
-        "comment:resolve",
         "--uri",
         buildCommentLocationUri("Public Vault", noteFilePath, "comment-1"),
     ], {

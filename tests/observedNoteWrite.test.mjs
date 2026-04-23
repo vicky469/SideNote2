@@ -3,7 +3,7 @@ import { mkdtemp, readdir, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import test from "node:test";
-import { createContentFingerprint, writeObservedNoteSafely } from "../bin/sidenote2.mjs";
+import { createContentFingerprint, writeObservedNoteSafely } from "../scripts/lib/sideNote2RepoScripts.mjs";
 
 test("writeObservedNoteSafely atomically replaces an unchanged note", async () => {
     const tempDir = await mkdtemp(path.join(tmpdir(), "sidenote2-safe-write-"));

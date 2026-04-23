@@ -1,92 +1,12 @@
-#!/usr/bin/env node
-
 import * as esbuild from "esbuild";
 import { createHash, randomUUID } from "node:crypto";
-import { writeSync } from "node:fs";
 import { access, copyFile, mkdir, readdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 function getRepoRoot(metaUrl) {
-    return path.resolve(path.dirname(fileURLToPath(metaUrl)), "..");
-}
-
-function printMainUsage(stream = process.stderr) {
-    stream.write(
-        [
-            "Usage:",
-            "  sidenote2 <command> [options]",
-            "",
-            "Commands:",
-            "  comment:create  Create one new SideNote2 comment thread in a note",
-            "  comment:append  Append one entry to an existing SideNote2 comment thread in a note",
-            "  comment:update  Update one stored SideNote2 comment body in a note",
-            "  comment:resolve  Mark one SideNote2 comment thread as resolved in a note",
-            "  install-skill   Copy bundled SideNote2 Codex skill(s) into the Codex skills directory",
-            "",
-            "Run `sidenote2 <command> --help` for command-specific usage.",
-        ].join("\n") + "\n",
-    );
-}
-
-function printCommentCreateUsage(stream = process.stderr) {
-    stream.write(
-        [
-            "Usage:",
-            "  sidenote2 comment:create --file <note.md> --page (--comment <text> | --comment-file <path> | --stdin) [--settle-ms <milliseconds>]",
-            "  sidenote2 comment:create --file <note.md> --selected-text <text> --start-line <number> --start-char <number> --end-line <number> --end-char <number> (--comment <text> | --comment-file <path> | --stdin) [--settle-ms <milliseconds>]",
-            "",
-            "Examples:",
-            "  sidenote2 comment:create --file ./note.md --page --comment-file ./comment.md",
-            "  sidenote2 comment:create --file ./note.md --selected-text \"Priority conflicts\" --start-line 335 --start-char 3 --end-line 335 --end-char 21 --comment-file ./comment.md",
-            "  printf 'New page note\\n' | sidenote2 comment:create --file ./note.md --page --stdin",
-        ].join("\n") + "\n",
-    );
-}
-
-function printCommentUpdateUsage(stream = process.stderr) {
-    stream.write(
-        [
-            "Usage:",
-            "  sidenote2 comment:update (--file <note.md> --id <comment-id> | --uri <obsidian://side-note2-comment?...>) (--comment <text> | --comment-file <path> | --stdin) [--settle-ms <milliseconds>]",
-            "",
-            "Examples:",
-            "  sidenote2 comment:update --file ./note.md --id comment-1 --comment-file ./comment.md",
-            "  sidenote2 comment:update --uri \"obsidian://side-note2-comment?...\" --comment-file ./comment.md",
-            "  sidenote2 comment:update --file ./note.md --id comment-1 --comment-file ./comment.md --settle-ms 2000",
-            "  printf 'Updated body\\n' | sidenote2 comment:update --file ./note.md --id comment-1 --stdin",
-        ].join("\n") + "\n",
-    );
-}
-
-function printCommentAppendUsage(stream = process.stderr) {
-    stream.write(
-        [
-            "Usage:",
-            "  sidenote2 comment:append (--file <note.md> --id <comment-id> | --uri <obsidian://side-note2-comment?...>) (--comment <text> | --comment-file <path> | --stdin) [--settle-ms <milliseconds>]",
-            "",
-            "Examples:",
-            "  sidenote2 comment:append --file ./note.md --id comment-1 --comment-file ./reply.md",
-            "  sidenote2 comment:append --uri \"obsidian://side-note2-comment?...\" --comment-file ./reply.md",
-            "  sidenote2 comment:append --file ./note.md --id comment-1 --comment-file ./reply.md --settle-ms 2000",
-            "  printf 'Reply body\\n' | sidenote2 comment:append --file ./note.md --id comment-1 --stdin",
-        ].join("\n") + "\n",
-    );
-}
-
-function printCommentResolveUsage(stream = process.stderr) {
-    stream.write(
-        [
-            "Usage:",
-            "  sidenote2 comment:resolve (--file <note.md> --id <comment-id> | --uri <obsidian://side-note2-comment?...>) [--settle-ms <milliseconds>]",
-            "",
-            "Examples:",
-            "  sidenote2 comment:resolve --file ./note.md --id comment-1",
-            "  sidenote2 comment:resolve --uri \"obsidian://side-note2-comment?...\"",
-            "  sidenote2 comment:resolve --file ./note.md --id comment-1 --settle-ms 2000",
-        ].join("\n") + "\n",
-    );
+    return path.resolve(path.dirname(fileURLToPath(metaUrl)), "../..");
 }
 
 function parseNonNegativeIntegerOption(rawValue, flagName) {
@@ -98,11 +18,48 @@ function parseNonNegativeIntegerOption(rawValue, flagName) {
     return parsed;
 }
 
-function printSkillUsage(command, stream = process.stderr) {
+function printCreateNoteCommentThreadUsage(stream = process.stderr) {
     stream.write(
         [
             "Usage:",
-            `  sidenote2 ${command} [--name <skill-name>]... [--dest <skills-root>]`,
+            "  node scripts/create-note-comment-thread.mjs --file <note.md> --page (--comment <text> | --comment-file <path> | --stdin) [--settle-ms <milliseconds>]",
+            "  node scripts/create-note-comment-thread.mjs --file <note.md> --selected-text <text> --start-line <number> --start-char <number> --end-line <number> --end-char <number> (--comment <text> | --comment-file <path> | --stdin) [--settle-ms <milliseconds>]",
+        ].join("\n") + "\n",
+    );
+}
+
+function printAppendNoteCommentEntryUsage(stream = process.stderr) {
+    stream.write(
+        [
+            "Usage:",
+            "  node scripts/append-note-comment-entry.mjs (--file <note.md> --id <comment-id> | --uri <obsidian://side-note2-comment?...>) (--comment <text> | --comment-file <path> | --stdin) [--settle-ms <milliseconds>]",
+        ].join("\n") + "\n",
+    );
+}
+
+function printUpdateNoteCommentUsage(stream = process.stderr) {
+    stream.write(
+        [
+            "Usage:",
+            "  node scripts/update-note-comment.mjs (--file <note.md> --id <comment-id> | --uri <obsidian://side-note2-comment?...>) (--comment <text> | --comment-file <path> | --stdin) [--settle-ms <milliseconds>]",
+        ].join("\n") + "\n",
+    );
+}
+
+function printResolveNoteCommentUsage(stream = process.stderr) {
+    stream.write(
+        [
+            "Usage:",
+            "  node scripts/resolve-note-comment.mjs (--file <note.md> --id <comment-id> | --uri <obsidian://side-note2-comment?...>) [--settle-ms <milliseconds>]",
+        ].join("\n") + "\n",
+    );
+}
+
+function printInstallBundledSkillUsage(stream = process.stderr) {
+    stream.write(
+        [
+            "Usage:",
+            "  node scripts/install-bundled-skill.mjs [--name <skill-name>]... [--dest <skills-root>]",
             "",
             "Defaults:",
             "  installs all bundled skills when --name is omitted",
@@ -111,17 +68,7 @@ function printSkillUsage(command, stream = process.stderr) {
     );
 }
 
-function parseCommentUpdateArgs(argv) {
-    const options = {
-        file: "",
-        id: "",
-        uri: "",
-        comment: null,
-        commentFile: "",
-        stdin: false,
-        settleMs: 0,
-    };
-
+function parseCommentTargetArgs(argv, options) {
     for (let index = 0; index < argv.length; index += 1) {
         const arg = argv[index];
         switch (arg) {
@@ -137,17 +84,6 @@ function parseCommentUpdateArgs(argv) {
                 options.uri = argv[index + 1] ?? "";
                 index += 1;
                 break;
-            case "--comment":
-                options.comment = argv[index + 1] ?? "";
-                index += 1;
-                break;
-            case "--comment-file":
-                options.commentFile = argv[index + 1] ?? "";
-                index += 1;
-                break;
-            case "--stdin":
-                options.stdin = true;
-                break;
             case "--settle-ms":
                 options.settleMs = parseNonNegativeIntegerOption(argv[index + 1] ?? "", "--settle-ms");
                 index += 1;
@@ -156,22 +92,14 @@ function parseCommentUpdateArgs(argv) {
             case "-h":
                 return null;
             default:
-                throw new Error(`Unknown argument: ${arg}`);
+                return arg;
         }
     }
 
-    const contentSources = [options.comment !== null, Boolean(options.commentFile), options.stdin].filter(Boolean).length;
-    const hasFileOrIdTarget = Boolean(options.file || options.id);
-    const hasFileAndIdTarget = Boolean(options.file && options.id);
-    const hasUriTarget = Boolean(options.uri);
-    if (contentSources !== 1 || (hasFileOrIdTarget ? 1 : 0) + (hasUriTarget ? 1 : 0) !== 1 || (hasFileOrIdTarget && !hasFileAndIdTarget)) {
-        throw new Error("Expected exactly one target form: either --file with --id, or --uri, plus exactly one comment source.");
-    }
-
-    return options;
+    return undefined;
 }
 
-function parseCommentCreateArgs(argv) {
+function parseCreateNoteCommentThreadArgs(argv) {
     const options = {
         file: "",
         page: false,
@@ -249,7 +177,6 @@ function parseCommentCreateArgs(argv) {
         || options.startChar !== null
         || options.endLine !== null
         || options.endChar !== null;
-
     if (options.page && hasSelectionTarget) {
         throw new Error("Expected either --page or a selection target, not both.");
     }
@@ -278,15 +205,14 @@ function parseCommentCreateArgs(argv) {
     return options;
 }
 
-function parseCommentAppendArgs(argv) {
-    return parseCommentUpdateArgs(argv);
-}
-
-function parseCommentResolveArgs(argv) {
+function parseAppendOrUpdateArgs(argv) {
     const options = {
         file: "",
         id: "",
         uri: "",
+        comment: null,
+        commentFile: "",
+        stdin: false,
         settleMs: 0,
     };
 
@@ -305,6 +231,17 @@ function parseCommentResolveArgs(argv) {
                 options.uri = argv[index + 1] ?? "";
                 index += 1;
                 break;
+            case "--comment":
+                options.comment = argv[index + 1] ?? "";
+                index += 1;
+                break;
+            case "--comment-file":
+                options.commentFile = argv[index + 1] ?? "";
+                index += 1;
+                break;
+            case "--stdin":
+                options.stdin = true;
+                break;
             case "--settle-ms":
                 options.settleMs = parseNonNegativeIntegerOption(argv[index + 1] ?? "", "--settle-ms");
                 index += 1;
@@ -317,6 +254,33 @@ function parseCommentResolveArgs(argv) {
         }
     }
 
+    const contentSources = [options.comment !== null, Boolean(options.commentFile), options.stdin].filter(Boolean).length;
+    const hasFileOrIdTarget = Boolean(options.file || options.id);
+    const hasFileAndIdTarget = Boolean(options.file && options.id);
+    const hasUriTarget = Boolean(options.uri);
+    if (contentSources !== 1 || (hasFileOrIdTarget ? 1 : 0) + (hasUriTarget ? 1 : 0) !== 1 || (hasFileOrIdTarget && !hasFileAndIdTarget)) {
+        throw new Error("Expected exactly one target form: either --file with --id, or --uri, plus exactly one comment source.");
+    }
+
+    return options;
+}
+
+function parseResolveArgs(argv) {
+    const options = {
+        file: "",
+        id: "",
+        uri: "",
+        settleMs: 0,
+    };
+
+    const result = parseCommentTargetArgs(argv, options);
+    if (result === null) {
+        return null;
+    }
+    if (typeof result === "string") {
+        throw new Error(`Unknown argument: ${result}`);
+    }
+
     const hasFileOrIdTarget = Boolean(options.file || options.id);
     const hasFileAndIdTarget = Boolean(options.file && options.id);
     const hasUriTarget = Boolean(options.uri);
@@ -327,7 +291,14 @@ function parseCommentResolveArgs(argv) {
     return options;
 }
 
-function parseSkillArgs(argv) {
+function getDefaultSkillsRoot() {
+    const codexHome = process.env.CODEX_HOME?.trim();
+    return codexHome
+        ? path.join(codexHome, "skills")
+        : path.join(homedir(), ".codex", "skills");
+}
+
+function parseInstallBundledSkillArgs(argv) {
     const options = {
         destRoot: getDefaultSkillsRoot(),
         skillNames: [],
@@ -358,13 +329,6 @@ function parseSkillArgs(argv) {
     }
 
     return options;
-}
-
-function getDefaultSkillsRoot() {
-    const codexHome = process.env.CODEX_HOME?.trim();
-    return codexHome
-        ? path.join(codexHome, "skills")
-        : path.join(homedir(), ".codex", "skills");
 }
 
 async function pathExists(targetPath) {
@@ -411,39 +375,7 @@ function sleep(milliseconds) {
     });
 }
 
-function createBufferedIo() {
-    const stdoutChunks = [];
-    const stderrChunks = [];
-
-    return {
-        io: {
-            stdout: {
-                write(chunk) {
-                    stdoutChunks.push(String(chunk));
-                    return true;
-                },
-            },
-            stderr: {
-                write(chunk) {
-                    stderrChunks.push(String(chunk));
-                    return true;
-                },
-            },
-        },
-        flush() {
-            const stdout = stdoutChunks.join("");
-            const stderr = stderrChunks.join("");
-            if (stdout) {
-                writeSync(process.stdout.fd, stdout);
-            }
-            if (stderr) {
-                writeSync(process.stderr.fd, stderr);
-            }
-        },
-    };
-}
-
-function createContentFingerprint(content) {
+export function createContentFingerprint(content) {
     return `${Buffer.byteLength(content, "utf8")}:${createHash("sha256").update(content).digest("hex")}`;
 }
 
@@ -461,7 +393,7 @@ async function writeFileAtomically(targetPath, content) {
     }
 }
 
-async function writeObservedNoteSafely(notePath, expectedFingerprint, nextContent, options = {}) {
+export async function writeObservedNoteSafely(notePath, expectedFingerprint, nextContent, options = {}) {
     const settleMs = options.settleMs ?? 0;
     if (settleMs > 0) {
         await sleep(settleMs);
@@ -646,10 +578,11 @@ async function getBundledSkills() {
         throw new Error(`No bundled skills with SKILL.md found in ${skillsRoot}`);
     }
 
-    return { repoRoot, skillDirectories };
+    return { skillDirectories };
 }
 
-async function loadStorageModule(repoRoot) {
+async function loadStorageModule() {
+    const repoRoot = getRepoRoot(import.meta.url);
     const entryPoint = path.resolve(repoRoot, "src/core/storage/noteCommentStorage.ts");
     const result = await esbuild.build({
         entryPoints: [entryPoint],
@@ -682,85 +615,28 @@ function getManagedSectionErrorMessage(storageModule, noteContent, notePath) {
     return `Found a SideNote2 comments block in ${notePath}, but it is not a supported threaded entries[] payload.\n`;
 }
 
-async function runCommentUpdate(argv, streamOut, streamErr) {
+export async function runCreateNoteCommentThread(argv, io = { stdout: process.stdout, stderr: process.stderr }) {
     let options;
     try {
-        options = parseCommentUpdateArgs(argv);
+        options = parseCreateNoteCommentThreadArgs(argv);
     } catch (error) {
-        streamErr.write(`${error instanceof Error ? error.message : String(error)}\n`);
-        printCommentUpdateUsage(streamErr);
+        io.stderr.write(`${error instanceof Error ? error.message : String(error)}\n`);
+        printCreateNoteCommentThreadUsage(io.stderr);
         return 1;
     }
 
     if (options === null) {
-        printCommentUpdateUsage(streamOut);
+        printCreateNoteCommentThreadUsage(io.stdout);
         return 0;
     }
 
-    const repoRoot = getRepoRoot(import.meta.url);
-    let writeTarget;
-    try {
-        writeTarget = await resolveCommentWriteTarget(options);
-    } catch (error) {
-        streamErr.write(`${error instanceof Error ? error.message : String(error)}\n`);
-        return 1;
-    }
-
-    const notePath = writeTarget.notePath;
-    const commentId = writeTarget.commentId;
-    const nextCommentBody = await loadCommentBody(options);
-    const noteContent = await readFile(notePath, "utf8");
-    const storageModule = await loadStorageModule(repoRoot);
-    const updated = storageModule.replaceNoteCommentBodyById(noteContent, notePath, commentId, nextCommentBody);
-
-    if (typeof updated !== "string") {
-        if (storageModule.getManagedSectionKind(noteContent) === "unsupported") {
-            streamErr.write(getManagedSectionErrorMessage(storageModule, noteContent, notePath));
-            return 1;
-        }
-
-        streamErr.write(`Comment id not found: ${commentId}\n`);
-        return 1;
-    }
-
-    const writeResult = await writeObservedNoteSafely(notePath, createContentFingerprint(noteContent), updated, {
-        settleMs: options.settleMs,
-    });
-    if (writeResult.kind === "changed") {
-        streamErr.write(
-            `Skipped updating ${notePath} because ${writeResult.reason}. `
-            + "Rerun after Obsidian Sync or other local edits settle.\n",
-        );
-        return 1;
-    }
-
-    streamOut.write(`Updated comment ${commentId} in ${notePath}\n`);
-    return 0;
-}
-
-async function runCommentCreate(argv, streamOut, streamErr) {
-    let options;
-    try {
-        options = parseCommentCreateArgs(argv);
-    } catch (error) {
-        streamErr.write(`${error instanceof Error ? error.message : String(error)}\n`);
-        printCommentCreateUsage(streamErr);
-        return 1;
-    }
-
-    if (options === null) {
-        printCommentCreateUsage(streamOut);
-        return 0;
-    }
-
-    const repoRoot = getRepoRoot(import.meta.url);
     const notePath = path.resolve(process.cwd(), options.file);
     const nextCommentBody = await loadCommentBody(options);
     const noteContent = await readFile(notePath, "utf8");
-    const storageModule = await loadStorageModule(repoRoot);
+    const storageModule = await loadStorageModule();
     const managedSectionKind = storageModule.getManagedSectionKind(noteContent);
     if (managedSectionKind === "unsupported") {
-        streamErr.write(getManagedSectionErrorMessage(storageModule, noteContent, notePath));
+        io.stderr.write(getManagedSectionErrorMessage(storageModule, noteContent, notePath));
         return 1;
     }
 
@@ -796,7 +672,7 @@ async function runCommentCreate(argv, streamOut, streamErr) {
         settleMs: options.settleMs,
     });
     if (writeResult.kind === "changed") {
-        streamErr.write(
+        io.stderr.write(
             `Skipped creating a comment in ${notePath} because ${writeResult.reason}. `
             + "Rerun after Obsidian Sync or other local edits settle.\n",
         );
@@ -804,31 +680,30 @@ async function runCommentCreate(argv, streamOut, streamErr) {
     }
 
     const anchorLabel = options.page ? "page note" : "anchored note";
-    streamOut.write(`Created ${anchorLabel} thread ${threadId} in ${notePath}\n`);
+    io.stdout.write(`Created ${anchorLabel} thread ${threadId} in ${notePath}\n`);
     return 0;
 }
 
-async function runCommentAppend(argv, streamOut, streamErr) {
+export async function runAppendNoteCommentEntry(argv, io = { stdout: process.stdout, stderr: process.stderr }) {
     let options;
     try {
-        options = parseCommentAppendArgs(argv);
+        options = parseAppendOrUpdateArgs(argv);
     } catch (error) {
-        streamErr.write(`${error instanceof Error ? error.message : String(error)}\n`);
-        printCommentAppendUsage(streamErr);
+        io.stderr.write(`${error instanceof Error ? error.message : String(error)}\n`);
+        printAppendNoteCommentEntryUsage(io.stderr);
         return 1;
     }
 
     if (options === null) {
-        printCommentAppendUsage(streamOut);
+        printAppendNoteCommentEntryUsage(io.stdout);
         return 0;
     }
 
-    const repoRoot = getRepoRoot(import.meta.url);
     let writeTarget;
     try {
         writeTarget = await resolveCommentWriteTarget(options);
     } catch (error) {
-        streamErr.write(`${error instanceof Error ? error.message : String(error)}\n`);
+        io.stderr.write(`${error instanceof Error ? error.message : String(error)}\n`);
         return 1;
     }
 
@@ -836,7 +711,7 @@ async function runCommentAppend(argv, streamOut, streamErr) {
     const commentId = writeTarget.commentId;
     const nextCommentBody = await loadCommentBody(options);
     const noteContent = await readFile(notePath, "utf8");
-    const storageModule = await loadStorageModule(repoRoot);
+    const storageModule = await loadStorageModule();
     const updated = storageModule.appendNoteCommentEntryById(noteContent, notePath, commentId, {
         id: randomUUID(),
         body: nextCommentBody,
@@ -846,16 +721,16 @@ async function runCommentAppend(argv, streamOut, streamErr) {
     if (typeof updated !== "string") {
         const managedSectionKind = storageModule.getManagedSectionKind(noteContent);
         if (managedSectionKind === "unsupported") {
-            streamErr.write(getManagedSectionErrorMessage(storageModule, noteContent, notePath));
+            io.stderr.write(getManagedSectionErrorMessage(storageModule, noteContent, notePath));
             return 1;
         }
 
         if (managedSectionKind === "none") {
-            streamErr.write(`No SideNote2 comments block found in ${notePath}\n`);
+            io.stderr.write(`No SideNote2 comments block found in ${notePath}\n`);
             return 1;
         }
 
-        streamErr.write(`Comment id not found: ${commentId}\n`);
+        io.stderr.write(`Comment id not found: ${commentId}\n`);
         return 1;
     }
 
@@ -863,60 +738,54 @@ async function runCommentAppend(argv, streamOut, streamErr) {
         settleMs: options.settleMs,
     });
     if (writeResult.kind === "changed") {
-        streamErr.write(
+        io.stderr.write(
             `Skipped appending to ${notePath} because ${writeResult.reason}. `
             + "Rerun after Obsidian Sync or other local edits settle.\n",
         );
         return 1;
     }
 
-    streamOut.write(`Appended a new entry to comment ${commentId} in ${notePath}\n`);
+    io.stdout.write(`Appended a new entry to comment ${commentId} in ${notePath}\n`);
     return 0;
 }
 
-async function runCommentResolve(argv, streamOut, streamErr) {
+export async function runUpdateNoteComment(argv, io = { stdout: process.stdout, stderr: process.stderr }) {
     let options;
     try {
-        options = parseCommentResolveArgs(argv);
+        options = parseAppendOrUpdateArgs(argv);
     } catch (error) {
-        streamErr.write(`${error instanceof Error ? error.message : String(error)}\n`);
-        printCommentResolveUsage(streamErr);
+        io.stderr.write(`${error instanceof Error ? error.message : String(error)}\n`);
+        printUpdateNoteCommentUsage(io.stderr);
         return 1;
     }
 
     if (options === null) {
-        printCommentResolveUsage(streamOut);
+        printUpdateNoteCommentUsage(io.stdout);
         return 0;
     }
 
-    const repoRoot = getRepoRoot(import.meta.url);
     let writeTarget;
     try {
         writeTarget = await resolveCommentWriteTarget(options);
     } catch (error) {
-        streamErr.write(`${error instanceof Error ? error.message : String(error)}\n`);
+        io.stderr.write(`${error instanceof Error ? error.message : String(error)}\n`);
         return 1;
     }
 
     const notePath = writeTarget.notePath;
     const commentId = writeTarget.commentId;
+    const nextCommentBody = await loadCommentBody(options);
     const noteContent = await readFile(notePath, "utf8");
-    const storageModule = await loadStorageModule(repoRoot);
-    const updated = storageModule.resolveNoteCommentById(noteContent, notePath, commentId);
+    const storageModule = await loadStorageModule();
+    const updated = storageModule.replaceNoteCommentBodyById(noteContent, notePath, commentId, nextCommentBody);
 
     if (typeof updated !== "string") {
-        const managedSectionKind = storageModule.getManagedSectionKind(noteContent);
-        if (managedSectionKind === "unsupported") {
-            streamErr.write(getManagedSectionErrorMessage(storageModule, noteContent, notePath));
+        if (storageModule.getManagedSectionKind(noteContent) === "unsupported") {
+            io.stderr.write(getManagedSectionErrorMessage(storageModule, noteContent, notePath));
             return 1;
         }
 
-        if (managedSectionKind === "none") {
-            streamErr.write(`No SideNote2 comments block found in ${notePath}\n`);
-            return 1;
-        }
-
-        streamErr.write(`Comment id not found: ${commentId}\n`);
+        io.stderr.write(`Comment id not found: ${commentId}\n`);
         return 1;
     }
 
@@ -924,29 +793,89 @@ async function runCommentResolve(argv, streamOut, streamErr) {
         settleMs: options.settleMs,
     });
     if (writeResult.kind === "changed") {
-        streamErr.write(
+        io.stderr.write(
+            `Skipped updating ${notePath} because ${writeResult.reason}. `
+            + "Rerun after Obsidian Sync or other local edits settle.\n",
+        );
+        return 1;
+    }
+
+    io.stdout.write(`Updated comment ${commentId} in ${notePath}\n`);
+    return 0;
+}
+
+export async function runResolveNoteComment(argv, io = { stdout: process.stdout, stderr: process.stderr }) {
+    let options;
+    try {
+        options = parseResolveArgs(argv);
+    } catch (error) {
+        io.stderr.write(`${error instanceof Error ? error.message : String(error)}\n`);
+        printResolveNoteCommentUsage(io.stderr);
+        return 1;
+    }
+
+    if (options === null) {
+        printResolveNoteCommentUsage(io.stdout);
+        return 0;
+    }
+
+    let writeTarget;
+    try {
+        writeTarget = await resolveCommentWriteTarget(options);
+    } catch (error) {
+        io.stderr.write(`${error instanceof Error ? error.message : String(error)}\n`);
+        return 1;
+    }
+
+    const notePath = writeTarget.notePath;
+    const commentId = writeTarget.commentId;
+    const noteContent = await readFile(notePath, "utf8");
+    const storageModule = await loadStorageModule();
+    const updated = storageModule.resolveNoteCommentById(noteContent, notePath, commentId);
+
+    if (typeof updated !== "string") {
+        const managedSectionKind = storageModule.getManagedSectionKind(noteContent);
+        if (managedSectionKind === "unsupported") {
+            io.stderr.write(getManagedSectionErrorMessage(storageModule, noteContent, notePath));
+            return 1;
+        }
+
+        if (managedSectionKind === "none") {
+            io.stderr.write(`No SideNote2 comments block found in ${notePath}\n`);
+            return 1;
+        }
+
+        io.stderr.write(`Comment id not found: ${commentId}\n`);
+        return 1;
+    }
+
+    const writeResult = await writeObservedNoteSafely(notePath, createContentFingerprint(noteContent), updated, {
+        settleMs: options.settleMs,
+    });
+    if (writeResult.kind === "changed") {
+        io.stderr.write(
             `Skipped resolving ${notePath} because ${writeResult.reason}. `
             + "Rerun after Obsidian Sync or other local edits settle.\n",
         );
         return 1;
     }
 
-    streamOut.write(`Resolved comment ${commentId} in ${notePath}\n`);
+    io.stdout.write(`Resolved comment ${commentId} in ${notePath}\n`);
     return 0;
 }
 
-async function runInstallSkill(argv, streamOut, streamErr) {
+export async function runInstallBundledSkill(argv, io = { stdout: process.stdout, stderr: process.stderr }) {
     let options;
     try {
-        options = parseSkillArgs(argv);
+        options = parseInstallBundledSkillArgs(argv);
     } catch (error) {
-        streamErr.write(`${error instanceof Error ? error.message : String(error)}\n`);
-        printSkillUsage("install-skill", streamErr);
+        io.stderr.write(`${error instanceof Error ? error.message : String(error)}\n`);
+        printInstallBundledSkillUsage(io.stderr);
         return 1;
     }
 
     if (options === null) {
-        printSkillUsage("install-skill", streamOut);
+        printInstallBundledSkillUsage(io.stdout);
         return 0;
     }
 
@@ -966,61 +895,20 @@ async function runInstallSkill(argv, streamOut, streamErr) {
         const destinationDir = path.join(destinationRoot, skillName);
         await rm(destinationDir, { recursive: true, force: true });
         await copyDirectoryRecursive(sourceDir, destinationDir);
-        streamOut.write(`Installed skill ${skillName} to ${destinationDir}\n`);
+        io.stdout.write(`Installed skill ${skillName} to ${destinationDir}\n`);
     }
-    streamOut.write("Restart Codex to pick up new skills.\n");
+    io.stdout.write("Restart Codex to pick up new skills.\n");
     return 0;
 }
 
-export {
-    createContentFingerprint,
-    writeObservedNoteSafely,
-};
-
-export async function runCli(argv, io = { stdout: process.stdout, stderr: process.stderr }) {
-    const [command, ...rest] = argv;
-    switch (command) {
-        case "comment:create":
-            return runCommentCreate(rest, io.stdout, io.stderr);
-        case "comment:append":
-            return runCommentAppend(rest, io.stdout, io.stderr);
-        case "comment:update":
-            return runCommentUpdate(rest, io.stdout, io.stderr);
-        case "comment:resolve":
-            return runCommentResolve(rest, io.stdout, io.stderr);
-        case "install-skill":
-            return runInstallSkill(rest, io.stdout, io.stderr);
-        case "--help":
-        case "-h":
-        case undefined:
-            printMainUsage(io.stdout);
-            return 0;
-        default:
-            io.stderr.write(`Unknown command: ${command}\n`);
-            printMainUsage(io.stderr);
-            return 1;
-    }
-}
-
-export async function main(argv = process.argv.slice(2)) {
-    const bufferedIo = createBufferedIo();
+export async function runScriptMain(run, argv = process.argv.slice(2), io = { stdout: process.stdout, stderr: process.stderr }) {
     try {
-        const exitCode = await runCli(argv, bufferedIo.io);
-        bufferedIo.flush();
+        const exitCode = await run(argv, io);
         if (exitCode !== 0) {
-            process.exit(exitCode);
+            process.exitCode = exitCode;
         }
     } catch (error) {
-        bufferedIo.flush();
-        writeSync(process.stderr.fd, `${error instanceof Error ? error.message : String(error)}\n`);
-        process.exit(1);
+        io.stderr.write(`${error instanceof Error ? error.message : String(error)}\n`);
+        process.exitCode = 1;
     }
-}
-
-const isDirectExecution = process.argv[1]
-    ? path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)
-    : false;
-
-if (isDirectExecution) {
-    await main();
 }

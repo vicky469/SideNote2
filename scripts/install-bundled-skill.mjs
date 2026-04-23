@@ -1,8 +1,8 @@
 #!/usr/bin/env node
 
 import {
+    runInstallBundledSkill,
     runScriptMain,
-    runUpdateNoteComment,
 } from "./lib/sideNote2RepoScripts.mjs";
 
-await runScriptMain(runUpdateNoteComment);
+await runScriptMain(runInstallBundledSkill);

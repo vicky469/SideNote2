@@ -8,16 +8,15 @@ import { promisify } from "node:util";
 
 const execFile = promisify(execFileCallback);
 
-test("install-skill copies all bundled repo skills into the target Codex skills directory by default", async () => {
+test("install-bundled-skill script copies all bundled repo skills into the target Codex skills directory by default", async () => {
     const tempDir = await mkdtemp(path.join(tmpdir(), "sidenote2-skill-install-"));
     const skillsRoot = path.join(tempDir, "skills");
-    const cliPath = path.resolve(process.cwd(), "bin/sidenote2.mjs");
+    const scriptPath = path.resolve(process.cwd(), "scripts/install-bundled-skill.mjs");
     const sourceSidenoteSkillDir = path.resolve(process.cwd(), "skills/sidenote2");
     const sourceCanvasSkillDir = path.resolve(process.cwd(), "skills/canvas-design");
 
     const { stdout } = await execFile("node", [
-        cliPath,
-        "install-skill",
+        scriptPath,
         "--dest",
         skillsRoot,
     ], {
@@ -43,19 +42,18 @@ test("install-skill copies all bundled repo skills into the target Codex skills 
     assert.equal(installedDirStat.isSymbolicLink(), false);
 });
 
-test("install-skill replaces an existing installed skill directory", async () => {
+test("install-bundled-skill script replaces an existing installed skill directory", async () => {
     const tempDir = await mkdtemp(path.join(tmpdir(), "sidenote2-skill-install-overwrite-"));
     const skillsRoot = path.join(tempDir, "skills");
     const installedSkillDir = path.join(skillsRoot, "sidenote2");
-    const cliPath = path.resolve(process.cwd(), "bin/sidenote2.mjs");
+    const scriptPath = path.resolve(process.cwd(), "scripts/install-bundled-skill.mjs");
     const sourceSkillPath = path.resolve(process.cwd(), "skills/sidenote2/SKILL.md");
 
     await mkdir(installedSkillDir, { recursive: true });
     await writeFile(path.join(installedSkillDir, "SKILL.md"), "stale", "utf8");
 
     await execFile("node", [
-        cliPath,
-        "install-skill",
+        scriptPath,
         "--name",
         "sidenote2",
         "--dest",
@@ -69,14 +67,13 @@ test("install-skill replaces an existing installed skill directory", async () =>
     assert.equal(installedSkill, sourceSkill);
 });
 
-test("install-skill can install a named bundled skill", async () => {
+test("install-bundled-skill script can install a named bundled skill", async () => {
     const tempDir = await mkdtemp(path.join(tmpdir(), "sidenote2-skill-install-named-"));
     const skillsRoot = path.join(tempDir, "skills");
-    const cliPath = path.resolve(process.cwd(), "bin/sidenote2.mjs");
+    const scriptPath = path.resolve(process.cwd(), "scripts/install-bundled-skill.mjs");
 
     const { stdout } = await execFile("node", [
-        cliPath,
-        "install-skill",
+        scriptPath,
         "--name",
         "sidenote2",
         "--dest",

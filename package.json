@@ -3,23 +3,20 @@
 	"version": "2.0.45",
 	"description": "Side comments for both humans and agents.",
 	"main": "main.js",
-	"bin": {
-		"sidenote2": "bin/sidenote2.mjs"
-	},
 	"scripts": {
 		"dev": "node esbuild.config.mjs",
 		"dev:install-built": "node scripts/install-built-plugin.mjs",
 		"dgx:bridge": "node scripts/run-dgx-runtime-bridge.mjs",
 		"build": "npm run test && npm run lint && tsc -noEmit -skipLibCheck && node esbuild.config.mjs production",
 		"lint": "eslint src",
-		"comment:create": "node bin/sidenote2.mjs comment:create",
-		"comment:append": "node bin/sidenote2.mjs comment:append",
-		"comment:resolve": "node bin/sidenote2.mjs comment:resolve",
-		"comment:update": "node bin/sidenote2.mjs comment:update",
+		"comment:create": "node scripts/create-note-comment-thread.mjs",
+		"comment:append": "node scripts/append-note-comment-entry.mjs",
+		"comment:resolve": "node scripts/resolve-note-comment.mjs",
+		"comment:update": "node scripts/update-note-comment.mjs",
 		"fixture:graph-1000": "node scripts/generate-large-graph-fixture.mjs",
 		"release:artifacts:check": "node scripts/check-release-artifacts.mjs",
 		"release:notes:check": "node scripts/check-release-notes.mjs",
-		"skill:install": "node bin/sidenote2.mjs install-skill",
+		"skill:install": "node scripts/install-bundled-skill.mjs",
 		"test": "rm -rf .test-dist && tsc -p tsconfig.test.json && find .test-dist/tests -type f -name '*.test.js' -exec node --test {} + && find tests -type f -name '*.test.mjs' -exec node --test {} +",
 		"release:check": "npm run build && npm run release:artifacts:check && npm run release:notes:check",
 		"version": "node version-bump.mjs && git add manifest.json versions.json README.md"

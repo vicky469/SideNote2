@@ -43,12 +43,12 @@ First decide whether the current turn is:
 Use these defaults:
 
 - If the request came from an in-note SideNote2 `@codex` reply path, default to write mode.
-- If the request came from CLI or normal chat, default to chat-only mode.
+- If the request came from terminal usage or normal chat, default to chat-only mode.
 
 Important:
 
 - A pasted `obsidian://side-note2-comment?...` URI, note path, selected text, or `commentId` is thread context, not automatic permission to write.
-- In CLI or normal chat, only write when the user explicitly asks to create, reply, append, update, resolve, or otherwise modify stored SideNote2 comments.
+- In terminal usage or normal chat, only write when the user explicitly asks to create, reply, append, update, resolve, or otherwise modify stored SideNote2 comments.
 - If the user explicitly says this is chat, asks for explanation only, or asks what a passage/comment means, answer in chat and do not mutate the note.
 - If the user explicitly asks to modify or append somewhere directly, treat that as a normal chat instruction to perform the write.
 - When unsure, default to chat-only and avoid mutating the note.
@@ -58,7 +58,7 @@ Important:
 1. If the user provided an `obsidian://side-note2-comment?...` URI:
    - treat it as the exact thread target
    - do not treat the URI alone as permission to write
-   - prefer the URI-based CLI path instead of re-discovering the note manually when you are actually writing
+   - prefer the URI-based write target instead of re-discovering the note manually when you are actually writing
 2. If no URI is provided, locate the real markdown note and read the trailing SideNote2 managed block.
 3. Distinguish:
    - `create`, `new thread`, `new page note`, `new anchored note`
@@ -69,7 +69,8 @@ Important:
      replace the targeted stored comment body
    - `resolve`, `mark resolved`, `archive this side note`
      mark the targeted thread resolved
-4. Prefer the installed `sidenote2` CLI over hand-editing JSON.
+4. Prefer the repo-local SideNote2 write entrypoints or shared helpers over hand-editing JSON.
+   Built-in SideNote2 behavior must not require any separate SideNote2 command install.
 5. Preserve all existing thread entries unless the user explicitly asked to replace one.
 6. Keep each SideNote2 comment body at or under 250 words.
 7. Keep the formatting compact:
@@ -82,58 +83,57 @@ Important:
    - create or update a linked wiki page with the fuller detail when needed
 9. Do not cram oversized detail into one side note just to avoid splitting it.
 
-## Preferred CLI Shapes
+## Preferred Write Entry Points
 
-Use the installed `sidenote2` command when available.
-
-If `sidenote2` is not on `PATH` but the agent is working inside the SideNote2 repo, fall back to `node bin/sidenote2.mjs ...`.
+When working inside the SideNote2 repo, use the repo-local Node entrypoints.
+Treat them as internal implementation detail, not as a user setup requirement.
 
 Create a page note:
 
 ```bash
-sidenote2 comment:create --file /abs/path/note.md --page --comment-file /abs/path/comment.md
+node scripts/create-note-comment-thread.mjs --file /abs/path/note.md --page --comment-file /abs/path/comment.md
 ```
 
 Create an anchored note:
 
 ```bash
-sidenote2 comment:create --file /abs/path/note.md --selected-text "Priority conflicts" --start-line 335 --start-char 3 --end-line 335 --end-char 21 --comment-file /abs/path/comment.md
+node scripts/create-note-comment-thread.mjs --file /abs/path/note.md --selected-text "Priority conflicts" --start-line 335 --start-char 3 --end-line 335 --end-char 21 --comment-file /abs/path/comment.md
 ```
 
 Append:
 
 ```bash
-sidenote2 comment:append --uri "obsidian://side-note2-comment?..." --comment-file /abs/path/reply.md
+node scripts/append-note-comment-entry.mjs --uri "obsidian://side-note2-comment?..." --comment-file /abs/path/reply.md
 ```
 
 Or with an explicit file and comment id:
 
 ```bash
-sidenote2 comment:append --file /abs/path/note.md --id "<comment-id>" --comment-file /abs/path/reply.md
+node scripts/append-note-comment-entry.mjs --file /abs/path/note.md --id "<comment-id>" --comment-file /abs/path/reply.md
 ```
 
 Update:
 
 ```bash
-sidenote2 comment:update --uri "obsidian://side-note2-comment?..." --comment-file /abs/path/comment.md
+node scripts/update-note-comment.mjs --uri "obsidian://side-note2-comment?..." --comment-file /abs/path/comment.md
 ```
 
 Or with an explicit file and comment id:
 
 ```bash
-sidenote2 comment:update --file /abs/path/note.md --id "<comment-id>" --comment-file /abs/path/comment.md
+node scripts/update-note-comment.mjs --file /abs/path/note.md --id "<comment-id>" --comment-file /abs/path/comment.md
 ```
 
 Resolve:
 
 ```bash
-sidenote2 comment:resolve --uri "obsidian://side-note2-comment?..."
+node scripts/resolve-note-comment.mjs --uri "obsidian://side-note2-comment?..."
 ```
 
 Or with an explicit file and comment id:
 
 ```bash
-sidenote2 comment:resolve --file /abs/path/note.md --id "<comment-id>"
+node scripts/resolve-note-comment.mjs --file /abs/path/note.md --id "<comment-id>"
 ```
 
 ## Matching Rules
@@ -145,11 +145,11 @@ sidenote2 comment:resolve --file /abs/path/note.md --id "<comment-id>"
 ## Safety
 
 - Do not treat a pasted URI or `commentId` as an automatic instruction to append a reply.
-- Do not append/update/resolve/create anything when the interaction came from CLI or normal chat unless the user explicitly asked for that write.
+- Do not append/update/resolve/create anything when the interaction came from terminal usage or normal chat unless the user explicitly asked for that write.
 - Do not append to an existing thread when the user clearly asked to create a new page note or anchored note.
 - Do not overwrite a thread when the user asked to reply.
 - Do not interpret `create a note` as `create a new markdown page` unless the user explicitly asks for a separate wiki page.
 - Do not create, preserve, or normalize a second `<!-- SideNote2 comments -->` block in the same markdown file.
 - If a note already has more than one `<!-- SideNote2 comments -->` block, stop and repair or escalate instead of writing.
 - Do not hand-migrate legacy flat `comment` payloads during normal agent work.
-- If the CLI refuses a note because it changed after read, treat it as a retry case instead of editing the JSON manually.
+- If the repo-local write entrypoint refuses a note because it changed after read, treat it as a retry case instead of editing the JSON manually.

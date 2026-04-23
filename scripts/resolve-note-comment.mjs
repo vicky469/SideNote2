@@ -1,5 +1,8 @@
 #!/usr/bin/env node
 
-import { main } from "../bin/sidenote2.mjs";
+import {
+    runResolveNoteComment,
+    runScriptMain,
+} from "./lib/sideNote2RepoScripts.mjs";
 
-await main(["comment:resolve", ...process.argv.slice(2)]);
+await runScriptMain(runResolveNoteComment);

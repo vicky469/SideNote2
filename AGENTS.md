@@ -43,7 +43,10 @@ For SideNote2 thread writes, prefer the helper scripts over hand-editing JSON:
 - `node scripts/resolve-note-comment.mjs`
 - `node scripts/update-note-comment.mjs`
 
-If the user already supplied an `obsidian://side-note2-comment?...` URI, prefer the URI-based CLI path:
+Built-in SideNote2 behavior must not require any separate SideNote2 command install.
+Inside this repo, the helper scripts are internal entrypoints over the same write path.
+
+If the user already supplied an `obsidian://side-note2-comment?...` URI, prefer the URI-based write target:
 
 - `--uri "obsidian://side-note2-comment?..."`
 
