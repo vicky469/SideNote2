@@ -20,6 +20,7 @@ interface MarkdownViewLike extends FileViewLike {
         contains(node: unknown): boolean;
     };
     getMode(): string;
+    getViewData?(): string;
     previewMode?: {
         rerender(force: boolean): void;
     };
@@ -155,7 +156,16 @@ export class WorkspaceViewController {
     public async getCurrentNoteContent(file: TFile): Promise<string> {
         const openView = this.getMarkdownViewForFile(file);
         if (openView && isMarkdownViewLike(openView)) {
-            return (openView as unknown as MarkdownViewLike).editor.getValue();
+            const openViewLike = openView as unknown as MarkdownViewLike;
+            if (openViewLike.getMode() === "preview") {
+                if (typeof openViewLike.getViewData === "function") {
+                    return openViewLike.getViewData();
+                }
+
+                return this.host.app.vault.cachedRead(file);
+            }
+
+            return openViewLike.editor.getValue();
         }
 
         return this.host.app.vault.cachedRead(file);

@@ -352,8 +352,9 @@ export class CommentPersistenceController {
             threadCount: threads.length,
         });
         const openView = this.host.getMarkdownViewForFile(file);
+        const canEditOpenView = !!openView && openView.getMode() !== "preview";
 
-        if (openView) {
+        if (openView && canEditOpenView) {
             const currentContent = openView.editor.getValue();
             const nextContent = serializeNoteCommentThreads(currentContent, threads);
             if (currentContent !== nextContent) {

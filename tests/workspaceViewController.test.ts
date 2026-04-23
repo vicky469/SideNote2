@@ -15,6 +15,7 @@ function createMarkdownView(
     file: TFile,
     options: {
         value?: string;
+        viewData?: string;
         mode?: "source" | "preview";
         editorView?: { dom: unknown; hasFocus?: boolean } | null;
         containsTarget?: unknown;
@@ -41,6 +42,7 @@ function createMarkdownView(
             contains: (value: unknown) => value === options.containsTarget,
         },
         getMode: () => options.mode ?? "source",
+        getViewData: () => options.viewData ?? options.value ?? "",
         getViewType: () => "markdown",
         previewMode: {
             rerender: (force: boolean) => {
@@ -166,6 +168,28 @@ test("workspace view controller resolves files, markdown views, and open note co
     assert.equal(await harness.controller.getStoredNoteContent(openFile), "open disk text");
     assert.equal(await harness.controller.getCurrentNoteContent(closedFile), "closed file text");
     assert.equal(await harness.controller.getStoredNoteContent(closedFile), "closed file text");
+});
+
+test("workspace view controller reads full note data from reading view instead of the editor shim", async () => {
+    const noteFile = createFile("docs/preview.md");
+    const previewMarkdownView = createMarkdownView(noteFile, {
+        mode: "preview",
+        value: "",
+        viewData: "# Title\n\nBody\n\n<!-- SideNote2 comments\n[]\n-->",
+    });
+    const harness = createHarness({
+        activeLeaf: { view: previewMarkdownView },
+        leaves: [{ view: previewMarkdownView }],
+        files: [noteFile],
+        cachedReadValues: {
+            [noteFile.path]: "disk fallback text",
+        },
+    });
+
+    assert.equal(
+        await harness.controller.getCurrentNoteContent(noteFile),
+        "# Title\n\nBody\n\n<!-- SideNote2 comments\n[]\n-->",
+    );
 });
 
 test("workspace view controller syncs visible files, rerenders surfaces, and clears markdown selections", async () => {
