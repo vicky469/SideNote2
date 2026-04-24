@@ -2699,7 +2699,7 @@ export default class SideNote2View extends ItemView {
             },
             onCloseModal: () => {},
             placeholder: "Find a file to move into",
-            title: "Move side note to another file",
+            title: "Move to another file",
         }).open();
     }
 

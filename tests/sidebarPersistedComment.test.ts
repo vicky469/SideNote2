@@ -269,7 +269,7 @@ test("buildPersistedCommentPresentation chooses the right resolve action copy an
         icon: "share",
     });
     assert.deepEqual(unresolved.moveAction, {
-        ariaLabel: "Move side note to another file",
+        ariaLabel: "Move to another file",
         icon: "arrow-right-left",
     });
     assert.deepEqual(unresolved.resolveAction, {
