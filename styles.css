@@ -1096,6 +1096,7 @@ button.sidenote2-tab-button.sidenote2-tab-button--active {
     align-items: center;
     gap: 4px;
     align-self: flex-start;
+    margin-right: 4px;
 }
 
 .sidenote2-comment-item.page-note .sidenote2-comment-meta-indicators {
