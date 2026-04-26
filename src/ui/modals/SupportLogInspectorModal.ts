@@ -12,6 +12,7 @@ interface SupportLogInspectorModalOptions {
     fileName: string;
     logContent: string;
     locateLogFile?: (() => Promise<boolean>) | undefined;
+    openDataFolder?: (() => Promise<boolean>) | undefined;
 }
 
 export default class SupportLogInspectorModal extends Modal {
@@ -24,6 +25,7 @@ export default class SupportLogInspectorModal extends Modal {
     private customInputValue = "";
     private inputRefreshTimeout: number | null = null;
     private canLocateLogFile = false;
+    private canOpenDataFolder = false;
     private cachedPreviewSource: SupportLogPreviewSource | null = null;
     private cachedPreviewSourceContent: string | null = null;
     private cachedPreviewModels = new Map<string, SupportLogPreviewModel>();
@@ -51,6 +53,7 @@ export default class SupportLogInspectorModal extends Modal {
     constructor(app: App, private readonly options: SupportLogInspectorModalOptions) {
         super(app);
         this.canLocateLogFile = Boolean(options.locateLogFile);
+        this.canOpenDataFolder = Boolean(options.openDataFolder);
     }
 
     onOpen(): void {
@@ -188,20 +191,35 @@ export default class SupportLogInspectorModal extends Modal {
     private renderActions(contentEl: HTMLElement): void {
         this.actionsEl?.remove();
         this.actionsEl = null;
-        if (!this.canLocateLogFile || !this.options.locateLogFile) {
+        const hasAnyAction = this.canLocateLogFile || this.canOpenDataFolder;
+        if (!hasAnyAction) {
             return;
         }
 
         const actions = contentEl.createDiv("sidenote2-support-log-preview-actions");
         this.actionsEl = actions;
-        const locateButton = actions.createEl("button", {
-            text: "Locate log",
-            cls: "sidenote2-modal-cancel-btn",
-        });
-        locateButton.setAttribute("type", "button");
-        locateButton.onclick = () => {
-            void this.handleLocateLogFile();
-        };
+
+        if (this.canLocateLogFile && this.options.locateLogFile) {
+            const locateButton = actions.createEl("button", {
+                text: "Locate log",
+                cls: "sidenote2-modal-cancel-btn",
+            });
+            locateButton.setAttribute("type", "button");
+            locateButton.onclick = () => {
+                void this.handleLocateLogFile();
+            };
+        }
+
+        if (this.canOpenDataFolder && this.options.openDataFolder) {
+            const openFolderButton = actions.createEl("button", {
+                text: "Open data folder",
+                cls: "sidenote2-modal-cancel-btn",
+            });
+            openFolderButton.setAttribute("type", "button");
+            openFolderButton.onclick = () => {
+                void this.handleOpenDataFolder();
+            };
+        }
     }
 
     private buildResultsChrome(resultsEl: HTMLElement): void {
@@ -428,6 +446,16 @@ export default class SupportLogInspectorModal extends Modal {
         }
 
         this.canLocateLogFile = false;
+        this.renderActions(this.contentEl);
+    }
+
+    private async handleOpenDataFolder(): Promise<void> {
+        const opened = await this.options.openDataFolder?.();
+        if (opened) {
+            return;
+        }
+
+        this.canOpenDataFolder = false;
         this.renderActions(this.contentEl);
     }
 

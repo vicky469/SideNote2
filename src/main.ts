@@ -82,6 +82,8 @@ import {
 } from "./logs/logService";
 import bundledSidenoteSkillContent from "../skills/sidenote2/SKILL.md";
 
+const SIDECAR_STORAGE_MIGRATION_VERSION = 1;
+
 // Helper function to generate SHA256 hash using Web Crypto API (works on mobile)
 async function generateHash(text: string): Promise<string> {
     const data = new TextEncoder().encode(text);
@@ -284,6 +286,7 @@ export default class SideNote2 extends Plugin {
         getCurrentNoteContent: (file) => this.workspaceViewController.getCurrentNoteContent(file),
         getStoredNoteContent: (file) => this.workspaceViewController.getStoredNoteContent(file),
         getParsedNoteComments: (filePath, noteContent) => this.getParsedNoteComments(filePath, noteContent),
+        getPluginDataDirPath: () => this.getPluginDataDirPath(),
         isAllCommentsNotePath: (filePath) => this.isAllCommentsNotePath(filePath),
         isCommentableFile: (file): file is TFile => this.isCommentableFile(file),
         isMarkdownEditorFocused: (file) => this.workspaceViewController.isMarkdownEditorFocused(file),
@@ -377,6 +380,9 @@ export default class SideNote2 extends Plugin {
         ensureSidebarView: () => this.commentNavigationController.ensureSidebarView(),
         getCommentManager: () => this.commentManager,
         getAggregateCommentIndex: () => this.aggregateCommentIndex,
+        renameStoredComments: (previousFilePath, nextFilePath) =>
+            this.commentPersistenceController.renameStoredComments(previousFilePath, nextFilePath),
+        deleteStoredComments: (filePath) => this.commentPersistenceController.deleteStoredComments(filePath),
         clearParsedNoteCache: (filePath) => this.clearParsedNoteCache(filePath),
         clearDerivedCommentLinksForFile: (filePath) => this.derivedCommentMetadataManager.clearDerivedCommentLinksForFile(filePath),
         isCommentableFile: (file): file is TFile => this.isCommentableFile(file),
@@ -479,6 +485,7 @@ export default class SideNote2 extends Plugin {
 
         this.commentManager = new CommentManager([]);
         await this.loadSettings();
+        await this.ensureSidecarStorageMigrated();
         this.pluginRegistrationController.register();
         this.registerEditorExtension([
             this.commentHighlightController.createLivePreviewManagedBlockPlugin(),
@@ -521,14 +528,14 @@ export default class SideNote2 extends Plugin {
 
         // Keep cached comment paths aligned with renamed notes.
         this.registerEvent(
-            this.app.vault.on('rename', (file, oldPath) => {
-                this.pluginLifecycleController.handleFileRename(file instanceof TFile ? file : null, oldPath);
+            this.app.vault.on('rename', async (file, oldPath) => {
+                await this.pluginLifecycleController.handleFileRename(file instanceof TFile ? file : null, oldPath);
             })
         );
 
         this.registerEvent(
-            this.app.vault.on('delete', (file) => {
-                this.pluginLifecycleController.handleFileDelete(file instanceof TFile ? file : null);
+            this.app.vault.on('delete', async (file) => {
+                await this.pluginLifecycleController.handleFileDelete(file instanceof TFile ? file : null);
             })
         );
 
@@ -759,6 +766,53 @@ export default class SideNote2 extends Plugin {
         return this.app.vault.adapter instanceof FileSystemAdapter
             ? this.app.vault.adapter.getBasePath()
             : null;
+    }
+
+    private getPluginDataDirPath(): string {
+        return this.manifest.dir ?? normalizePath(`${this.app.vault.configDir}/plugins/${this.manifest.id}`);
+    }
+
+    private getSidecarStorageMigrationVersion(): number | null {
+        const persistedData = this.indexNoteSettingsController.readPersistedPluginData();
+        return typeof persistedData.sidecarStorageMigrationVersion === "number"
+            ? persistedData.sidecarStorageMigrationVersion
+            : null;
+    }
+
+    private async setSidecarStorageMigrationVersion(version: number): Promise<void> {
+        const persistedData = this.indexNoteSettingsController.readPersistedPluginData();
+        if (persistedData.sidecarStorageMigrationVersion === version) {
+            return;
+        }
+
+        await this.indexNoteSettingsController.writePersistedPluginData({
+            ...persistedData,
+            sidecarStorageMigrationVersion: version,
+        });
+    }
+
+    private async ensureSidecarStorageMigrated(): Promise<void> {
+        if (this.getSidecarStorageMigrationVersion() === SIDECAR_STORAGE_MIGRATION_VERSION) {
+            return;
+        }
+
+        try {
+            await this.logEvent("info", "persistence", "storage.note.migrate.startup.begin", {
+                version: SIDECAR_STORAGE_MIGRATION_VERSION,
+            });
+            await this.commentPersistenceController.migrateLegacyInlineCommentsOnStartup();
+            await this.setSidecarStorageMigrationVersion(SIDECAR_STORAGE_MIGRATION_VERSION);
+            await this.logEvent("info", "persistence", "storage.note.migrate.startup.success", {
+                version: SIDECAR_STORAGE_MIGRATION_VERSION,
+            });
+        } catch (error) {
+            this.warn(
+                "Failed to migrate legacy SideNote2 note storage into sidecar files.",
+                error,
+                "persistence",
+                "storage.note.migrate.startup.warn",
+            );
+        }
     }
 
     private getSyncedBundledSidenoteSkillPluginVersion(): string | null {
@@ -1562,6 +1616,56 @@ export default class SideNote2 extends Plugin {
         }
     }
 
+    public async openSidecarDataFolder(): Promise<boolean> {
+        if (!this.canLocateSupportLogFileLocation()) {
+            return false;
+        }
+
+        const electronRequire = typeof window !== "undefined"
+            ? (window as Window & {
+                require?: (moduleName: string) => unknown;
+            }).require
+            : undefined;
+        if (typeof electronRequire !== "function" || !(this.app.vault.adapter instanceof FileSystemAdapter)) {
+            return false;
+        }
+
+        try {
+            const electronModule = electronRequire("electron") as {
+                shell?: {
+                    showItemInFolder?: (filePath: string) => void;
+                    openPath?: (filePath: string) => Promise<string>;
+                };
+            };
+            const pluginDirPath = this.getPluginDataDirPath();
+            const sidecarDirPath = normalizePath(`${pluginDirPath}/sidenotes/by-note`);
+            const fullPath = this.app.vault.adapter.getFullPath(sidecarDirPath);
+            const openPath = electronModule.shell?.openPath;
+            const showItemInFolder = electronModule.shell?.showItemInFolder;
+            if (typeof openPath === "function") {
+                const openResult = await openPath(fullPath);
+                if (openResult) {
+                    throw new Error(openResult);
+                }
+            } else if (typeof showItemInFolder === "function") {
+                showItemInFolder(fullPath);
+            } else {
+                throw new Error("Electron shell.openPath and shell.showItemInFolder are unavailable.");
+            }
+
+            await this.logEvent("info", "support", "support.sidecar.folder.opened", {
+                folderPath: sidecarDirPath,
+            });
+            return true;
+        } catch (error) {
+            console.error("[SideNote2] Failed to reveal sidecar data folder.", error);
+            await this.logEvent("warn", "support", "support.sidecar.folder.open.error", {
+                error,
+            });
+            return false;
+        }
+    }
+
     public async openSupportLogInspectorModal(context: {
         filePath: string | null;
         surface: "index" | "note";
@@ -1582,10 +1686,15 @@ export default class SideNote2 extends Plugin {
             ? () => this.openSupportLogFileLocation(attachedLog.relativePath)
             : undefined;
 
+        const openDataFolder = this.canLocateSupportLogFileLocation()
+            ? () => this.openSidecarDataFolder()
+            : undefined;
+
         new SupportLogInspectorModal(this.app, {
             fileName: "Log Inspector",
             logContent: "",
             locateLogFile,
+            openDataFolder,
         }).open();
     }
 }
