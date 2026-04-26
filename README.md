@@ -139,9 +139,11 @@ Restart Codex after installing the skill.
 
 ## Storage
 
-Each markdown note stores its comments in a trailing hidden `<!-- SideNote2 comments -->` JSON block inside the same file.
+Side notes are stored in plugin data sidecars under `.obsidian/plugins/side-note2/sidenotes/by-note/<hash-prefix>/<full-hash>.json`.
 
-`SideNote2 index.md` is just a generated index, not separate storage.
+On the first startup after the sidecar-storage release, SideNote2 auto-migrates legacy hidden `<!-- SideNote2 comments -->` blocks into those sidecar files and strips the managed block from the source note.
+
+`SideNote2 index.md` is still just a generated index, not separate storage.
 
 ## Index Surfaces
 

@@ -7,6 +7,8 @@ export interface PluginLifecycleHost {
     ensureSidebarView(): Promise<void>;
     getCommentManager(): CommentManager;
     getAggregateCommentIndex(): AggregateCommentIndex;
+    renameStoredComments(previousFilePath: string, nextFilePath: string): Promise<void>;
+    deleteStoredComments(filePath: string): Promise<void>;
     clearParsedNoteCache(filePath: string): void;
     clearDerivedCommentLinksForFile(filePath: string): void;
     isCommentableFile(file: TFile | null): file is TFile;
@@ -38,11 +40,12 @@ export class PluginLifecycleController {
         void this.host.log?.("info", "startup", "startup.layout.ready");
     }
 
-    public handleFileRename(file: TFile | null, oldPath: string): void {
+    public async handleFileRename(file: TFile | null, oldPath: string): Promise<void> {
         if (!file) {
             return;
         }
 
+        await this.host.renameStoredComments(oldPath, file.path);
         this.host.getCommentManager().renameFile(oldPath, file.path);
         this.host.clearParsedNoteCache(oldPath);
         this.host.clearParsedNoteCache(file.path);
@@ -54,11 +57,12 @@ export class PluginLifecycleController {
         this.host.scheduleAggregateNoteRefresh();
     }
 
-    public handleFileDelete(file: TFile | null): void {
+    public async handleFileDelete(file: TFile | null): Promise<void> {
         if (!this.host.isCommentableFile(file)) {
             return;
         }
 
+        await this.host.deleteStoredComments(file.path);
         this.host.getCommentManager().replaceCommentsForFile(file.path, []);
         this.host.clearParsedNoteCache(file.path);
         this.host.getAggregateCommentIndex().deleteFile(file.path);

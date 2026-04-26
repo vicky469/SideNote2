@@ -61,6 +61,8 @@ function createHarness(options: {
     let syncIndexNoteViewClassesCount = 0;
     let modifyHandledPath: string | null = null;
     let ensureSidebarViewCount = 0;
+    const renamedStoredComments: Array<{ previousFilePath: string; nextFilePath: string }> = [];
+    const deletedStoredComments: string[] = [];
 
     const controller = new PluginLifecycleController({
         app: {} as never,
@@ -69,6 +71,12 @@ function createHarness(options: {
         },
         getCommentManager: () => commentManager,
         getAggregateCommentIndex: () => aggregateCommentIndex,
+        renameStoredComments: async (previousFilePath, nextFilePath) => {
+            renamedStoredComments.push({ previousFilePath, nextFilePath });
+        },
+        deleteStoredComments: async (filePath) => {
+            deletedStoredComments.push(filePath);
+        },
         clearParsedNoteCache: (filePath) => {
             clearedParsedPaths.push(filePath);
         },
@@ -136,6 +144,8 @@ function createHarness(options: {
         getSyncIndexNoteViewClassesCount: () => syncIndexNoteViewClassesCount,
         getEnsureSidebarViewCount: () => ensureSidebarViewCount,
         getModifyHandledPath: () => modifyHandledPath,
+        renamedStoredComments,
+        deletedStoredComments,
     };
 }
 
@@ -158,11 +168,14 @@ test("plugin lifecycle controller keeps renamed comment files and indexes aligne
         initialComments: [createComment({ filePath: originalFile.path })],
     });
 
-    harness.controller.handleFileRename(renamedFile, originalFile.path);
-    await Promise.resolve();
+    await harness.controller.handleFileRename(renamedFile, originalFile.path);
 
     assert.equal(harness.commentManager.getCommentById("comment-1")?.filePath, renamedFile.path);
     assert.equal(harness.aggregateCommentIndex.getCommentById("comment-1")?.filePath, renamedFile.path);
+    assert.deepEqual(harness.renamedStoredComments, [{
+        previousFilePath: originalFile.path,
+        nextFilePath: renamedFile.path,
+    }]);
     assert.deepEqual(harness.clearedParsedPaths, [originalFile.path, renamedFile.path]);
     assert.deepEqual(harness.clearedDerivedPaths, [originalFile.path]);
     assert.deepEqual(harness.loadedFiles, [renamedFile.path]);
@@ -177,15 +190,15 @@ test("plugin lifecycle controller clears deleted comment files only when comment
         initialComments: [createComment({ filePath: deletedFile.path })],
     });
 
-    harness.controller.handleFileDelete(createFile("docs/ignored.png"));
-    harness.controller.handleFileDelete(deletedFile);
-    await Promise.resolve();
+    await harness.controller.handleFileDelete(createFile("docs/ignored.png"));
+    await harness.controller.handleFileDelete(deletedFile);
 
     assert.deepEqual(harness.commentManager.getCommentsForFile(deletedFile.path), []);
     assert.deepEqual(
         harness.aggregateCommentIndex.getAllComments().filter((comment) => comment.filePath === deletedFile.path),
         [],
     );
+    assert.deepEqual(harness.deletedStoredComments, [deletedFile.path]);
     assert.deepEqual(harness.clearedParsedPaths, [deletedFile.path]);
     assert.deepEqual(harness.clearedDerivedPaths, [deletedFile.path]);
     assert.equal(harness.getRefreshCommentViewsCount(), 1);

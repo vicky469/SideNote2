@@ -8,7 +8,6 @@ import {
     LEGACY_ALL_COMMENTS_NOTE_PATH,
 } from "../core/derived/allCommentsNote";
 import {
-    shouldDeferManagedCommentPersist,
     syncLoadedCommentsForCurrentNote,
 } from "../core/rules/commentSyncPolicy";
 import {
@@ -18,6 +17,7 @@ import {
     type ParsedNoteComments,
 } from "../core/storage/noteCommentStorage";
 import { purgeExpiredDeletedThreads } from "../core/rules/deletedCommentVisibility";
+import { SidecarCommentStorage } from "../core/storage/sidecarCommentStorage";
 import { remapSelectionOffsetAfterManagedSectionEdit } from "../core/text/editOffsets";
 import type { AggregateCommentIndex } from "../index/AggregateCommentIndex";
 import { shouldSkipAggregateViewRefresh } from "./commentPersistencePlanner";
@@ -33,7 +33,10 @@ type SyncedFileComments = {
     mainContent: string;
     threads: CommentThread[];
     comments: Comment[];
+    source: "none" | "inline" | "sidecar";
 };
+
+type VisibleSyncedFileComments = Omit<SyncedFileComments, "source">;
 
 export interface CommentPersistenceHost {
     app: Plugin["app"];
@@ -46,6 +49,7 @@ export interface CommentPersistenceHost {
     getCurrentNoteContent(file: TFile): Promise<string>;
     getStoredNoteContent(file: TFile): Promise<string>;
     getParsedNoteComments(filePath: string, noteContent: string): ParsedNoteComments;
+    getPluginDataDirPath(): string;
     isAllCommentsNotePath(filePath: string): boolean;
     isCommentableFile(file: TFile | null): file is TFile;
     isMarkdownEditorFocused(file: TFile): boolean;
@@ -77,13 +81,47 @@ function isTFileLike(value: unknown): value is TFile {
 export class CommentPersistenceController {
     private readonly pendingCommentPersistTimers: Record<string, number> = {};
     private readonly commentViewRefreshSuppressions = new Map<string, number>();
+    private readonly sidecarStorage: SidecarCommentStorage;
     private aggregateRefreshTimer: number | null = null;
     private aggregateRefreshPromise: Promise<void> | null = null;
     private aggregateRefreshQueued = false;
     private aggregateIndexInitialized = false;
     private aggregateIndexInitializationPromise: Promise<void> | null = null;
 
-    constructor(private readonly host: CommentPersistenceHost) {}
+    constructor(private readonly host: CommentPersistenceHost) {
+        this.sidecarStorage = new SidecarCommentStorage({
+            adapter: host.app.vault.adapter,
+            pluginDirPath: host.getPluginDataDirPath(),
+            hashText: (text) => host.hashText(text),
+        });
+    }
+
+    public async renameStoredComments(previousFilePath: string, nextFilePath: string): Promise<void> {
+        await this.sidecarStorage.rename(previousFilePath, nextFilePath);
+    }
+
+    public async deleteStoredComments(filePath: string): Promise<void> {
+        await this.sidecarStorage.remove(filePath);
+    }
+
+    public async migrateLegacyInlineCommentsOnStartup(): Promise<void> {
+        const markdownFiles = this.host.app.vault
+            .getMarkdownFiles()
+            .filter((file) => !this.host.isAllCommentsNotePath(file.path))
+            .sort((left, right) => left.path.localeCompare(right.path));
+
+        let migratedCount = 0;
+        for (const file of markdownFiles) {
+            const noteContent = await this.host.getCurrentNoteContent(file);
+            if (await this.ensureLegacyInlineCommentsMigrated(file, noteContent)) {
+                migratedCount += 1;
+            }
+        }
+
+        void this.host.log?.("info", "persistence", "storage.note.migrate.startup.complete", {
+            migratedCount,
+        });
+    }
 
     public async handleMarkdownFileModified(file: TFile): Promise<void> {
         if (file.extension !== "md") {
@@ -93,39 +131,25 @@ export class CommentPersistenceController {
         try {
             const fileContent = await this.host.getCurrentNoteContent(file);
             const storedContent = await this.host.getStoredNoteContent(file);
-            if (fileContent !== storedContent && this.host.getMarkdownViewForFile(file)) {
+            const hasSidecar = await this.sidecarStorage.exists(file.path);
+            if (!hasSidecar && fileContent !== storedContent && this.host.getMarkdownViewForFile(file)) {
                 const currentParsed = await this.parseAndNormalizeFileComments(file.path, fileContent);
                 const storedParsed = await this.parseAndNormalizeFileComments(file.path, storedContent);
-                if (currentParsed.mainContent === storedParsed.mainContent) {
-                    await this.syncThreadsIntoVisibleNoteContent(file, currentParsed.mainContent, storedParsed.threads);
+                if (currentParsed.mainContent === storedParsed.mainContent && storedParsed.threads.length > 0) {
+                    const synced = await this.syncThreadsIntoVisibleNoteContent(file, currentParsed.mainContent, storedParsed.threads);
+                    await this.sidecarStorage.write(file.path, synced.threads);
                     this.clearPendingCommentPersistTimer(file.path);
                     await this.afterCommentsChanged(file.path);
                     void this.host.log?.("info", "persistence", "storage.note.external-managed-sync", {
                         filePath: file.path,
-                        threadCount: storedParsed.threads.length,
+                        threadCount: synced.threads.length,
                     });
                     return;
                 }
             }
             const parsed = await this.syncFileCommentsFromContent(file, fileContent);
-            const rewrittenContent = serializeNoteCommentThreads(parsed.mainContent, parsed.threads);
-
-            if (shouldDeferManagedCommentPersist({
-                isEditorFocused: this.host.isMarkdownEditorFocused(file),
-                fileContent,
-                rewrittenContent,
-            })) {
-                void this.host.log?.("warn", "persistence", "storage.note.write.conflict", {
-                    filePath: file.path,
-                });
-                this.scheduleDeferredCommentPersist(file);
-                await this.afterCommentsChanged(file.path);
-                return;
-            }
-
-            if (rewrittenContent !== fileContent) {
-                await this.writeCommentsForFile(file);
-                return;
+            if (parsed.source !== "none" || parsed.threads.length > 0) {
+                await this.sidecarStorage.write(file.path, parsed.threads);
             }
 
             this.clearPendingCommentPersistTimer(file.path);
@@ -237,7 +261,7 @@ export class CommentPersistenceController {
 
                 for (const file of markdownFiles) {
                     const noteContent = await this.host.getCurrentNoteContent(file);
-                    const parsed = await this.parseAndNormalizeFileComments(file.path, noteContent);
+                    const parsed = await this.getCanonicalThreadState(file, noteContent);
                     this.host.getAggregateCommentIndex().updateFile(file.path, parsed.threads);
                 }
 
@@ -252,31 +276,16 @@ export class CommentPersistenceController {
         return initializedNow;
     }
 
-    private async parseAndNormalizeFileComments(filePath: string, noteContent: string): Promise<ParsedNoteComments> {
-        void this.host.log?.("info", "persistence", "storage.note.parse.begin", {
-            filePath,
-        });
-        if (this.host.isAllCommentsNotePath(filePath)) {
-            const parsed = this.host.getParsedNoteComments(filePath, noteContent);
-            return {
-                mainContent: parsed.mainContent,
-                threads: [],
-                comments: [],
-            };
-        }
-
-        if (getManagedSectionKind(noteContent) === "unsupported") {
-            void this.host.log?.("warn", "persistence", "storage.note.parse.unsupported", {
-                filePath,
-            });
-        }
-        const parsed = this.host.getParsedNoteComments(filePath, noteContent);
+    private async normalizeThreadsForFile(filePath: string, threads: CommentThread[]): Promise<CommentThread[]> {
         const normalizedThreads: CommentThread[] = [];
 
-        for (const parsedThread of parsed.threads) {
+        for (const parsedThread of threads) {
             const thread: CommentThread = {
                 ...parsedThread,
-                entries: parsedThread.entries.map((entry) => ({ ...entry })),
+                filePath,
+                entries: Array.isArray(parsedThread.entries)
+                    ? parsedThread.entries.map((entry) => ({ ...entry }))
+                    : [],
             };
             if (!thread.id) {
                 thread.id = this.host.createCommentId();
@@ -309,7 +318,29 @@ export class CommentPersistenceController {
             normalizedThreads.push(thread);
         }
 
-        const retainedThreads = purgeExpiredDeletedThreads(normalizedThreads);
+        return purgeExpiredDeletedThreads(normalizedThreads);
+    }
+
+    private async parseAndNormalizeFileComments(filePath: string, noteContent: string): Promise<ParsedNoteComments> {
+        void this.host.log?.("info", "persistence", "storage.note.parse.begin", {
+            filePath,
+        });
+        if (this.host.isAllCommentsNotePath(filePath)) {
+            const parsed = this.host.getParsedNoteComments(filePath, noteContent);
+            return {
+                mainContent: parsed.mainContent,
+                threads: [],
+                comments: [],
+            };
+        }
+
+        if (getManagedSectionKind(noteContent) === "unsupported") {
+            void this.host.log?.("warn", "persistence", "storage.note.parse.unsupported", {
+                filePath,
+            });
+        }
+        const parsed = this.host.getParsedNoteComments(filePath, noteContent);
+        const retainedThreads = await this.normalizeThreadsForFile(filePath, parsed.threads);
 
         return {
             mainContent: parsed.mainContent,
@@ -319,15 +350,19 @@ export class CommentPersistenceController {
     }
 
     private async syncFileCommentsFromContent(file: TFile, noteContent: string): Promise<SyncedFileComments> {
-        const parsed = await this.parseAndNormalizeFileComments(file.path, noteContent);
-        return this.syncThreadsIntoVisibleNoteContent(file, parsed.mainContent, parsed.threads);
+        const parsed = await this.getCanonicalThreadState(file, noteContent);
+        const synced = await this.syncThreadsIntoVisibleNoteContent(file, parsed.mainContent, parsed.threads);
+        return {
+            ...synced,
+            source: parsed.source,
+        };
     }
 
     private async syncThreadsIntoVisibleNoteContent(
         file: TFile,
         mainContent: string,
         threads: CommentThread[],
-    ): Promise<SyncedFileComments> {
+    ): Promise<VisibleSyncedFileComments> {
         const syncedComments = await syncLoadedCommentsForCurrentNote(
             file.path,
             mainContent,
@@ -351,51 +386,123 @@ export class CommentPersistenceController {
             filePath: file.path,
             threadCount: threads.length,
         });
-        const openView = this.host.getMarkdownViewForFile(file);
-        const canEditOpenView = !!openView && openView.getMode() !== "preview";
-
-        if (openView && canEditOpenView) {
-            const currentContent = openView.editor.getValue();
-            const nextContent = serializeNoteCommentThreads(currentContent, threads);
-            if (currentContent !== nextContent) {
-                const edit = getManagedSectionEditForThreads(currentContent, threads);
-                const shouldClampSelectionToManagedSectionStart = openView.getMode() === "source"
-                    && openView.getState().source !== true;
-                const selectionFromOffset = openView.editor.posToOffset(openView.editor.getCursor("from"));
-                const selectionToOffset = openView.editor.posToOffset(openView.editor.getCursor("to"));
-                openView.editor.replaceRange(
-                    edit.replacement,
-                    openView.editor.offsetToPos(edit.fromOffset),
-                    openView.editor.offsetToPos(edit.toOffset),
-                );
-                openView.editor.setSelection(
-                    openView.editor.offsetToPos(remapSelectionOffsetAfterManagedSectionEdit(selectionFromOffset, edit, {
-                        clampToManagedSectionStart: shouldClampSelectionToManagedSectionStart,
-                    })),
-                    openView.editor.offsetToPos(remapSelectionOffsetAfterManagedSectionEdit(selectionToOffset, edit, {
-                        clampToManagedSectionStart: shouldClampSelectionToManagedSectionStart,
-                    })),
-                );
-            }
-            await this.syncFileCommentsFromContent(file, nextContent);
-            await this.afterCommentsChanged(file.path, options);
-            void this.host.log?.("info", "persistence", "storage.note.write.success", {
-                filePath: file.path,
-                threadCount: threads.length,
-            });
-            return nextContent;
-        }
-
-        const nextContent = await this.host.app.vault.process(file, (currentContent) =>
-            serializeNoteCommentThreads(currentContent, threads),
-        );
-        await this.syncFileCommentsFromContent(file, nextContent);
+        const currentContent = await this.host.getCurrentNoteContent(file);
+        const parsedCurrentContent = await this.parseAndNormalizeFileComments(file.path, currentContent);
+        const synced = await this.syncThreadsIntoVisibleNoteContent(file, parsedCurrentContent.mainContent, threads);
+        await this.sidecarStorage.write(file.path, synced.threads);
+        const nextContent = await this.stripInlineManagedSectionIfPresent(file, currentContent);
         await this.afterCommentsChanged(file.path, options);
         void this.host.log?.("info", "persistence", "storage.note.write.success", {
             filePath: file.path,
-            threadCount: threads.length,
+            threadCount: synced.threads.length,
         });
         return nextContent;
+    }
+
+    private async getCanonicalThreadState(file: TFile, noteContent: string): Promise<{
+        mainContent: string;
+        threads: CommentThread[];
+        source: "none" | "inline" | "sidecar";
+    }> {
+        const inlineParsed = await this.parseAndNormalizeFileComments(file.path, noteContent);
+        const hasSidecar = await this.sidecarStorage.exists(file.path);
+        const sidecarThreads = hasSidecar ? await this.sidecarStorage.read(file.path) : null;
+
+        if (sidecarThreads) {
+            if (getManagedSectionKind(noteContent) === "threaded") {
+                await this.stripInlineManagedSectionIfPresent(file, noteContent);
+            }
+
+            return {
+                mainContent: inlineParsed.mainContent,
+                threads: await this.normalizeThreadsForFile(file.path, sidecarThreads),
+                source: "sidecar",
+            };
+        }
+
+        if (inlineParsed.threads.length === 0) {
+            return {
+                mainContent: inlineParsed.mainContent,
+                threads: [],
+                source: "none",
+            };
+        }
+
+        await this.sidecarStorage.write(file.path, inlineParsed.threads);
+        await this.stripInlineManagedSectionIfPresent(file, noteContent);
+        void this.host.log?.("info", "persistence", "storage.note.migrate.success", {
+            filePath: file.path,
+            threadCount: inlineParsed.threads.length,
+        });
+        return {
+            mainContent: inlineParsed.mainContent,
+            threads: inlineParsed.threads,
+            source: "inline",
+        };
+    }
+
+    private async ensureLegacyInlineCommentsMigrated(file: TFile, noteContent: string): Promise<boolean> {
+        if (await this.sidecarStorage.exists(file.path)) {
+            if (getManagedSectionKind(noteContent) === "threaded") {
+                await this.stripInlineManagedSectionIfPresent(file, noteContent);
+                return true;
+            }
+            return false;
+        }
+
+        const parsed = await this.parseAndNormalizeFileComments(file.path, noteContent);
+        if (parsed.threads.length === 0) {
+            return false;
+        }
+
+        await this.sidecarStorage.write(file.path, parsed.threads);
+        await this.stripInlineManagedSectionIfPresent(file, noteContent);
+        void this.host.log?.("info", "persistence", "storage.note.migrate.success", {
+            filePath: file.path,
+            threadCount: parsed.threads.length,
+        });
+        return true;
+    }
+
+    private async stripInlineManagedSectionIfPresent(file: TFile, noteContent: string): Promise<string> {
+        if (getManagedSectionKind(noteContent) !== "threaded") {
+            return noteContent;
+        }
+
+        const nextContent = serializeNoteCommentThreads(noteContent, []);
+        if (nextContent === noteContent) {
+            return noteContent;
+        }
+
+        const openView = this.host.getMarkdownViewForFile(file);
+        const canEditOpenView = !!openView && openView.getMode() !== "preview";
+        if (openView && canEditOpenView) {
+            const edit = getManagedSectionEditForThreads(noteContent, []);
+            const shouldClampSelectionToManagedSectionStart = openView.getMode() === "source"
+                && openView.getState().source !== true;
+            const selectionFromOffset = openView.editor.posToOffset(openView.editor.getCursor("from"));
+            const selectionToOffset = openView.editor.posToOffset(openView.editor.getCursor("to"));
+            openView.editor.replaceRange(
+                edit.replacement,
+                openView.editor.offsetToPos(edit.fromOffset),
+                openView.editor.offsetToPos(edit.toOffset),
+            );
+            openView.editor.setSelection(
+                openView.editor.offsetToPos(remapSelectionOffsetAfterManagedSectionEdit(selectionFromOffset, edit, {
+                    clampToManagedSectionStart: shouldClampSelectionToManagedSectionStart,
+                })),
+                openView.editor.offsetToPos(remapSelectionOffsetAfterManagedSectionEdit(selectionToOffset, edit, {
+                    clampToManagedSectionStart: shouldClampSelectionToManagedSectionStart,
+                })),
+            );
+            return nextContent;
+        }
+
+        return this.host.app.vault.process(file, (currentContent) =>
+            getManagedSectionKind(currentContent) === "threaded"
+                ? serializeNoteCommentThreads(currentContent, [])
+                : currentContent,
+        );
     }
 
     private async afterCommentsChanged(filePath: string | null = null, options: PersistOptions = {}): Promise<void> {

@@ -35,6 +35,9 @@ data.json
 # Generated plugin logs
 /logs
 
+# Dev vault sidecar artifacts (per-note comment storage)
+/sidenotes
+
 # Temporary local artifact exports
 /.public-release
 

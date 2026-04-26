@@ -1,10 +1,46 @@
 import * as assert from "node:assert/strict";
 import test from "node:test";
+import type { DataAdapter } from "obsidian";
 import type { MarkdownView, TFile } from "obsidian";
 import { CommentManager, type CommentThread } from "../src/commentManager";
 import { CommentPersistenceController } from "../src/control/commentPersistenceController";
 import { serializeNoteCommentThreads, parseNoteComments } from "../src/core/storage/noteCommentStorage";
 import { AggregateCommentIndex } from "../src/index/AggregateCommentIndex";
+
+class FakeAdapter implements Pick<DataAdapter, "exists" | "mkdir" | "write" | "read" | "remove" | "rename"> {
+    public readonly directories = new Set<string>();
+    public readonly files = new Map<string, string>();
+
+    async exists(normalizedPath: string): Promise<boolean> {
+        return this.directories.has(normalizedPath) || this.files.has(normalizedPath);
+    }
+
+    async mkdir(normalizedPath: string): Promise<void> {
+        this.directories.add(normalizedPath);
+    }
+
+    async write(normalizedPath: string, data: string): Promise<void> {
+        this.files.set(normalizedPath, data);
+    }
+
+    async read(normalizedPath: string): Promise<string> {
+        return this.files.get(normalizedPath) ?? "";
+    }
+
+    async remove(normalizedPath: string): Promise<void> {
+        this.files.delete(normalizedPath);
+    }
+
+    async rename(normalizedPath: string, normalizedNewPath: string): Promise<void> {
+        const content = this.files.get(normalizedPath);
+        if (content === undefined) {
+            return;
+        }
+
+        this.files.set(normalizedNewPath, content);
+        this.files.delete(normalizedPath);
+    }
+}
 
 function createFile(path: string): TFile {
     return {
@@ -51,6 +87,7 @@ test("comment persistence controller syncs external managed-block updates into a
     const storedThread = createThread(file.path);
     const currentContent = noteBody;
     const storedContent = serializeNoteCommentThreads(noteBody, [storedThread]);
+    const adapter = new FakeAdapter();
 
     const commentManager = new CommentManager([]);
     const aggregateCommentIndex = new AggregateCommentIndex();
@@ -63,6 +100,7 @@ test("comment persistence controller syncs external managed-block updates into a
     const controller = new CommentPersistenceController({
         app: {
             vault: {
+                adapter: adapter as unknown as DataAdapter,
                 process: async () => {
                     processCount += 1;
                     throw new Error("Should not rewrite the file for external managed-block sync.");
@@ -78,13 +116,14 @@ test("comment persistence controller syncs external managed-block updates into a
         getCurrentNoteContent: async () => currentContent,
         getStoredNoteContent: async () => storedContent,
         getParsedNoteComments: (filePath, noteContent) => parseNoteComments(noteContent, filePath),
+        getPluginDataDirPath: () => ".obsidian/plugins/side-note2",
         isAllCommentsNotePath: () => false,
         isCommentableFile: (candidate): candidate is TFile => !!candidate && candidate.extension === "md",
         isMarkdownEditorFocused: () => false,
         getCommentManager: () => commentManager,
         getAggregateCommentIndex: () => aggregateCommentIndex,
         createCommentId: () => "generated-id",
-        hashText: async (text) => `hash:${text}`,
+        hashText: async (text) => `hash-${text.replace(/\//g, "_")}`,
         syncDerivedCommentLinksForFile: (syncedFile, noteContent, comments) => {
             derivedSyncCalls.push({
                 filePath: syncedFile.path,
@@ -111,6 +150,7 @@ test("comment persistence controller syncs external managed-block updates into a
         await controller.handleMarkdownFileModified(file);
 
         assert.equal(processCount, 0);
+        assert.equal(adapter.files.size, 1);
         assert.equal(commentManager.getCommentsForFile(file.path).length, 1);
         assert.equal(commentManager.getCommentById("thread-1")?.comment, "external body");
         assert.equal(aggregateCommentIndex.getCommentById("thread-1")?.comment, "external body");
@@ -125,4 +165,63 @@ test("comment persistence controller syncs external managed-block updates into a
     } finally {
         globalThis.window = originalWindow;
     }
+});
+
+test("comment persistence controller migrates inline note storage into a sidecar and strips the source note block", async () => {
+    const file = createFile("docs/note.md");
+    const noteBody = "# Title\n\nAlpha target omega\n";
+    const legacyContent = serializeNoteCommentThreads(noteBody, [createThread(file.path)]);
+    const adapter = new FakeAdapter();
+
+    const commentManager = new CommentManager([]);
+    const aggregateCommentIndex = new AggregateCommentIndex();
+    let processCount = 0;
+    let rewrittenNoteContent = "";
+
+    const controller = new CommentPersistenceController({
+        app: {
+            vault: {
+                adapter: adapter as unknown as DataAdapter,
+                process: async (_file: TFile, updater: (currentContent: string) => string) => {
+                    processCount += 1;
+                    rewrittenNoteContent = updater(legacyContent);
+                    return rewrittenNoteContent;
+                },
+            },
+        } as never,
+        getAllCommentsNotePath: () => "SideNote2 index.md",
+        getIndexHeaderImageUrl: () => "",
+        getIndexHeaderImageCaption: () => "",
+        shouldShowResolvedComments: () => false,
+        getMarkdownViewForFile: () => null,
+        getMarkdownFileByPath: () => file,
+        getCurrentNoteContent: async () => legacyContent,
+        getStoredNoteContent: async () => legacyContent,
+        getParsedNoteComments: (filePath, noteContent) => parseNoteComments(noteContent, filePath),
+        getPluginDataDirPath: () => ".obsidian/plugins/side-note2",
+        isAllCommentsNotePath: () => false,
+        isCommentableFile: (candidate): candidate is TFile => !!candidate && candidate.extension === "md",
+        isMarkdownEditorFocused: () => false,
+        getCommentManager: () => commentManager,
+        getAggregateCommentIndex: () => aggregateCommentIndex,
+        createCommentId: () => "generated-id",
+        hashText: async (text) => `hash-${text.replace(/\//g, "_")}`,
+        syncDerivedCommentLinksForFile: () => {},
+        refreshCommentViews: async () => {},
+        refreshAllCommentsSidebarViews: async () => {},
+        refreshEditorDecorations: () => {},
+        refreshMarkdownPreviews: () => {},
+        getCommentMentionedPageLabels: () => [],
+        syncIndexNoteLeafMode: async () => {},
+        log: async () => {},
+    });
+
+    const comments = await controller.loadCommentsForFile(file);
+
+    assert.equal(processCount, 1);
+    assert.equal(rewrittenNoteContent, noteBody);
+    assert.equal(adapter.files.size, 1);
+    assert.equal(comments.length, 1);
+    assert.equal(commentManager.getCommentById("thread-1")?.comment, "external body");
+    assert.equal(aggregateCommentIndex.getCommentById("thread-1")?.comment, "external body");
 });
