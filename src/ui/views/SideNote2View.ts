@@ -2061,6 +2061,7 @@ export default class SideNote2View extends ItemView {
             && showListOnlyToolbarChips
             && showDeletedComments;
         const shouldRenderToolbar = options.isAllCommentsView
+            || (!options.isAllCommentsView && options.noteSidebarMode === "thought-trail")
             || shouldShowResolvedChip
             || shouldShowNestedChip
             || shouldShowAddPageCommentAction;
