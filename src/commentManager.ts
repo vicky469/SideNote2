@@ -25,7 +25,6 @@ export interface CommentThread {
     selectedText: string;
     selectedTextHash: string;
     anchorKind?: CommentAnchorKind;
-    isBookmark?: boolean;
     orphaned?: boolean;
     resolved?: boolean;
     deletedAt?: number;
@@ -46,7 +45,6 @@ export interface Comment {
     comment: string;
     timestamp: number;
     anchorKind?: CommentAnchorKind;
-    isBookmark?: boolean;
     orphaned?: boolean;
     resolved?: boolean;
     deletedAt?: number;
@@ -150,7 +148,6 @@ function normalizeThread(thread: CommentThread): CommentThread {
     return {
         ...thread,
         anchorKind: thread.anchorKind === "page" ? "page" : "selection",
-        isBookmark: thread.isBookmark === true,
         orphaned: thread.anchorKind === "page" ? false : thread.orphaned === true,
         resolved: thread.resolved === true,
         deletedAt: normalizeDeletedAt(thread.deletedAt),
@@ -171,7 +168,6 @@ export function commentToThread(comment: Comment): CommentThread {
         selectedText: comment.selectedText,
         selectedTextHash: comment.selectedTextHash,
         anchorKind: comment.anchorKind === "page" ? "page" : "selection",
-        isBookmark: comment.isBookmark === true,
         orphaned: comment.orphaned === true,
         resolved: comment.resolved === true,
         deletedAt: normalizeDeletedAt(comment.deletedAt),
@@ -211,7 +207,6 @@ export function threadEntryToComment(thread: CommentThread, entry: CommentThread
         comment: entry.body,
         timestamp: entry.timestamp,
         anchorKind: normalized.anchorKind,
-        isBookmark: normalized.isBookmark === true,
         orphaned: normalized.orphaned === true,
         resolved: normalized.resolved === true,
         ...(deletedAt !== undefined ? { deletedAt } : {}),
@@ -437,16 +432,6 @@ export class CommentManager {
         }
 
         matchingEntry.body = newCommentText;
-    }
-
-    setCommentBookmarkState(id: string, isBookmark: boolean) {
-        const thread = this.threads.find((candidate) =>
-            candidate.id === id || candidate.entries.some((entry) => entry.id === id));
-        if (!thread) {
-            return;
-        }
-
-        thread.isBookmark = isBookmark === true;
     }
 
     deleteComment(id: string, deletedAt: number = Date.now()) {

@@ -40,15 +40,6 @@ export class DraftSessionStore {
         return true;
     }
 
-    public updateDraftCommentBookmarkState(commentId: string, isBookmark: boolean): boolean {
-        if (this.draftComment?.id !== commentId) {
-            return false;
-        }
-
-        this.draftComment.isBookmark = isBookmark === true;
-        return true;
-    }
-
     public setDraftComment(
         draftComment: DraftComment | null,
         hostFilePath: string | null = draftComment?.filePath ?? null,

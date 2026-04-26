@@ -4,7 +4,6 @@ import { commentToThread, threadEntryToComment, type Comment, type CommentThread
 import type { AgentRunRecord } from "../src/core/agents/agentRuns";
 import {
     buildPersistedCommentPresentation,
-    buildPersistedCommentBookmarkActionPresentation,
     buildPersistedCommentPinActionPresentation,
     buildPersistedThreadEntryPresentation,
     formatSidebarCommentIndexLeadLabel,
@@ -19,8 +18,6 @@ import {
     getAgentRunStatusPresentation,
     resolveSidebarCommentAuthor,
     shouldShowRetryActionForSidebarComment,
-    shouldRenderPersistedCommentBookmarkAction,
-    shouldRenderPersistedCommentBookmarkIndicator,
     shouldRenderPersistedCommentPinIndicator,
     shouldRenderPersistedCommentPinAction,
     shouldRenderSidebarCommentAuthor,
@@ -42,7 +39,6 @@ function createComment(overrides: Partial<Comment> = {}): Comment {
         comment: overrides.comment ?? "Comment body",
         timestamp: overrides.timestamp ?? 100,
         anchorKind: overrides.anchorKind ?? "selection",
-        isBookmark: overrides.isBookmark ?? false,
         orphaned: overrides.orphaned ?? false,
         resolved: overrides.resolved ?? false,
         deletedAt: overrides.deletedAt,
@@ -112,35 +108,6 @@ test("buildPersistedCommentPresentation includes orphaned class for orphaned sel
     });
 });
 
-test("buildPersistedCommentPresentation includes bookmark class for bookmark threads", () => {
-    const presentation = buildPersistedCommentPresentation(createThread({
-        isBookmark: true,
-    }), null);
-
-    assert.deepEqual(presentation.classes, [
-        "sidenote2-comment-item",
-        "sidenote2-thread-item",
-        "bookmark",
-    ]);
-});
-
-test("buildPersistedCommentBookmarkActionPresentation marks bookmarked threads as active", () => {
-    assert.deepEqual(
-        buildPersistedCommentBookmarkActionPresentation({ isBookmark: true }),
-        {
-            active: true,
-            ariaLabel: "Remove bookmark",
-        },
-    );
-    assert.deepEqual(
-        buildPersistedCommentBookmarkActionPresentation({ isBookmark: false }),
-        {
-            active: false,
-            ariaLabel: "Mark as bookmark",
-        },
-    );
-});
-
 test("buildPersistedCommentPinActionPresentation toggles the pin affordance label", () => {
     assert.deepEqual(
         buildPersistedCommentPinActionPresentation(true),
@@ -156,29 +123,6 @@ test("buildPersistedCommentPinActionPresentation toggles the pin affordance labe
             ariaLabel: "Pin this side note",
         },
     );
-});
-
-test("shouldRenderPersistedCommentBookmarkIndicator only enables bookmarked cards", () => {
-    const rootThread = createThread({ id: "thread-1", isBookmark: true });
-    const childThread = createThreadWithEntries({
-        id: "thread-2",
-        isBookmark: true,
-        entries: [
-            { id: "thread-2", body: "Parent", timestamp: 100 },
-            { id: "entry-2", body: "Child", timestamp: 200 },
-        ],
-    });
-    const childComment = threadEntryToComment(childThread, childThread.entries[1]);
-
-    assert.equal(
-        shouldRenderPersistedCommentBookmarkIndicator(createComment({ id: "thread-1", isBookmark: true }), rootThread),
-        true,
-    );
-    assert.equal(
-        shouldRenderPersistedCommentBookmarkIndicator(createComment({ id: "thread-1", isBookmark: false }), rootThread),
-        false,
-    );
-    assert.equal(shouldRenderPersistedCommentBookmarkIndicator(childComment, childThread), false);
 });
 
 test("shouldRenderPersistedCommentPinIndicator only enables pinned root cards", () => {
@@ -203,39 +147,13 @@ test("shouldRenderPersistedCommentPinIndicator only enables pinned root cards", 
     assert.equal(shouldRenderPersistedCommentPinIndicator(childComment, childThread, true), false);
 });
 
-test("shouldRenderPersistedCommentBookmarkAction enables root cards and excludes child or deleted cards", () => {
-    const rootComment = createComment({ id: "thread-1", anchorKind: "selection" });
-    const rootThread = createThread({ id: "thread-1", anchorKind: "selection" });
-    rootThread.entries.push({ id: "entry-2", body: "Child", timestamp: 200 });
-    const childComment = threadEntryToComment(rootThread, rootThread.entries[1]);
-    const pageComment = createComment({ id: "thread-2", anchorKind: "page" });
-    const pageThread = createThread({ id: "thread-2", anchorKind: "page" });
-    const bookmarkedComment = createComment({ id: "thread-4", isBookmark: true });
-    const bookmarkedThread = createThread({ id: "thread-4", isBookmark: true });
-
-    assert.equal(shouldRenderPersistedCommentBookmarkAction(rootComment, rootThread), true);
-    assert.equal(shouldRenderPersistedCommentBookmarkAction(childComment, rootThread), false);
-    assert.equal(shouldRenderPersistedCommentBookmarkAction(pageComment, pageThread), true);
-    assert.equal(shouldRenderPersistedCommentBookmarkAction(bookmarkedComment, bookmarkedThread), false);
-    assert.equal(
-        shouldRenderPersistedCommentBookmarkAction(
-            createComment({ id: "thread-3", deletedAt: 123 }),
-            createThread({ id: "thread-3" }),
-        ),
-        false,
-    );
-});
-
 test("shouldRenderPersistedCommentPinAction hides the right-side action once a root thread is pinned", () => {
     const rootComment = createComment({ id: "thread-1", anchorKind: "selection" });
     const rootThread = createThread({ id: "thread-1", anchorKind: "selection" });
     rootThread.entries.push({ id: "entry-2", body: "Child", timestamp: 200 });
     const childComment = threadEntryToComment(rootThread, rootThread.entries[1]);
-    const bookmarkedComment = createComment({ id: "thread-4", isBookmark: true });
-    const bookmarkedThread = createThread({ id: "thread-4", isBookmark: true });
 
     assert.equal(shouldRenderPersistedCommentPinAction(rootComment, rootThread, false), true);
-    assert.equal(shouldRenderPersistedCommentPinAction(bookmarkedComment, bookmarkedThread, false), true);
     assert.equal(shouldRenderPersistedCommentPinAction(rootComment, rootThread, true), false);
     assert.equal(shouldRenderPersistedCommentPinAction(childComment, rootThread, false), false);
     assert.equal(

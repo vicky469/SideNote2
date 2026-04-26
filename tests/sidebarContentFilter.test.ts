@@ -3,14 +3,12 @@ import test from "node:test";
 import type { CommentThread } from "../src/commentManager";
 import {
     countAgentThreads,
-    countBookmarkThreads,
+    filterThreadsByPinnedSidebarThreadIds,
     filterThreadsByPinnedSidebarViewState,
     filterThreadsBySidebarContentFilter,
-    filterThreadsByPinnedSidebarThreadIds,
     filterThreadsBySidebarSearchQuery,
     getSidebarThreadSearchScore,
     isAgentThread,
-    isBookmarkThread,
     matchesSidebarDraftSearchQuery,
     matchesSidebarContentFilter,
     matchesSidebarThreadSearchQuery,
@@ -30,7 +28,6 @@ function createThread(overrides: Partial<CommentThread> = {}): CommentThread {
         selectedText: overrides.selectedText ?? "selected text",
         selectedTextHash: overrides.selectedTextHash ?? "hash:selected",
         anchorKind: overrides.anchorKind ?? "selection",
-        isBookmark: overrides.isBookmark ?? false,
         orphaned: overrides.orphaned ?? false,
         resolved: overrides.resolved ?? false,
         deletedAt: overrides.deletedAt,
@@ -43,41 +40,28 @@ function createThread(overrides: Partial<CommentThread> = {}): CommentThread {
     };
 }
 
-test("sidebar content filters separate bookmark and agent threads", () => {
-    const noteThread = createThread({ id: "thread-note", isBookmark: false });
-    const bookmarkThread = createThread({ id: "thread-bookmark", isBookmark: true });
+test("sidebar content filters separate agent and ordinary threads", () => {
+    const noteThread = createThread({ id: "thread-note" });
     const agentThread = createThread({
         id: "thread-agent",
-        isBookmark: false,
         entries: [
             { id: "thread-agent", body: "Please ask @codex to review this.", timestamp: 100 },
             { id: "entry-agent-child", body: "Child entry", timestamp: 200 },
         ],
     });
 
-    assert.equal(isBookmarkThread(bookmarkThread), true);
-    assert.equal(isBookmarkThread(noteThread), false);
     assert.equal(isAgentThread(agentThread), true);
-    assert.equal(matchesSidebarContentFilter(bookmarkThread, "bookmarks"), true);
-    assert.equal(matchesSidebarContentFilter(agentThread, "bookmarks"), false);
+    assert.equal(isAgentThread(noteThread), false);
     assert.equal(matchesSidebarContentFilter(agentThread, "agents"), true);
     assert.equal(matchesSidebarContentFilter(noteThread, "agents"), false);
-
     assert.deepEqual(
-        filterThreadsBySidebarContentFilter([noteThread, bookmarkThread, agentThread], "bookmarks")
-            .map((thread) => thread.id),
-        ["thread-bookmark"],
-    );
-    assert.deepEqual(
-        filterThreadsBySidebarContentFilter([noteThread, bookmarkThread, agentThread], "agents")
-            .map((thread) => thread.id),
+        filterThreadsBySidebarContentFilter([noteThread, agentThread], "agents").map((thread) => thread.id),
         ["thread-agent"],
     );
 });
 
-test("sidebar content filter counters reflect bookmark and supported agent mentions only", () => {
-    const noteThread = createThread({ id: "thread-note", isBookmark: false });
-    const bookmarkThread = createThread({ id: "thread-bookmark", isBookmark: true });
+test("sidebar content filter counters only count supported agent mentions", () => {
+    const noteThread = createThread({ id: "thread-note" });
     const agentThread = createThread({
         id: "thread-agent",
         entries: [
@@ -98,8 +82,7 @@ test("sidebar content filter counters reflect bookmark and supported agent menti
         ],
     });
 
-    assert.equal(countBookmarkThreads([noteThread, bookmarkThread, agentThread]), 1);
-    assert.equal(countAgentThreads([noteThread, bookmarkThread, agentThread, unsupportedAgentThread, emailThread]), 1);
+    assert.equal(countAgentThreads([noteThread, agentThread, unsupportedAgentThread, emailThread]), 1);
 });
 
 test("sidebar search matches selected text and entry bodies case-insensitively", () => {
@@ -183,7 +166,11 @@ test("sidebar search ranks exact selection matches ahead of body and unordered t
             "thread-unordered-body",
         ],
     );
-    assert.equal(getSidebarThreadSearchScore(exactSelectionThread, "api cleanup") > getSidebarThreadSearchScore(exactBodyThread, "api cleanup"), true);
+    assert.equal(
+        getSidebarThreadSearchScore(exactSelectionThread, "api cleanup")
+            > getSidebarThreadSearchScore(exactBodyThread, "api cleanup"),
+        true,
+    );
 });
 
 test("sidebar search keeps the original thread order when scores tie", () => {
@@ -225,106 +212,95 @@ test("sidebar search also matches draft text", () => {
 });
 
 test("sidebar content filters unlock when a new draft starts", () => {
-    assert.equal(unlockSidebarContentFilterForDraft("bookmarks", { mode: "new" }), "all");
     assert.equal(unlockSidebarContentFilterForDraft("agents", { mode: "new" }), "all");
     assert.equal(unlockSidebarContentFilterForDraft("agents", { mode: "edit" }), "agents");
-    assert.equal(unlockSidebarContentFilterForDraft("bookmarks", null), "bookmarks");
-});
-
-test("bookmark filter removes a thread immediately once it is unbookmarked", () => {
-    const removedBookmarkThread = createThread({ id: "thread-bookmark", isBookmark: false });
-    const freshBookmarkThread = createThread({ id: "thread-new-bookmark", isBookmark: true });
-    const noteThread = createThread({ id: "thread-note", isBookmark: false });
-
-    const filtered = filterThreadsBySidebarContentFilter(
-        [removedBookmarkThread, freshBookmarkThread, noteThread],
-        "bookmarks",
-    );
-
-    assert.deepEqual(filtered.map((thread) => thread.id), ["thread-new-bookmark"]);
+    assert.equal(unlockSidebarContentFilterForDraft("all", null), "all");
 });
 
 test("pinned thread filter narrows the sidebar to the temporary pinned set", () => {
     const noteThread = createThread({ id: "thread-note" });
-    const bookmarkThread = createThread({ id: "thread-bookmark", isBookmark: true });
     const agentThread = createThread({ id: "thread-agent" });
 
     assert.deepEqual(
         filterThreadsByPinnedSidebarThreadIds(
-            [noteThread, bookmarkThread, agentThread],
-            new Set(["thread-bookmark", "thread-agent"]),
-        )
-            .map((thread) => thread.id),
-        ["thread-bookmark", "thread-agent"],
+            [noteThread, agentThread],
+            new Set(["thread-agent"]),
+        ).map((thread) => thread.id),
+        ["thread-agent"],
     );
     assert.deepEqual(
-        filterThreadsByPinnedSidebarThreadIds([noteThread, bookmarkThread], new Set())
+        filterThreadsByPinnedSidebarThreadIds([noteThread, agentThread], new Set())
             .map((thread) => thread.id),
-        ["thread-note", "thread-bookmark"],
+        ["thread-note", "thread-agent"],
     );
 });
 
 test("pinned thread filter drops pinned ids that are no longer available in the current view", () => {
     const noteThread = createThread({ id: "thread-note" });
-    const bookmarkThread = createThread({ id: "thread-bookmark", isBookmark: true });
+    const agentThread = createThread({ id: "thread-agent" });
 
     assert.deepEqual(
         filterThreadsByPinnedSidebarThreadIds(
-            [noteThread, bookmarkThread],
-            new Set(["thread-missing", "thread-bookmark"]),
+            [noteThread, agentThread],
+            new Set(["thread-missing", "thread-agent"]),
         ).map((thread) => thread.id),
-        ["thread-bookmark"],
+        ["thread-agent"],
     );
 });
 
 test("pin state does not narrow the sidebar until pinned-only view is active", () => {
     const noteThread = createThread({ id: "thread-note" });
-    const bookmarkThread = createThread({ id: "thread-bookmark", isBookmark: true });
+    const agentThread = createThread({ id: "thread-agent" });
 
     assert.deepEqual(
         filterThreadsByPinnedSidebarViewState(
-            [noteThread, bookmarkThread],
-            new Set(["thread-bookmark"]),
+            [noteThread, agentThread],
+            new Set(["thread-agent"]),
             false,
         ).map((thread) => thread.id),
-        ["thread-note", "thread-bookmark"],
+        ["thread-note", "thread-agent"],
     );
     assert.deepEqual(
         filterThreadsByPinnedSidebarViewState(
-            [noteThread, bookmarkThread],
-            new Set(["thread-bookmark"]),
+            [noteThread, agentThread],
+            new Set(["thread-agent"]),
             true,
         ).map((thread) => thread.id),
-        ["thread-bookmark"],
+        ["thread-agent"],
     );
 });
 
-test("pin acts as an intersecting filter with bookmark results once pinned-only view is active", () => {
-    const noteThread = createThread({ id: "thread-note", isBookmark: false });
-    const bookmarkThread = createThread({ id: "thread-bookmark", isBookmark: true });
+test("pin acts as an intersecting filter with agent results once pinned-only view is active", () => {
+    const noteThread = createThread({ id: "thread-note" });
+    const agentThread = createThread({
+        id: "thread-agent",
+        entries: [
+            { id: "thread-agent", body: "Ask @codex for help", timestamp: 100 },
+        ],
+    });
 
-    const bookmarkFiltered = filterThreadsBySidebarContentFilter(
-        [noteThread, bookmarkThread],
-        "bookmarks",
+    const agentFiltered = filterThreadsBySidebarContentFilter(
+        [noteThread, agentThread],
+        "agents",
     );
 
     assert.deepEqual(
         filterThreadsByPinnedSidebarViewState(
-            bookmarkFiltered,
-            new Set(["thread-note", "thread-bookmark"]),
+            agentFiltered,
+            new Set(["thread-note", "thread-agent"]),
             true,
         ).map((thread) => thread.id),
-        ["thread-bookmark"],
+        ["thread-agent"],
     );
 });
 
 test("pinned-only view can go empty when the pinned set is empty", () => {
     const noteThread = createThread({ id: "thread-note" });
-    const bookmarkThread = createThread({ id: "thread-bookmark", isBookmark: true });
+    const agentThread = createThread({ id: "thread-agent" });
 
     assert.deepEqual(
         filterThreadsByPinnedSidebarViewState(
-            [noteThread, bookmarkThread],
+            [noteThread, agentThread],
             new Set<string>(),
             true,
         ),
@@ -332,16 +308,16 @@ test("pinned-only view can go empty when the pinned set is empty", () => {
     );
 });
 
-test("toggling the note bookmark filter preserves temporary pin filters", () => {
+test("toggling the agent filter preserves temporary pin filters", () => {
     assert.deepEqual(
-        toggleSidebarContentFilterState("all", "bookmarks", new Set(["thread-1", "thread-2"])),
+        toggleSidebarContentFilterState("all", "agents", new Set(["thread-1", "thread-2"])),
         {
-            filter: "bookmarks",
+            filter: "agents",
             pinnedThreadIds: new Set(["thread-1", "thread-2"]),
         },
     );
     assert.deepEqual(
-        toggleSidebarContentFilterState("bookmarks", "bookmarks", new Set(["thread-1"])),
+        toggleSidebarContentFilterState("agents", "agents", new Set(["thread-1"])),
         {
             filter: "all",
             pinnedThreadIds: new Set(["thread-1"]),
@@ -354,7 +330,7 @@ test("entering deleted mode clears filters and search so all soft-deleted thread
         toggleDeletedSidebarViewState({
             showDeleted: false,
             showResolved: true,
-            contentFilter: "bookmarks",
+            contentFilter: "agents",
             showPinnedThreadsOnly: true,
             pinnedThreadIds: new Set(["thread-1"]),
             searchQuery: "draft",

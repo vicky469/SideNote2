@@ -19,7 +19,6 @@ function createThread(overrides: Partial<CommentThread> = {}): CommentThread {
         selectedText: overrides.selectedText ?? "selected text",
         selectedTextHash: overrides.selectedTextHash ?? "hash:selected",
         anchorKind: overrides.anchorKind ?? "selection",
-        isBookmark: overrides.isBookmark ?? false,
         orphaned: overrides.orphaned ?? false,
         resolved: overrides.resolved ?? false,
         deletedAt: overrides.deletedAt,
@@ -45,7 +44,6 @@ function createDraft(overrides: Partial<DraftComment> = {}): DraftComment {
         comment: overrides.comment ?? "Draft body",
         timestamp: overrides.timestamp ?? 100,
         anchorKind: overrides.anchorKind ?? "selection",
-        isBookmark: overrides.isBookmark ?? false,
         orphaned: overrides.orphaned ?? false,
         resolved: overrides.resolved ?? false,
         deletedAt: overrides.deletedAt,
@@ -193,36 +191,6 @@ test("buildPageSidebarThreadRenderSignature changes when nested comments are sho
     assert.notEqual(hidden, visible);
 });
 
-test("buildPageSidebarThreadRenderSignature changes when bookmark state changes", () => {
-    const noteThread = createThread({ isBookmark: false });
-    const bookmarkThread = createThread({ isBookmark: true });
-
-    const noteSignature = buildPageSidebarThreadRenderSignature({
-        thread: noteThread,
-        activeCommentId: null,
-        isPinned: false,
-        showNestedComments: false,
-        showNestedCommentsByDefault: false,
-        enablePageThreadReorder: true,
-        editDraftComment: null,
-        appendDraftComment: null,
-        threadAgentRuns: [],
-    });
-    const bookmarkSignature = buildPageSidebarThreadRenderSignature({
-        thread: bookmarkThread,
-        activeCommentId: null,
-        isPinned: false,
-        showNestedComments: false,
-        showNestedCommentsByDefault: false,
-        enablePageThreadReorder: true,
-        editDraftComment: null,
-        appendDraftComment: null,
-        threadAgentRuns: [],
-    });
-
-    assert.notEqual(noteSignature, bookmarkSignature);
-});
-
 test("buildPageSidebarThreadRenderSignature ignores sidebar search query changes", () => {
     const thread = createThread();
     const withoutSearch = buildPageSidebarThreadRenderSignature({
@@ -316,15 +284,5 @@ test("buildPageSidebarThreadRenderSignature changes when thread pin focus change
             appendDraftComment: null,
             threadAgentRuns: [],
         }),
-    );
-});
-
-test("buildPageSidebarDraftRenderSignature changes when draft bookmark state changes", () => {
-    const noteDraft = createDraft({ isBookmark: false });
-    const bookmarkDraft = createDraft({ isBookmark: true });
-
-    assert.notEqual(
-        buildPageSidebarDraftRenderSignature(noteDraft, null),
-        buildPageSidebarDraftRenderSignature(bookmarkDraft, null),
     );
 });

@@ -151,26 +151,23 @@ test("serializeNoteComments preserves page-note and orphaned anchor metadata", (
     assert.equal(parsed.comments[1].orphaned, true);
 });
 
-test("serializeNoteComments roundtrips bookmark state and omits false by default", () => {
-    const bookmarkSerialized = serializeNoteComments("Body", [
+test("parseNoteComments ignores legacy bookmark fields and drops them on rewrite", () => {
+    const serialized = serializeNoteComments("Body", [
         createComment({
             id: "comment-bookmark",
-            isBookmark: true,
         }),
     ]);
+    const legacySerialized = serialized.replace(
+        /"anchorKind": "selection",/,
+        "\"anchorKind\": \"selection\",\n        \"isBookmark\": true,",
+    );
 
-    assert.match(bookmarkSerialized, /"isBookmark": true/);
+    const parsedLegacy = parseNoteComments(legacySerialized, "note.md");
+    assert.equal("isBookmark" in parsedLegacy.comments[0], false);
+    assert.equal("isBookmark" in parsedLegacy.threads[0], false);
 
-    const parsedBookmark = parseNoteComments(bookmarkSerialized, "note.md");
-    assert.equal(parsedBookmark.comments[0].isBookmark, true);
-    assert.equal(parsedBookmark.threads[0].isBookmark, true);
-
-    const noteSerialized = serializeNoteComments("Body", [createComment()]);
-    assert.doesNotMatch(noteSerialized, /"isBookmark":/);
-
-    const parsedNote = parseNoteComments(noteSerialized, "note.md");
-    assert.equal(parsedNote.comments[0].isBookmark, false);
-    assert.equal(parsedNote.threads[0].isBookmark, false);
+    const cleaned = serializeNoteCommentThreads(parsedLegacy.mainContent, parsedLegacy.threads);
+    assert.doesNotMatch(cleaned, /"isBookmark":/);
 });
 
 test("serializeNoteCommentThreads preserves stored top-level thread order", () => {

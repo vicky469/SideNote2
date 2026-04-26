@@ -30,7 +30,6 @@ function createComment(overrides: Partial<Comment> = {}): Comment {
         comment: overrides.comment ?? "Original comment",
         timestamp: overrides.timestamp ?? 123,
         anchorKind: overrides.anchorKind ?? "selection",
-        isBookmark: overrides.isBookmark ?? false,
         orphaned: overrides.orphaned ?? false,
         resolved: overrides.resolved ?? false,
         ...(overrides.deletedAt !== undefined ? { deletedAt: overrides.deletedAt } : {}),
@@ -318,43 +317,10 @@ test("comment mutation controller hashes draft selections lazily during save", a
     assert.deepEqual(host.notices, []);
 });
 
-test("comment mutation controller saves an empty bookmarked draft without requiring body text", async () => {
-    const draft = toDraft(createComment({
-        id: "draft-bookmark-1",
-        comment: "   ",
-        isBookmark: true,
-    }), {
-        isBookmark: true,
-    });
-    const host = createHost({
-        draftComment: draft,
-        knownComments: [draft],
-        loadedComments: [],
-        currentNoteContentByPath: {
-            [draft.filePath]: "# Title\n\nAlpha beta gamma.\n",
-        },
-    });
-
-    await host.controller.saveDraft(draft.id);
-
-    assert.equal(host.manager.getAllComments().length, 1);
-    assert.equal(host.manager.getAllComments()[0].comment, "");
-    assert.equal(host.manager.getAllComments()[0].isBookmark, true);
-    assert.deepEqual(host.savedUserEntryEvents, []);
-    assert.deepEqual(host.persistedFiles, [{
-        path: draft.filePath,
-        immediateAggregateRefresh: false,
-        skipCommentViewRefresh: true,
-    }]);
-    assert.equal(host.getDraftComment(), null);
-    assert.deepEqual(host.notices, []);
-});
-
-test("comment mutation controller still rejects empty non-bookmark drafts", async () => {
+test("comment mutation controller rejects empty drafts", async () => {
     const draft = toDraft(createComment({
         id: "draft-empty-1",
         comment: "   ",
-        isBookmark: false,
     }));
     const host = createHost({
         draftComment: draft,
@@ -398,19 +364,16 @@ test("comment mutation controller can skip the pre-save rerender for quick draft
     assert.deepEqual(host.notices, []);
 });
 
-test("comment mutation controller can skip anchor revalidation for quick bookmark saves", async () => {
+test("comment mutation controller can skip anchor revalidation for quick draft saves", async () => {
     const draft = toDraft(createComment({
-        id: "draft-bookmark-fast-1",
-        comment: "  ",
-        isBookmark: true,
+        id: "draft-fast-1",
+        comment: "Ship it",
         selectedText: "beta",
         startLine: 2,
         startChar: 6,
         endLine: 2,
         endChar: 10,
-    }), {
-        isBookmark: true,
-    });
+    }));
     let getCurrentNoteContentCalled = false;
     const host = createHost({
         draftComment: draft,
@@ -431,7 +394,7 @@ test("comment mutation controller can skip anchor revalidation for quick bookmar
 
     assert.equal(getCurrentNoteContentCalled, false);
     assert.equal(host.manager.getAllComments().length, 1);
-    assert.equal(host.manager.getAllComments()[0].isBookmark, true);
+    assert.equal(host.manager.getAllComments()[0].comment, "Ship it");
     assert.equal(host.getDraftComment(), null);
     assert.deepEqual(host.persistedFiles, [{
         path: draft.filePath,
@@ -650,56 +613,6 @@ test("comment mutation controller does not dispatch edited entries to the agent 
     assert.equal(host.getRefreshEditorDecorationsCount(), 1);
 });
 
-test("comment mutation controller can convert an edited note thread to bookmark state without rewriting the body", async () => {
-    const existing = createComment({
-        id: "thread-1",
-        comment: "Existing idea",
-        isBookmark: false,
-    });
-    const draft: DraftComment = {
-        ...toDraft(existing, {
-            comment: "Existing idea",
-            mode: "edit",
-            threadId: existing.id,
-            isBookmark: true,
-        }),
-        isBookmark: true,
-    };
-    const host = createHost({
-        draftComment: draft,
-        knownComments: [existing],
-        loadedComments: [existing],
-    });
-
-    await host.controller.saveDraft(draft.id);
-
-    assert.equal(host.manager.getCommentById(existing.id)?.comment, "Existing idea");
-    assert.equal(host.manager.getThreadById(existing.id)?.isBookmark, true);
-    assert.deepEqual(host.savedUserEntryEvents, []);
-});
-
-test("comment mutation controller can toggle bookmark state without entering edit mode", async () => {
-    const existing = createComment({
-        id: "thread-1",
-        comment: "Existing idea",
-        isBookmark: false,
-    });
-    const host = createHost({
-        knownComments: [existing],
-        loadedComments: [existing],
-    });
-
-    const updated = await host.controller.setCommentBookmarkState(existing.id, true);
-
-    assert.equal(updated, true);
-    assert.equal(host.getDraftComment(), null);
-    assert.equal(host.manager.getThreadById(existing.id)?.isBookmark, true);
-    assert.deepEqual(host.persistedFiles, [{
-        path: existing.filePath,
-        immediateAggregateRefresh: true,
-    }]);
-});
-
 test("comment mutation controller can defer delete refresh work for lightweight local sidebar updates", async () => {
     const existing = createComment({
         id: "thread-1",
@@ -724,34 +637,6 @@ test("comment mutation controller can defer delete refresh work for lightweight 
         path: existing.filePath,
         immediateAggregateRefresh: false,
         skipCommentViewRefresh: true,
-    }]);
-});
-
-test("comment mutation controller can defer bookmark refresh work for lightweight local sidebar updates", async () => {
-    const existing = createComment({
-        id: "thread-1",
-        comment: "Existing idea",
-        isBookmark: false,
-    });
-    const host = createHost({
-        knownComments: [existing],
-        loadedComments: [existing],
-    });
-
-    const updated = await host.controller.setCommentBookmarkState(existing.id, true, {
-        deferAggregateRefresh: true,
-        skipPersistedViewRefresh: true,
-        refreshEditorDecorations: false,
-        refreshMarkdownPreviews: false,
-    });
-
-    assert.equal(updated, true);
-    assert.deepEqual(host.persistedFiles, [{
-        path: existing.filePath,
-        immediateAggregateRefresh: false,
-        skipCommentViewRefresh: true,
-        refreshEditorDecorations: false,
-        refreshMarkdownPreviews: false,
     }]);
 });
 
@@ -1062,7 +947,6 @@ test("comment mutation controller moves a thread into another file as a page not
         comment: "Root body",
         timestamp: 300,
         anchorKind: "selection",
-        isBookmark: true,
         resolved: true,
     });
     const targetExisting = createComment({
@@ -1115,7 +999,6 @@ test("comment mutation controller moves a thread into another file as a page not
     assert.equal(movedThread.endLine, 0);
     assert.equal(movedThread.endChar, 0);
     assert.equal(movedThread.orphaned, false);
-    assert.equal(movedThread.isBookmark, true);
     assert.equal(movedThread.resolved, true);
     assert.equal(movedThread.updatedAt, movedAt);
     assert.deepEqual(movedThread.entries.map((entry) => entry.id), ["thread-1", "entry-2"]);

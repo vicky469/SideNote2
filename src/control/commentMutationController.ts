@@ -36,7 +36,6 @@ export type CommentMutationPersistBehaviorOptions = {
     refreshMarkdownPreviews?: boolean;
 };
 
-export type SetCommentBookmarkStateOptions = CommentMutationPersistBehaviorOptions;
 export type DeleteCommentOptions = CommentMutationPersistBehaviorOptions;
 export type ResolveCommentOptions = CommentMutationPersistBehaviorOptions;
 export type MoveCommentThreadOptions = CommentMutationPersistBehaviorOptions;
@@ -124,7 +123,7 @@ export class CommentMutationController {
         }
 
         const commentBody = shortenBareUrlsInMarkdown(draft.comment).trim();
-        if (!commentBody && draft.isBookmark !== true) {
+        if (!commentBody) {
             return;
         }
         if (exceedsCommentWordLimit(commentBody)) {
@@ -194,9 +193,7 @@ export class CommentMutationController {
             } else if (preparedDraft.mode === "append") {
                 saved = await this.appendEntry(preparedDraft);
             } else {
-                saved = await this.editComment(preparedDraft.id, preparedDraft.comment, {
-                    isBookmark: preparedDraft.isBookmark === true,
-                });
+                saved = await this.editComment(preparedDraft.id, preparedDraft.comment);
             }
             if (saved) {
                 void this.host.log?.("info", "draft", preparedDraft.mode === "edit" ? "draft.edit.success" : "draft.save.success", {
@@ -234,7 +231,6 @@ export class CommentMutationController {
             skipPreSaveRefresh: options.skipPreSaveRefresh ?? true,
             deferAggregateRefresh: options.deferAggregateRefresh ?? true,
             skipPersistedViewRefresh: options.skipPersistedViewRefresh ?? true,
-            skipAnchorRevalidation: options.skipAnchorRevalidation ?? (draft.isBookmark === true),
         };
     }
 
@@ -273,7 +269,7 @@ export class CommentMutationController {
     public async editComment(
         commentId: string,
         newCommentText: string,
-        options: { skipCommentViewRefresh?: boolean; isBookmark?: Comment["isBookmark"] } = {},
+        options: { skipCommentViewRefresh?: boolean } = {},
     ): Promise<boolean> {
         const latestTarget = await this.loadLatestCommentTarget(commentId);
         if (!latestTarget) {
@@ -281,33 +277,10 @@ export class CommentMutationController {
         }
 
         this.host.getCommentManager().editComment(commentId, newCommentText);
-        if (options.isBookmark !== undefined) {
-            this.host.getCommentManager().setCommentBookmarkState(commentId, options.isBookmark);
-        }
         await this.host.persistCommentsForFile(latestTarget.file, {
             immediateAggregateRefresh: true,
             skipCommentViewRefresh: options.skipCommentViewRefresh,
         });
-        return true;
-    }
-
-    public async setCommentBookmarkState(
-        commentId: string,
-        isBookmark: boolean,
-        options: SetCommentBookmarkStateOptions = {},
-    ): Promise<boolean> {
-        const latestTarget = await this.loadLatestCommentTarget(commentId);
-        if (!latestTarget) {
-            return false;
-        }
-
-        const existingThread = this.host.getCommentManager().getThreadById(commentId);
-        if (existingThread?.isBookmark === isBookmark) {
-            return true;
-        }
-
-        this.host.getCommentManager().setCommentBookmarkState(commentId, isBookmark);
-        await this.host.persistCommentsForFile(latestTarget.file, this.buildPersistOptions(options));
         return true;
     }
 

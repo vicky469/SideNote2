@@ -2,7 +2,7 @@ import type { CommentThread } from "../../commentManager";
 import { parseAgentDirectives } from "../../core/text/agentDirectives";
 import type { DraftComment } from "../../domain/drafts";
 
-export type SidebarContentFilter = "all" | "bookmarks" | "agents";
+export type SidebarContentFilter = "all" | "agents";
 
 const SIDEBAR_SEARCH_EXACT_MATCH_SCORE = 600;
 const SIDEBAR_SEARCH_PREFIX_MATCH_SCORE = 560;
@@ -153,21 +153,15 @@ export function getSidebarThreadSearchScore<T extends Pick<CommentThread, "selec
     return bestScore;
 }
 
-export function isBookmarkThread(thread: Pick<CommentThread, "isBookmark">): boolean {
-    return thread.isBookmark === true;
-}
-
 export function isAgentThread(thread: Pick<CommentThread, "entries">): boolean {
     return thread.entries.some((entry) => parseAgentDirectives(entry.body).matchedTargets.length > 0);
 }
 
 export function matchesSidebarContentFilter(
-    thread: Pick<CommentThread, "entries" | "isBookmark">,
+    thread: Pick<CommentThread, "entries">,
     filter: SidebarContentFilter,
 ): boolean {
     switch (filter) {
-        case "bookmarks":
-            return isBookmarkThread(thread);
         case "agents":
             return isAgentThread(thread);
         case "all":
@@ -176,7 +170,7 @@ export function matchesSidebarContentFilter(
     }
 }
 
-export function filterThreadsBySidebarContentFilter<T extends Pick<CommentThread, "entries" | "isBookmark">>(
+export function filterThreadsBySidebarContentFilter<T extends Pick<CommentThread, "entries">>(
     threads: readonly T[],
     filter: SidebarContentFilter,
 ): T[] {
@@ -315,10 +309,6 @@ export function matchesSidebarDraftSearchQuery(
 
     return matchesNormalizedSidebarSearchValue(draft.selectedText, normalizedQuery)
         || matchesNormalizedSidebarSearchValue(draft.comment, normalizedQuery);
-}
-
-export function countBookmarkThreads<T extends Pick<CommentThread, "isBookmark">>(threads: readonly T[]): number {
-    return threads.filter((thread) => isBookmarkThread(thread)).length;
 }
 
 export function countAgentThreads<T extends Pick<CommentThread, "entries">>(threads: readonly T[]): number {

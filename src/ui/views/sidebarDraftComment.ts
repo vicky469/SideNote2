@@ -18,7 +18,6 @@ export interface SidebarDraftCommentHost {
     shouldPinFocusedDraftToTop: boolean;
     isSavingDraft(commentId: string): boolean;
     updateDraftCommentText(commentId: string, commentText: string): void;
-    updateDraftCommentBookmarkState(commentId: string, isBookmark: boolean): void;
     setIcon(element: HTMLElement, icon: string): void;
     claimSidebarInteractionOwnership(focusTarget?: HTMLElement | null): void;
     saveDraft(
@@ -95,49 +94,6 @@ export function renderInlineEditDraftContent(
 ): void {
     const presentation = buildDraftCommentPresentation(comment, host.activeCommentId);
     renderDraftEditor(container, comment, presentation, host, draftEditorController, "inline-edit");
-}
-
-export function shouldRenderBookmarkDraftButton(comment: Pick<DraftComment, "mode" | "anchorKind">): boolean {
-    return comment.mode !== "append" && !isPageComment(comment);
-}
-
-export function buildBookmarkDraftButtonPresentation(comment: Pick<DraftComment, "mode" | "isBookmark">): {
-    ariaLabel: string;
-    active: boolean;
-} {
-    if (comment.mode === "new") {
-        if (comment.isBookmark === true) {
-            return {
-                ariaLabel: "Remove bookmark",
-                active: true,
-            };
-        }
-
-        return {
-            ariaLabel: "Save as bookmark",
-            active: false,
-        };
-    }
-
-    if (comment.isBookmark === true) {
-        return {
-            ariaLabel: "Remove bookmark",
-            active: true,
-        };
-    }
-
-    return {
-        ariaLabel: "Mark as bookmark",
-        active: false,
-    };
-}
-
-export function toggleBookmarkDraftState(isBookmark: boolean): boolean {
-    return !isBookmark;
-}
-
-export function shouldAutoSaveBookmarkDraft(comment: Pick<DraftComment, "mode">, isBookmark: boolean): boolean {
-    return comment.mode === "new" && isBookmark;
 }
 
 function createDraftFormatButton(
@@ -244,17 +200,6 @@ function renderDraftEditor(
             ariaLabel: "Highlight",
         })
         : null;
-    const bookmarkButton = toolbarRow && shouldRenderBookmarkDraftButton(comment)
-        ? (() => {
-            const presentation = buildBookmarkDraftButtonPresentation(comment);
-            const button = createDraftFormatButton(toolbarRow, host, {
-                icon: "bookmark",
-                ariaLabel: presentation.ariaLabel,
-            });
-            button.toggleClass("is-active", presentation.active);
-            return button;
-        })()
-        : null;
     const editorShell = editorWrap.createDiv("sidenote2-inline-editor-shell");
     const preview = editorShell.createDiv("sidenote2-inline-editor-preview");
     const textarea = editorShell.createEl("textarea", {
@@ -296,20 +241,6 @@ function renderDraftEditor(
             ariaLabel: "Highlight",
         })
         : null;
-    let isBookmark = comment.isBookmark === true;
-    const syncBookmarkButtons = () => {
-        const bookmarkPresentation = buildBookmarkDraftButtonPresentation({
-            mode: comment.mode,
-            isBookmark,
-        });
-        [bookmarkButton]
-            .filter((button): button is HTMLButtonElement => !!button)
-            .forEach((button) => {
-                button.setAttribute("aria-label", bookmarkPresentation.ariaLabel);
-                button.toggleClass("is-active", bookmarkPresentation.active);
-            });
-    };
-    syncBookmarkButtons();
     const cancelButton = actionRow.createEl("button", {
         text: "Cancel",
         cls: "sidenote2-inline-cancel-button",
@@ -321,7 +252,6 @@ function renderDraftEditor(
     [
         boldButton,
         highlightButton,
-        bookmarkButton,
         inlineEditBoldButton,
         inlineEditHighlightButton,
         cancelButton,
@@ -343,9 +273,6 @@ function renderDraftEditor(
     }
     if (highlightButton) {
         highlightButton.disabled = saving;
-    }
-    if (bookmarkButton) {
-        bookmarkButton.disabled = saving;
     }
     if (inlineEditBoldButton) {
         inlineEditBoldButton.disabled = saving;
@@ -460,25 +387,8 @@ function renderDraftEditor(
         draftEditorController.applyDraftHighlight(comment.id, textarea, comment.mode === "edit");
         textarea.focus();
     };
-    const applyBookmark = (event: Event) => {
-        stopPropagation(event);
-        isBookmark = toggleBookmarkDraftState(isBookmark);
-        host.updateDraftCommentBookmarkState(comment.id, isBookmark);
-        syncBookmarkButtons();
-        if (shouldAutoSaveBookmarkDraft(comment, isBookmark)) {
-            void host.saveDraft(comment.id, {
-                skipPreSaveRefresh: true,
-                skipAnchorRevalidation: true,
-                deferAggregateRefresh: true,
-                skipPersistedViewRefresh: true,
-            });
-            return;
-        }
-        textarea.focus();
-    };
     boldButton?.addEventListener("click", applyBold);
     highlightButton?.addEventListener("click", applyHighlight);
-    bookmarkButton?.addEventListener("click", applyBookmark);
     inlineEditBoldButton?.addEventListener("click", applyBold);
     inlineEditHighlightButton?.addEventListener("click", applyHighlight);
     cancelButton.onclick = (event) => {

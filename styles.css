@@ -1112,20 +1112,8 @@ button.sidenote2-tab-button.sidenote2-tab-button--active {
     background: var(--background-modifier-hover);
 }
 
-.sidenote2-comment-bookmark-indicator {
-    color: var(--text-faint, var(--text-muted));
-}
-
 .sidenote2-comment-pin-indicator {
     color: var(--text-faint, var(--text-muted));
-}
-
-button.sidenote2-comment-bookmark-indicator {
-    padding: 0;
-    border: 0;
-    background: var(--background-modifier-hover);
-    box-shadow: none;
-    cursor: pointer;
 }
 
 button.sidenote2-comment-pin-indicator {
@@ -1134,15 +1122,6 @@ button.sidenote2-comment-pin-indicator {
     background: var(--background-modifier-hover);
     box-shadow: none;
     cursor: pointer;
-}
-
-button.sidenote2-comment-bookmark-indicator:hover,
-button.sidenote2-comment-bookmark-indicator:focus-visible {
-    color: var(--interactive-accent-hover, var(--text-accent, var(--interactive-accent)));
-}
-
-button.sidenote2-comment-bookmark-indicator.is-active {
-    color: var(--text-accent, var(--interactive-accent));
 }
 
 button.sidenote2-comment-pin-indicator:hover,

@@ -2,11 +2,7 @@ import * as assert from "node:assert/strict";
 import test from "node:test";
 import type { DraftComment } from "../src/domain/drafts";
 import {
-    buildBookmarkDraftButtonPresentation,
     buildDraftCommentPresentation,
-    shouldRenderBookmarkDraftButton,
-    shouldAutoSaveBookmarkDraft,
-    toggleBookmarkDraftState,
 } from "../src/ui/views/sidebarDraftComment";
 
 function createDraft(overrides: Partial<DraftComment> = {}): DraftComment {
@@ -71,56 +67,4 @@ test("buildDraftCommentPresentation keeps append drafts distinct from new drafts
     ]);
     assert.equal(appendPresentation.saveLabel, "Add");
     assert.equal(appendPresentation.placeholder, "Add another entry to this thread.");
-});
-
-test("buildBookmarkDraftButtonPresentation keeps bookmark toggles lightweight", () => {
-    assert.deepEqual(buildBookmarkDraftButtonPresentation({
-        mode: "edit",
-        isBookmark: false,
-    }), {
-        ariaLabel: "Mark as bookmark",
-        active: false,
-    });
-    assert.deepEqual(buildBookmarkDraftButtonPresentation({
-        mode: "edit",
-        isBookmark: true,
-    }), {
-        ariaLabel: "Remove bookmark",
-        active: true,
-    });
-    assert.deepEqual(buildBookmarkDraftButtonPresentation({
-        mode: "new",
-        isBookmark: false,
-    }), {
-        ariaLabel: "Save as bookmark",
-        active: false,
-    });
-    assert.deepEqual(buildBookmarkDraftButtonPresentation({
-        mode: "new",
-        isBookmark: true,
-    }), {
-        ariaLabel: "Remove bookmark",
-        active: true,
-    });
-});
-
-test("toggleBookmarkDraftState flips bookmark state", () => {
-    assert.equal(toggleBookmarkDraftState(false), true);
-    assert.equal(toggleBookmarkDraftState(true), false);
-});
-
-test("shouldAutoSaveBookmarkDraft only quick-saves new bookmark drafts", () => {
-    assert.equal(shouldAutoSaveBookmarkDraft(createDraft({ mode: "new" }), true), true);
-    assert.equal(shouldAutoSaveBookmarkDraft(createDraft({ mode: "new" }), false), false);
-    assert.equal(shouldAutoSaveBookmarkDraft(createDraft({ mode: "edit" }), true), false);
-});
-
-test("shouldRenderBookmarkDraftButton supports new and edit drafts but not append or page-note drafts", () => {
-    assert.equal(shouldRenderBookmarkDraftButton(createDraft({ mode: "new" })), true);
-    assert.equal(shouldRenderBookmarkDraftButton(createDraft({ mode: "edit" })), true);
-    assert.equal(shouldRenderBookmarkDraftButton(createDraft({ mode: "append" })), false);
-    assert.equal(shouldRenderBookmarkDraftButton(createDraft({
-        mode: "edit",
-        anchorKind: "page",
-    })), false);
 });

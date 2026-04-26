@@ -14,7 +14,6 @@ import {
     type MoveCommentThreadOptions,
     type ResolveCommentOptions,
     type SaveDraftOptions,
-    type SetCommentBookmarkStateOptions,
 } from "./control/commentMutationController";
 import { CommentNavigationController } from "./control/commentNavigationController";
 import { pickPinnedCommentableFile, pickPreferredFileLeafCandidate, pickSidebarTargetFile, type PreferredFileLeafCandidate } from "./control/commentNavigationPlanner";
@@ -1242,10 +1241,6 @@ export default class SideNote2 extends Plugin {
         this.commentSessionController.updateDraftCommentText(commentId, commentText);
     }
 
-    public updateDraftCommentBookmarkState(commentId: string, isBookmark: boolean) {
-        this.commentSessionController.updateDraftCommentBookmarkState(commentId, isBookmark);
-    }
-
     public async cancelDraft(commentId?: string) {
         await this.commentSessionController.cancelDraft(commentId);
     }
@@ -1260,14 +1255,6 @@ export default class SideNote2 extends Plugin {
 
     public async saveDraft(commentId: string, options?: SaveDraftOptions) {
         await this.commentMutationController.saveDraft(commentId, options);
-    }
-
-    public async setCommentBookmarkState(
-        commentId: string,
-        isBookmark: boolean,
-        options?: SetCommentBookmarkStateOptions,
-    ): Promise<boolean> {
-        return this.commentMutationController.setCommentBookmarkState(commentId, isBookmark, options);
     }
 
     public async startPageCommentDraft(file: TFile | null = this.getPinnedCommentableFile()) {

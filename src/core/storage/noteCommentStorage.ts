@@ -25,7 +25,6 @@ interface StoredNoteCommentThread {
     selectedText: string;
     selectedTextHash: string;
     anchorKind?: "selection" | "page";
-    isBookmark?: true;
     orphaned?: boolean;
     resolved?: boolean;
     deletedAt?: number;
@@ -112,7 +111,6 @@ function normalizeThread(thread: CommentThread): CommentThread {
     return {
         ...thread,
         anchorKind: thread.anchorKind === "page" ? "page" : "selection",
-        isBookmark: thread.isBookmark === true,
         orphaned: thread.anchorKind === "page" ? false : thread.orphaned === true,
         resolved: thread.resolved === true,
         deletedAt: normalizeDeletedAt(thread.deletedAt),
@@ -167,7 +165,6 @@ function toStoredThread(thread: CommentThread): StoredNoteCommentThread {
         selectedText: normalized.selectedText,
         selectedTextHash: normalized.selectedTextHash,
         anchorKind: normalized.anchorKind === "page" ? "page" : undefined,
-        isBookmark: normalized.isBookmark === true ? true : undefined,
         orphaned: normalized.orphaned === true ? true : undefined,
         resolved: normalized.resolved === true ? true : undefined,
         ...(deletedAt !== undefined ? { deletedAt } : {}),
@@ -252,7 +249,6 @@ function fromStoredThread(candidate: unknown, filePath: string): CommentThread |
         selectedText: item.selectedText,
         selectedTextHash: item.selectedTextHash,
         anchorKind: item.anchorKind === "page" ? "page" : "selection",
-        isBookmark: item.isBookmark === true,
         orphaned: item.orphaned === true,
         resolved: item.resolved === true,
         deletedAt: normalizeDeletedAt(item.deletedAt),
@@ -588,7 +584,6 @@ export function serializeNoteComments(noteContent: string, comments: Comment[]):
         selectedText: comment.selectedText,
         selectedTextHash: comment.selectedTextHash,
         anchorKind: comment.anchorKind === "page" ? "page" : "selection",
-        isBookmark: comment.isBookmark === true,
         orphaned: comment.orphaned === true,
         resolved: comment.resolved === true,
         ...(normalizeDeletedAt(comment.deletedAt) !== undefined
@@ -655,7 +650,6 @@ export function getManagedSectionEdit(noteContent: string, comments: Comment[]):
         selectedText: comment.selectedText,
         selectedTextHash: comment.selectedTextHash,
         anchorKind: comment.anchorKind === "page" ? "page" : "selection",
-        isBookmark: comment.isBookmark === true,
         orphaned: comment.orphaned === true,
         resolved: comment.resolved === true,
         entries: [{

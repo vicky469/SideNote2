@@ -55,11 +55,6 @@ export interface PersistedCommentPresentation extends BasePersistedCommentPresen
     };
 }
 
-export interface PersistedCommentBookmarkActionPresentation {
-    active: boolean;
-    ariaLabel: string;
-}
-
 export interface PersistedCommentPinActionPresentation {
     active: boolean;
     ariaLabel: string;
@@ -106,7 +101,6 @@ export interface SidebarPersistedCommentHost {
     moveCommentThread(threadId: string, sourceFilePath: string): void;
     restoreComment(commentId: string): Promise<boolean> | Promise<void> | boolean | void;
     startEditDraft(commentId: string, hostFilePath: string | null): void;
-    setCommentBookmarkState(commentId: string, isBookmark: boolean): Promise<boolean> | Promise<void> | boolean | void;
     isPinnedThread(threadId: string): boolean;
     togglePinnedThread(threadId: string): Promise<void> | void;
     startAppendEntryDraft(commentId: string, hostFilePath: string | null): void;
@@ -274,9 +268,6 @@ function buildBasePersistedCommentPresentation(
     if (isPageComment(comment)) {
         classes.push("page-note");
     }
-    if (comment.isBookmark === true) {
-        classes.push("bookmark");
-    }
     if (isOrphanedComment(comment)) {
         classes.push("orphaned");
     }
@@ -330,34 +321,11 @@ export function buildPersistedCommentPresentation(
     };
 }
 
-export function buildPersistedCommentBookmarkActionPresentation(
-    comment: Pick<Comment, "isBookmark">,
-): PersistedCommentBookmarkActionPresentation {
-    if (comment.isBookmark === true) {
-        return {
-            active: true,
-            ariaLabel: "Remove bookmark",
-        };
-    }
-
-    return {
-        active: false,
-        ariaLabel: "Mark as bookmark",
-    };
-}
-
 export function buildPersistedCommentPinActionPresentation(isPinned: boolean): PersistedCommentPinActionPresentation {
     return {
         active: isPinned,
         ariaLabel: isPinned ? "Unpin this side note" : "Pin this side note",
     };
-}
-
-export function shouldRenderPersistedCommentBookmarkIndicator(
-    comment: Pick<Comment, "id" | "isBookmark">,
-    thread: Pick<CommentThread, "id">,
-): boolean {
-    return comment.id === thread.id && comment.isBookmark === true;
 }
 
 export function shouldRenderPersistedCommentPinIndicator(
@@ -366,16 +334,6 @@ export function shouldRenderPersistedCommentPinIndicator(
     isPinned: boolean,
 ): boolean {
     return comment.id === thread.id && isPinned;
-}
-
-export function shouldRenderPersistedCommentBookmarkAction(
-    comment: Pick<Comment, "deletedAt" | "id" | "isBookmark">,
-    thread: Pick<CommentThread, "deletedAt" | "id">,
-): boolean {
-    return comment.id === thread.id
-        && comment.isBookmark !== true
-        && !comment.deletedAt
-        && !thread.deletedAt;
 }
 
 export function shouldRenderPersistedCommentPinAction(
@@ -676,33 +634,6 @@ export function shouldRenderSidebarCommentAuthor(author: SidebarCommentAuthorPre
     return author.kind !== "user";
 }
 
-function renderBookmarkStateIndicator(
-    metaEl: HTMLElement,
-    commentId: string,
-    isActive: boolean,
-    host: SidebarPersistedCommentHost,
-): void {
-    const indicatorEl = metaEl.createEl("button", {
-        cls: [
-            "sidenote2-comment-header-indicator",
-            "sidenote2-comment-bookmark-indicator",
-            "sidenote2-comment-meta-toggle-control",
-            "is-interactive",
-            isActive ? "is-active" : "",
-        ].filter((value) => value.length > 0).join(" "),
-    });
-    attachSidebarActionButtonInteractions(indicatorEl, host);
-    indicatorEl.setAttribute("type", "button");
-    indicatorEl.setAttribute("aria-label", isActive ? "Remove bookmark" : "Mark as bookmark");
-    indicatorEl.setAttribute("aria-pressed", isActive ? "true" : "false");
-    host.setIcon(indicatorEl, "bookmark");
-    indicatorEl.onclick = async (event) => {
-        await runSidebarPendingButtonAction(indicatorEl, host, event, async () => {
-            await host.setCommentBookmarkState(commentId, !isActive);
-        });
-    };
-}
-
 function renderPinStateIndicator(
     metaEl: HTMLElement,
     threadId: string,
@@ -739,16 +670,13 @@ function renderCommentMeta(
         pinAction?: {
             active: boolean;
         } | null;
-        bookmarkAction?: {
-            active: boolean;
-        } | null;
     } = {},
 ): void {
     const metaEl = headerEl.createEl("small", {
         cls: "sidenote2-timestamp sidenote2-comment-meta",
     });
     const renderLeadingIndicators = () => {
-        if (!options.pinAction && !options.bookmarkAction) {
+        if (!options.pinAction) {
             return;
         }
 
@@ -757,9 +685,6 @@ function renderCommentMeta(
         });
         if (options.pinAction) {
             renderPinStateIndicator(indicatorsEl, comment.id, options.pinAction.active, host);
-        }
-        if (options.bookmarkAction) {
-            renderBookmarkStateIndicator(indicatorsEl, comment.id, options.bookmarkAction.active, host);
         }
     };
 
@@ -1038,9 +963,6 @@ function renderPersistedEntryCard(
         entryBody: string;
         presentation: BasePersistedCommentPresentation;
         host: SidebarPersistedCommentHost;
-        bookmarkAction?: {
-            active: boolean;
-        } | null;
         interactive?: boolean;
         inlineEditDraft?: DraftComment | null;
         pinAction?: {
@@ -1065,7 +987,6 @@ function renderPersistedEntryCard(
     const headerMainEl = headerEl.createDiv("sidenote2-comment-header-main");
     renderCommentMeta(headerMainEl, options.comment, options.presentation, options.host, {
         pinAction: options.pinAction ?? null,
-        bookmarkAction: options.bookmarkAction ?? null,
     });
     const actionsEl = headerEl.createDiv("sidenote2-comment-actions");
 
@@ -1411,7 +1332,7 @@ export async function renderPersistedCommentCard(
     const appendDraftAfterEntryId = getAppendDraftInsertAfterEntryId(thread, host.appendDraftComment);
     const parentAuthor = resolveSidebarCommentAuthor(comment.id, host.threadAgentRuns, host.currentUserLabel);
     const renderTasks: Array<Promise<void>> = [];
-    const canShowHeaderBookmarkAndPinActions = host.showBookmarkAndPinControls
+    const canShowHeaderPinAction = host.showBookmarkAndPinControls
         && comment.id === thread.id
         && !comment.deletedAt
         && !thread.deletedAt;
@@ -1421,13 +1342,8 @@ export async function renderPersistedCommentCard(
         entryBody: entries[0]?.body || "",
         presentation,
         host,
-        bookmarkAction: canShowHeaderBookmarkAndPinActions
-            ? {
-                active: comment.isBookmark === true,
-            }
-            : null,
         inlineEditDraft: parentEditDraft,
-        pinAction: canShowHeaderBookmarkAndPinActions
+        pinAction: canShowHeaderPinAction
             ? {
                 active: host.isPinnedThread(thread.id),
             }

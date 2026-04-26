@@ -52,13 +52,11 @@ import {
     buildPageSidebarThreadRenderSignature,
 } from "./sidebarPageRenderSignature";
 import {
-    countBookmarkThreads,
     filterThreadsByPinnedSidebarThreadIds,
     filterThreadsByPinnedSidebarViewState,
     filterThreadsBySidebarContentFilter,
     rankThreadsBySidebarSearchQuery,
     toggleDeletedSidebarViewState,
-    toggleSidebarContentFilterState,
     unlockSidebarContentFilterForDraft,
     type SidebarContentFilter,
 } from "./sidebarContentFilter";
@@ -428,27 +426,6 @@ export default class SideNote2View extends ItemView {
         await this.renderComments({
             skipDataRefresh: true,
         });
-    }
-
-    private async setSidebarCommentBookmarkState(commentId: string, isBookmark: boolean): Promise<void> {
-        const currentFilePath = this.getCurrentLocalNoteSidebarFilePath();
-        const updated = await this.plugin.setCommentBookmarkState(
-            commentId,
-            isBookmark,
-            currentFilePath
-                ? {
-                    deferAggregateRefresh: true,
-                    skipPersistedViewRefresh: true,
-                    refreshEditorDecorations: false,
-                    refreshMarkdownPreviews: false,
-                }
-                : undefined,
-        );
-        if (!updated) {
-            return;
-        }
-
-        await this.rerenderLocalNoteSidebarIfStillShowing(currentFilePath);
     }
 
     private async setSidebarCommentResolvedState(commentId: string, resolved: boolean): Promise<void> {
@@ -1147,7 +1124,6 @@ export default class SideNote2View extends ItemView {
                 },
                 noteSidebarContentFilter: "all",
                 noteSidebarMode: this.noteSidebarMode,
-                bookmarkThreadCount: 0,
                 addPageCommentAction: !isAllCommentsView
                     ? {
                         icon: "plus",
@@ -1293,7 +1269,6 @@ export default class SideNote2View extends ItemView {
         const pageThreadsWithDeleted = this.plugin.getThreadsForFile(file.path, { includeDeleted: true });
         const deletedCommentCount = countDeletedComments(pageThreadsWithDeleted);
         const showResolved = this.plugin.shouldShowResolvedComments();
-        const bookmarkThreadCount = countBookmarkThreads(persistedThreads);
         const hasResolvedThreadsInFile = persistedThreads.some((thread) => thread.resolved);
         this.syncPinnedSidebarThreadIds(persistedThreads);
         const contentFilteredThreads = this.filterNoteSidebarThreadsByContentFilter(file.path, persistedThreads);
@@ -1378,7 +1353,6 @@ export default class SideNote2View extends ItemView {
             },
             noteSidebarContentFilter: this.noteSidebarContentFilter,
             noteSidebarMode: this.noteSidebarMode,
-            bookmarkThreadCount,
             addPageCommentAction: {
                 icon: "plus",
                 ariaLabel: "Add page note",
@@ -1439,7 +1413,6 @@ export default class SideNote2View extends ItemView {
         const pageThreadsWithDeleted = this.plugin.getThreadsForFile(file.path, { includeDeleted: true });
         const deletedCommentCount = countDeletedComments(pageThreadsWithDeleted);
         const showResolved = this.plugin.shouldShowResolvedComments();
-        const bookmarkThreadCount = countBookmarkThreads(persistedThreads);
         const hasResolvedThreadsInFile = persistedThreads.some((thread) => thread.resolved);
 
         await this.plugin.ensureIndexedCommentsLoaded();
@@ -1480,7 +1453,6 @@ export default class SideNote2View extends ItemView {
             },
             noteSidebarContentFilter: this.noteSidebarContentFilter,
             noteSidebarMode: this.noteSidebarMode,
-            bookmarkThreadCount,
             addPageCommentAction: {
                 icon: "plus",
                 ariaLabel: "Add page note",
@@ -1881,8 +1853,6 @@ export default class SideNote2View extends ItemView {
 
     private getNoteSidebarContentFilterLabel(filter: SidebarContentFilter): string {
         switch (filter) {
-            case "bookmarks":
-                return "bookmark filter";
             case "agents":
                 return "agent filter";
             case "all":
@@ -1893,8 +1863,6 @@ export default class SideNote2View extends ItemView {
 
     private getNoteSidebarContentFilterPluralLabel(filter: SidebarContentFilter): string {
         switch (filter) {
-            case "bookmarks":
-                return "bookmark comments";
             case "agents":
                 return "agent comments";
             case "all":
@@ -2035,7 +2003,6 @@ export default class SideNote2View extends ItemView {
             };
             noteSidebarContentFilter: SidebarContentFilter;
             noteSidebarMode: SidebarPrimaryMode;
-            bookmarkThreadCount: number;
             addPageCommentAction: {
                 icon: string;
                 ariaLabel: string;
@@ -2051,7 +2018,6 @@ export default class SideNote2View extends ItemView {
         const showDeletedComments = options.showDeletedComments;
         const showPinnedThreadsOnly = this.showPinnedSidebarThreadsOnly;
         const hasPinnedThreads = this.pinnedSidebarThreadIds.size > 0;
-        const contentFilter = options.noteSidebarContentFilter;
         const activePrimaryMode = options.isAllCommentsView
             ? this.indexSidebarMode
             : options.noteSidebarMode;
@@ -2065,7 +2031,6 @@ export default class SideNote2View extends ItemView {
         const shouldShowResolvedChip = showListOnlyToolbarChips
             && !options.isAgentMode
             && shouldShowResolvedToolbarChip(options.hasResolvedComments, showResolved);
-        const shouldShowContentFilterIcons = !options.isAllCommentsView;
         const shouldShowNestedChip = showListOnlyToolbarChips && shouldShowNestedToolbarChip({
             hasNestedComments: options.hasNestedComments,
             isAllCommentsView: options.isAllCommentsView,
@@ -2077,7 +2042,6 @@ export default class SideNote2View extends ItemView {
             && showDeletedComments;
         const shouldRenderToolbar = options.isAllCommentsView
             || shouldShowResolvedChip
-            || shouldShowContentFilterIcons
             || shouldShowNestedChip
             || shouldShowAddPageCommentAction;
         if (!shouldRenderToolbar) {
@@ -2172,26 +2136,6 @@ export default class SideNote2View extends ItemView {
                 },
             });
         }
-        if (shouldShowContentFilterIcons && showListOnlyToolbarChips) {
-            this.renderToolbarIconButton(actionGroup, {
-                icon: "bookmark",
-                active: contentFilter === "bookmarks",
-                ariaLabel: contentFilter === "bookmarks"
-                    ? "Show all comments"
-                    : "Show bookmark comments",
-                disabled: options.bookmarkThreadCount === 0 && contentFilter !== "bookmarks",
-                onClick: () => {
-                    const nextState = toggleSidebarContentFilterState(
-                        contentFilter,
-                        "bookmarks",
-                        this.pinnedSidebarThreadIds,
-                    );
-                    this.noteSidebarContentFilter = nextState.filter;
-                    this.pinnedSidebarThreadIds = nextState.pinnedThreadIds;
-                    void this.renderComments();
-                },
-            });
-        }
         if (shouldShowResolvedChip) {
             this.renderToolbarIconButton(actionGroup, {
                 icon: "check",
@@ -2225,7 +2169,7 @@ export default class SideNote2View extends ItemView {
                     void this.toggleDeletedSidebarMode({
                         showDeleted: showDeletedComments,
                         showResolved,
-                        contentFilter,
+                        contentFilter: options.noteSidebarContentFilter,
                     });
                 },
             });
@@ -2924,7 +2868,6 @@ export default class SideNote2View extends ItemView {
             startEditDraft: (commentId, hostFilePath) => {
                 void this.plugin.startEditDraft(commentId, hostFilePath);
             },
-            setCommentBookmarkState: (commentId, isBookmark) => this.setSidebarCommentBookmarkState(commentId, isBookmark),
             isPinnedThread: (threadId) => this.isPinnedSidebarThread(threadId),
             togglePinnedThread: (threadId) => this.togglePinnedSidebarThread(threadId),
             startAppendEntryDraft: (commentId, hostFilePath) => {
@@ -3187,9 +3130,6 @@ export default class SideNote2View extends ItemView {
             updateDraftCommentText: (commentId, commentText) => {
                 this.plugin.updateDraftCommentText(commentId, commentText);
             },
-            updateDraftCommentBookmarkState: (commentId, isBookmark) => {
-                this.plugin.updateDraftCommentBookmarkState(commentId, isBookmark);
-            },
             setIcon: (element, icon) => {
                 setIcon(element, icon);
             },
@@ -3210,9 +3150,6 @@ export default class SideNote2View extends ItemView {
             isSavingDraft: (commentId) => this.plugin.isSavingDraft(commentId),
             updateDraftCommentText: (commentId, commentText) => {
                 this.plugin.updateDraftCommentText(commentId, commentText);
-            },
-            updateDraftCommentBookmarkState: (commentId, isBookmark) => {
-                this.plugin.updateDraftCommentBookmarkState(commentId, isBookmark);
             },
             setIcon: (element, icon) => {
                 setIcon(element, icon);
