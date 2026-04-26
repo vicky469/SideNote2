@@ -17,3 +17,9 @@ export interface DraftSelection {
     endChar: number;
     anchorKind?: CommentAnchorKind;
 }
+
+export function canSaveDraftWithoutComment(
+    draft: Pick<DraftComment, "mode" | "anchorKind">,
+): boolean {
+    return draft.mode === "new" && draft.anchorKind !== "page";
+}

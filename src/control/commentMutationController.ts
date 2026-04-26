@@ -6,7 +6,7 @@ import { shortenBareUrlsInMarkdown } from "../core/text/commentUrls";
 import { MAX_SIDENOTE_WORDS, countCommentWords, exceedsCommentWordLimit } from "../core/text/commentWordLimit";
 import { resolveAnchorRange } from "../core/anchors/anchorResolver";
 import { getManagedSectionRange, getVisibleNoteContent } from "../core/storage/noteCommentStorage";
-import type { DraftComment, DraftSelection } from "../domain/drafts";
+import { canSaveDraftWithoutComment, type DraftComment, type DraftSelection } from "../domain/drafts";
 import type { SavedUserEntryEvent } from "./commentAgentController";
 import type { SetDraftCommentOptions } from "./commentSessionController";
 
@@ -124,7 +124,7 @@ export class CommentMutationController {
         }
 
         const commentBody = shortenBareUrlsInMarkdown(draft.comment).trim();
-        if (!commentBody) {
+        if (!commentBody && !canSaveDraftWithoutComment(draft)) {
             return;
         }
         if (exceedsCommentWordLimit(commentBody)) {

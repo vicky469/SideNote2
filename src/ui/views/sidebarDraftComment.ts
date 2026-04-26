@@ -1,6 +1,6 @@
 import { isOrphanedComment, isPageComment } from "../../core/anchors/commentAnchors";
 import { MAX_SIDENOTE_WORDS, countCommentWords, exceedsCommentWordLimit } from "../../core/text/commentWordLimit";
-import type { DraftComment } from "../../domain/drafts";
+import { canSaveDraftWithoutComment, type DraftComment } from "../../domain/drafts";
 import { renderStyledDraftCommentFragment } from "../editor/commentEditorStyling";
 import { formatSidebarCommentMeta } from "./sidebarCommentSections";
 import type { SidebarDraftEditorController } from "./sidebarDraftEditor";
@@ -33,6 +33,16 @@ export interface SidebarDraftCommentHost {
 }
 
 type DraftEditorLayout = "card" | "inline-edit";
+
+export function isDraftSaveActionDisabled(
+    comment: Pick<DraftComment, "mode" | "anchorKind">,
+    commentText: string,
+    saving: boolean,
+): boolean {
+    return saving
+        || exceedsCommentWordLimit(commentText)
+        || (commentText.trim().length === 0 && !canSaveDraftWithoutComment(comment));
+}
 
 export function buildDraftCommentPresentation(
     comment: DraftComment,
@@ -260,29 +270,28 @@ function renderDraftEditor(
         .filter((button): button is HTMLButtonElement => !!button)
         .forEach((button) => attachDraftActionButtonInteractions(button, host));
 
-    const saving = host.isSavingDraft(comment.id);
-    const syncWordCount = () => {
+    let savePending = host.isSavingDraft(comment.id);
+    const syncActionState = () => {
         const wordCount = countCommentWords(textarea.value);
         wordCountEl.setText(`${wordCount}/${MAX_SIDENOTE_WORDS} words`);
-        saveButton.disabled = saving || exceedsCommentWordLimit(textarea.value);
+        textarea.disabled = savePending;
+        if (boldButton) {
+            boldButton.disabled = savePending;
+        }
+        if (highlightButton) {
+            highlightButton.disabled = savePending;
+        }
+        if (inlineEditBoldButton) {
+            inlineEditBoldButton.disabled = savePending;
+        }
+        if (inlineEditHighlightButton) {
+            inlineEditHighlightButton.disabled = savePending;
+        }
+        cancelButton.disabled = savePending;
+        saveButton.disabled = isDraftSaveActionDisabled(comment, textarea.value, savePending);
     };
 
-    textarea.disabled = saving;
-    if (boldButton) {
-        boldButton.disabled = saving;
-    }
-    if (highlightButton) {
-        highlightButton.disabled = saving;
-    }
-    if (inlineEditBoldButton) {
-        inlineEditBoldButton.disabled = saving;
-    }
-    if (inlineEditHighlightButton) {
-        inlineEditHighlightButton.disabled = saving;
-    }
-    cancelButton.disabled = saving;
-    saveButton.disabled = saving;
-    syncWordCount();
+    syncActionState();
 
     const stopPropagation = (event: Event) => {
         event.stopPropagation();
@@ -332,7 +341,7 @@ function renderDraftEditor(
         host.updateDraftCommentText(comment.id, target.value);
         target.rows = estimateDraftTextareaRows(target.value, comment.mode === "edit");
         syncPreview();
-        syncWordCount();
+        syncActionState();
 
         if (!(event instanceof InputEvent) || event.inputType !== "insertText" || !event.data) {
             return;
@@ -397,6 +406,18 @@ function renderDraftEditor(
     };
     saveButton.onclick = (event) => {
         stopPropagation(event);
-        void host.saveDraft(comment.id);
+        if (saveButton.disabled) {
+            return;
+        }
+        savePending = true;
+        syncActionState();
+        void (async () => {
+            try {
+                await host.saveDraft(comment.id);
+            } finally {
+                savePending = false;
+                syncActionState();
+            }
+        })();
     };
 }

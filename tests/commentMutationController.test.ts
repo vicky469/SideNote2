@@ -317,10 +317,41 @@ test("comment mutation controller hashes draft selections lazily during save", a
     assert.deepEqual(host.notices, []);
 });
 
-test("comment mutation controller rejects empty drafts", async () => {
+test("comment mutation controller saves a new anchored draft without a comment", async () => {
     const draft = toDraft(createComment({
-        id: "draft-empty-1",
+        id: "draft-empty-anchored-1",
         comment: "   ",
+    }));
+    const host = createHost({
+        draftComment: draft,
+        knownComments: [draft],
+        loadedComments: [],
+        currentNoteContentByPath: {
+            [draft.filePath]: "# Title\n\nAlpha beta gamma.\n",
+        },
+    });
+
+    await host.controller.saveDraft(draft.id);
+
+    assert.equal(host.manager.getAllComments().length, 1);
+    assert.equal(host.manager.getAllComments()[0].comment, "");
+    assert.deepEqual(host.persistedFiles, [{
+        path: draft.filePath,
+        immediateAggregateRefresh: false,
+        skipCommentViewRefresh: true,
+    }]);
+    assert.equal(host.getDraftComment(), null);
+    assert.equal(host.getSavingDraftCommentId(), null);
+    assert.equal(host.getRefreshCommentViewsCount(), 1);
+    assert.equal(host.getRefreshEditorDecorationsCount(), 1);
+    assert.deepEqual(host.notices, []);
+});
+
+test("comment mutation controller rejects empty page note drafts", async () => {
+    const draft = toDraft(createComment({
+        id: "draft-empty-page-1",
+        comment: "   ",
+        anchorKind: "page",
     }));
     const host = createHost({
         draftComment: draft,
