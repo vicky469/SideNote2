@@ -1122,7 +1122,7 @@ button.sidenote2-tab-button.sidenote2-tab-button--active {
 
 .sidenote2-comment-content {
     color: var(--text-normal);
-    font-size: 0.95em;
+    font-size: 0.9em;
     line-height: 1.45;
     word-break: break-word;
     user-select: text;
@@ -1699,7 +1699,7 @@ button.sidenote2-tab-button.sidenote2-tab-button--active {
     width: 100%;
     min-height: 72px;
     padding: 9px 10px;
-    font-size: 0.95em;
+    font-size: 0.9em;
     font-family: var(--font-text);
     line-height: 1.45;
     box-sizing: border-box;
