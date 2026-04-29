@@ -12,22 +12,34 @@ export interface EditorHighlightRange {
     active: boolean;
 }
 
-function lineChToOffset(text: string, line: number, ch: number): number | null {
+function buildLineStartOffsets(text: string): number[] {
+    const lineStarts = [0];
+    for (let index = 0; index < text.length; index += 1) {
+        if (text.charCodeAt(index) === 10) {
+            lineStarts.push(index + 1);
+        }
+    }
+
+    return lineStarts;
+}
+
+function lineChToOffset(text: string, lineStarts: readonly number[], line: number, ch: number): number | null {
     if (line < 0 || ch < 0) {
         return null;
     }
 
-    const lines = text.split("\n");
-    if (line >= lines.length || ch > lines[line].length) {
+    const lineStart = lineStarts[line];
+    if (lineStart === undefined) {
         return null;
     }
 
-    let offset = 0;
-    for (let index = 0; index < line; index++) {
-        offset += lines[index].length + 1;
+    const nextLineStart = line + 1 < lineStarts.length ? lineStarts[line + 1] : text.length + 1;
+    const lineLength = nextLineStart - lineStart - (line + 1 < lineStarts.length ? 1 : 0);
+    if (ch > lineLength) {
+        return null;
     }
 
-    return offset + ch;
+    return lineStart + ch;
 }
 
 function getVisibleCommentsForHighlighting(
@@ -63,27 +75,32 @@ export function buildEditorHighlightRanges(
         draftComment,
         showResolved,
     );
+    if (!comments.length) {
+        return [];
+    }
+
+    const lineStarts = buildLineStartOffsets(docText);
     const ranges: EditorHighlightRange[] = [];
 
     comments.forEach((comment) => {
         let from = -1;
         let to = -1;
 
-        const resolvedAnchor = resolveAnchorRange(searchableText, comment);
-        if (resolvedAnchor) {
-            from = resolvedAnchor.startOffset;
-            to = resolvedAnchor.endOffset;
+        const storedFrom = lineChToOffset(docText, lineStarts, comment.startLine, comment.startChar);
+        const storedTo = lineChToOffset(docText, lineStarts, comment.endLine, comment.endChar);
+        if (
+            storedFrom !== null &&
+            storedTo !== null &&
+            storedFrom < storedTo &&
+            docText.slice(storedFrom, storedTo) === comment.selectedText
+        ) {
+            from = storedFrom;
+            to = storedTo;
         } else {
-            const storedFrom = lineChToOffset(docText, comment.startLine, comment.startChar);
-            const storedTo = lineChToOffset(docText, comment.endLine, comment.endChar);
-            if (
-                storedFrom !== null &&
-                storedTo !== null &&
-                storedFrom < storedTo &&
-                docText.slice(storedFrom, storedTo) === comment.selectedText
-            ) {
-                from = storedFrom;
-                to = storedTo;
+            const resolvedAnchor = resolveAnchorRange(searchableText, comment);
+            if (resolvedAnchor) {
+                from = resolvedAnchor.startOffset;
+                to = resolvedAnchor.endOffset;
             }
         }
 

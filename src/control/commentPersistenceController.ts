@@ -58,8 +58,8 @@ export interface CommentPersistenceHost {
     createCommentId(): string;
     hashText(text: string): Promise<string>;
     syncDerivedCommentLinksForFile(file: TFile, noteContent: string, comments: Array<Comment | CommentThread>): void;
-    refreshCommentViews(): Promise<void>;
-    refreshAllCommentsSidebarViews(): Promise<void>;
+    refreshCommentViews(options?: { skipDataRefresh?: boolean }): Promise<void>;
+    refreshAllCommentsSidebarViews(options?: { skipDataRefresh?: boolean }): Promise<void>;
     refreshEditorDecorations(): void;
     refreshMarkdownPreviews(): void;
     getCommentMentionedPageLabels(comment: Comment): string[];
@@ -182,7 +182,7 @@ export class CommentPersistenceController {
 
     public async persistCommentsForFile(file: TFile, options: PersistOptions = {}): Promise<void> {
         if (options.skipCommentViewRefresh) {
-            this.scheduleCommentViewRefreshSuppression(file.path, 2);
+            this.scheduleCommentViewRefreshSuppression(file.path, 1);
         }
 
         await this.writeCommentsForFile(file, options);
@@ -506,10 +506,13 @@ export class CommentPersistenceController {
     }
 
     private async afterCommentsChanged(filePath: string | null = null, options: PersistOptions = {}): Promise<void> {
+        const viewRefreshOptions = {
+            skipDataRefresh: true,
+        };
         if (filePath && this.host.isAllCommentsNotePath(filePath)) {
-            await this.host.refreshAllCommentsSidebarViews();
+            await this.host.refreshAllCommentsSidebarViews(viewRefreshOptions);
         } else if (!filePath || !this.consumeCommentViewRefreshSuppression(filePath)) {
-            await this.host.refreshCommentViews();
+            await this.host.refreshCommentViews(viewRefreshOptions);
         }
         if (options.refreshEditorDecorations !== false) {
             this.host.refreshEditorDecorations();

@@ -74,25 +74,24 @@ test("isDraftSaveActionDisabled allows empty new anchored notes but blocks other
     assert.equal(isDraftSaveActionDisabled(createDraft({
         anchorKind: "selection",
         mode: "new",
-    }), "   ", false), false);
+    }), "   "), false);
 
     assert.equal(isDraftSaveActionDisabled(createDraft({
         anchorKind: undefined,
         mode: "new",
-    }), "   ", false), false);
+    }), "   "), false);
 
     assert.equal(isDraftSaveActionDisabled(createDraft({
         anchorKind: "page",
         mode: "new",
-    }), "   ", false), true);
+    }), "   "), true);
 
     assert.equal(isDraftSaveActionDisabled(createDraft({
         anchorKind: "selection",
         mode: "append",
-    }), "   ", false), true);
+    }), "   "), true);
 });
 
-test("isDraftSaveActionDisabled blocks pending and over-limit saves", () => {
-    assert.equal(isDraftSaveActionDisabled(createDraft(), "Draft body", true), true);
-    assert.equal(isDraftSaveActionDisabled(createDraft(), `${"word ".repeat(301)}`, false), true);
+test("isDraftSaveActionDisabled blocks over-limit saves", () => {
+    assert.equal(isDraftSaveActionDisabled(createDraft(), `${"word ".repeat(301)}`), true);
 });

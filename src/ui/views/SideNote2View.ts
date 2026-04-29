@@ -31,6 +31,7 @@ import SideNoteFileFilterModal from "../modals/SideNoteFileFilterModal";
 import SideNoteLinkSuggestModal from "../modals/SideNoteLinkSuggestModal";
 import SideNoteOpenFileSuggestModal from "../modals/SideNoteOpenFileSuggestModal";
 import SideNoteTagSuggestModal from "../modals/SideNoteTagSuggestModal";
+import { extractTagsFromText, normalizeTagText } from "../../core/text/commentTags";
 import { SIDE_NOTE2_ICON_ID } from "../sideNote2Icon";
 import { copyTextToClipboard } from "../copyTextToClipboard";
 import { SidebarDraftEditorController } from "./sidebarDraftEditor";
@@ -51,6 +52,12 @@ import {
     buildPageSidebarDraftRenderSignature,
     buildPageSidebarThreadRenderSignature,
 } from "./sidebarPageRenderSignature";
+import {
+    applyBatchTagToThreads,
+    persistBatchTagMutation,
+    removeBatchTagFromThreads,
+    threadHasTag,
+} from "./sidebarBatchTagOperations";
 import {
     filterThreadsByPinnedSidebarViewState,
     filterThreadsBySidebarContentFilter,
@@ -94,6 +101,8 @@ import {
     normalizeIndexFileFilterRootPath,
     resolveIndexFileFilterRootPathFromState,
     resolvePinnedSidebarStateByFilePathFromState,
+    type BatchTagFlowState,
+    type FileTagIndex,
     type CustomViewState,
     type IndexSidebarMode,
     type PinnedSidebarFileState,
@@ -106,6 +115,15 @@ function matchesResolvedVisibility(resolved: boolean | undefined, showResolved: 
 }
 
 const EMPTY_PINNED_SIDEBAR_THREAD_IDS: ReadonlySet<string> = new Set<string>();
+const DEFAULT_BATCH_TAG_FLOW_STATE: BatchTagFlowState = {
+    isOpen: false,
+    isApplying: false,
+    query: "",
+    selectedTagKey: null,
+    selectedTagText: null,
+    candidateTagTexts: [],
+    failures: [],
+};
 
 function matchesPageSidebarVisibility(
     thread: CommentThread,
@@ -289,10 +307,17 @@ export default class SideNote2View extends ItemView {
     private noteSidebarSearchInputValue = "";
     private noteSidebarSearchDebounceTimer: number | null = null;
     private noteSidebarSearchRequestVersion = 0;
+    private noteSidebarBatchTagSearchDebounceTimer: number | null = null;
+    private noteSidebarBatchTagSearchRequestVersion = 0;
     private indexSidebarSearchQuery = "";
-    private indexSidebarSearchInputValue = "";
-    private indexSidebarSearchDebounceTimer: number | null = null;
-    private indexSidebarSearchRequestVersion = 0;
+    private noteSidebarTagIndex: FileTagIndex | null = null;
+    private noteSidebarSelectedTagIds: Set<string> = new Set<string>();
+    private noteSidebarVisibleTagFilterKey: string | null = null;
+    private noteSidebarBatchTagFlow: BatchTagFlowState = {
+        ...DEFAULT_BATCH_TAG_FLOW_STATE,
+        candidateTagTexts: [],
+        failures: [],
+    };
     private pinnedSidebarThreadIds = new Set<string>();
     private showPinnedSidebarThreadsOnly = false;
     private pinnedSidebarStateByFilePath: Record<string, PinnedSidebarFileState> = {};
@@ -363,19 +388,279 @@ export default class SideNote2View extends ItemView {
         const nextFilePath = nextFile?.path ?? null;
         if (currentFilePath !== nextFilePath) {
             this.savePinnedSidebarStateForFilePath(currentFilePath);
+            this.noteSidebarTagIndex = null;
+            this.noteSidebarVisibleTagFilterKey = null;
+            this.noteSidebarSelectedTagIds.clear();
+            this.noteSidebarBatchTagFlow = {
+                ...DEFAULT_BATCH_TAG_FLOW_STATE,
+                candidateTagTexts: [],
+                failures: [],
+            };
             this.clearNoteSidebarSearchDebounceTimer();
-            this.clearIndexSidebarSearchDebounceTimer();
+            this.clearNoteSidebarBatchTagSearchDebounceTimer();
             this.noteSidebarSearchRequestVersion += 1;
-            this.indexSidebarSearchRequestVersion += 1;
             this.noteSidebarSearchQuery = "";
             this.noteSidebarSearchInputValue = "";
             this.indexSidebarSearchQuery = "";
-            this.indexSidebarSearchInputValue = "";
         }
         this.file = nextFile;
         if (currentFilePath !== nextFilePath) {
             this.restorePinnedSidebarStateForFilePath(nextFilePath);
         }
+    }
+
+    private rebuildNoteSidebarTagIndex(
+        filePath: string,
+        threads: readonly CommentThread[],
+    ): FileTagIndex {
+        const index: FileTagIndex = {
+            filePath,
+            threadIdsByTag: new Map<string, Set<string>>(),
+            tagsByThreadId: new Map<string, Set<string>>(),
+            tagsByDisplay: new Map<string, string>(),
+        };
+
+        for (const thread of threads) {
+            const threadTagKeys = new Set<string>();
+            for (const entry of thread.entries) {
+                for (const rawTag of extractTagsFromText(entry.body)) {
+                    const normalized = rawTag.slice(1).toLowerCase();
+                    if (!normalized) {
+                        continue;
+                    }
+
+                    threadTagKeys.add(normalized);
+                    if (!index.threadIdsByTag.has(normalized)) {
+                        index.threadIdsByTag.set(normalized, new Set<string>());
+                    }
+                    index.threadIdsByTag.get(normalized)!.add(thread.id);
+                    if (!index.tagsByDisplay.has(normalized)) {
+                        index.tagsByDisplay.set(normalized, rawTag);
+                    }
+                }
+            }
+
+            if (threadTagKeys.size > 0) {
+                index.tagsByThreadId.set(thread.id, threadTagKeys);
+            }
+        }
+
+        return index;
+    }
+
+    private getTagDisplayForKey(tagKey: string): string | null {
+        return this.noteSidebarTagIndex?.tagsByDisplay.get(tagKey.toLowerCase()) ?? null;
+    }
+
+    private getNormalizedTagKey(tagText: string): string {
+        return normalizeTagText(tagText).slice(1).toLowerCase();
+    }
+
+    private getNoteSidebarTagCandidateTexts(query: string): readonly string[] {
+        const normalized = this.getNormalizedTagKey(query);
+        if (!normalized) {
+            return [];
+        }
+
+        const index = this.noteSidebarTagIndex;
+        if (!index) {
+            return [];
+        }
+
+        const matches = Array.from(index.threadIdsByTag.keys())
+            .filter((tagKey) => tagKey.includes(normalized))
+            .sort((left, right) => {
+                if (left === normalized) {
+                    return -1;
+                }
+                if (right === normalized) {
+                    return 1;
+                }
+                const leftStartsWith = left.startsWith(normalized);
+                const rightStartsWith = right.startsWith(normalized);
+                if (leftStartsWith !== rightStartsWith) {
+                    return leftStartsWith ? -1 : 1;
+                }
+                return left.localeCompare(right);
+            })
+            .map((tagKey) => index.tagsByDisplay.get(tagKey))
+            .filter((value): value is string => !!value);
+
+        return matches.filter((tagText, index, self) => self.indexOf(tagText) === index).slice(0, 8);
+    }
+
+    private getBatchTagFlowHasExactMatch(normalizedTagKey: string): boolean {
+        return !!(this.noteSidebarTagIndex?.threadIdsByTag.has(normalizedTagKey.toLowerCase()));
+    }
+
+    private getTagActionFromBatchPanel(): "add" | "remove" {
+        return this.noteSidebarMode === "tags"
+            && this.noteSidebarVisibleTagFilterKey !== null
+            && !this.noteSidebarBatchTagFlow.query.trim()
+            ? "remove"
+            : "add";
+    }
+
+    private getBatchTagActionTagText(): string | null {
+        if (this.getTagActionFromBatchPanel() !== "remove") {
+            return this.getNoteSidebarBatchTagText();
+        }
+
+        const visibleTagFilterKey = this.noteSidebarVisibleTagFilterKey;
+        if (!visibleTagFilterKey) {
+            return null;
+        }
+
+        return normalizeTagText(
+            this.getTagDisplayForKey(visibleTagFilterKey)
+            ?? `#${visibleTagFilterKey}`,
+        );
+    }
+
+    private hasBatchTagRemovalTargetOnSelection(targetTagKey: string): boolean {
+        for (const threadId of this.noteSidebarSelectedTagIds) {
+            const thread = this.plugin.getThreadById(threadId);
+            if (!thread) {
+                continue;
+            }
+
+            if (threadHasTag(thread, targetTagKey)) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private updateNoteSidebarBatchTagCandidateTexts(query: string): void {
+        query = this.normalizeTagSearchQuery(query);
+        const normalizedTagKey = this.getNormalizedTagKey(query);
+        const candidateTagTexts = this.getNoteSidebarTagCandidateTexts(query);
+        const exactMatchTagKey = normalizedTagKey && this.getBatchTagFlowHasExactMatch(normalizedTagKey)
+            ? normalizedTagKey
+            : null;
+        const isSingleCandidate = normalizedTagKey && !exactMatchTagKey && candidateTagTexts.length === 1;
+        const selectedSingleCandidate = isSingleCandidate ? candidateTagTexts[0] : null;
+        const normalizedSingleCandidate = selectedSingleCandidate
+            ? this.getNormalizedTagKey(selectedSingleCandidate)
+            : null;
+        const selectedTagText = selectedSingleCandidate
+            ? selectedSingleCandidate
+            : normalizedTagKey
+                ? (this.getTagDisplayForKey(normalizedTagKey) ?? normalizeTagText(query))
+                : null;
+        this.noteSidebarBatchTagFlow = {
+            ...this.noteSidebarBatchTagFlow,
+            query,
+            selectedTagKey: exactMatchTagKey ?? normalizedSingleCandidate,
+            selectedTagText,
+            candidateTagTexts,
+            failures: [],
+            isOpen: true,
+        };
+    }
+
+    private normalizeTagSearchQuery(query: string): string {
+        const trimmedQuery = query.trim();
+        return trimmedQuery.replace(/\s+/g, "-");
+    }
+
+    private setNoteSidebarBatchTagCandidate(tagText: string): void {
+        const normalizedTagText = normalizeTagText(tagText);
+        if (!normalizedTagText) {
+            return;
+        }
+
+        const normalizedTagKey = this.getNormalizedTagKey(normalizedTagText);
+        this.clearNoteSidebarBatchTagSearchDebounceTimer();
+        this.noteSidebarBatchTagSearchRequestVersion += 1;
+        this.noteSidebarBatchTagFlow = {
+            ...this.noteSidebarBatchTagFlow,
+            query: normalizedTagText,
+            selectedTagKey: this.getBatchTagFlowHasExactMatch(normalizedTagKey)
+                ? normalizedTagKey
+                : null,
+            selectedTagText: this.getTagDisplayForKey(normalizedTagKey) ?? normalizedTagText,
+            candidateTagTexts: this.getNoteSidebarTagCandidateTexts(normalizedTagText),
+            failures: [],
+            isOpen: true,
+        };
+    }
+
+    private clearNoteSidebarBatchTagFlowPanel(): void {
+        this.clearNoteSidebarBatchTagSearchDebounceTimer();
+        this.noteSidebarBatchTagSearchRequestVersion += 1;
+        this.noteSidebarBatchTagFlow = {
+            ...DEFAULT_BATCH_TAG_FLOW_STATE,
+            candidateTagTexts: [],
+            failures: [],
+        };
+    }
+
+    private clearNoteSidebarBatchTagSearchInput(): void {
+        this.clearNoteSidebarBatchTagSearchDebounceTimer();
+        this.noteSidebarBatchTagSearchRequestVersion += 1;
+        this.noteSidebarBatchTagFlow = {
+            ...this.noteSidebarBatchTagFlow,
+            query: "",
+            selectedTagKey: null,
+            selectedTagText: null,
+            candidateTagTexts: [],
+        };
+
+        const shell = this.noteSidebarShell;
+        if (!shell) {
+            return;
+        }
+
+        const inputEl = shell.toolbarSlotEl.querySelector<HTMLInputElement>(
+            ".sidenote2-note-search-input.sidenote2-note-tag-batch-search-input",
+        );
+        if (inputEl) {
+            inputEl.value = "";
+        }
+    }
+
+    private getNoteSidebarBatchTagText(): string | null {
+        if (this.noteSidebarBatchTagFlow.selectedTagKey) {
+            const display = this.getTagDisplayForKey(this.noteSidebarBatchTagFlow.selectedTagKey);
+            if (display) {
+                return normalizeTagText(display);
+            }
+        }
+        if (this.noteSidebarBatchTagFlow.selectedTagText) {
+            return normalizeTagText(this.noteSidebarBatchTagFlow.selectedTagText);
+        }
+        if (this.noteSidebarBatchTagFlow.query) {
+            return normalizeTagText(this.noteSidebarBatchTagFlow.query);
+        }
+
+        return null;
+    }
+
+    private restoreNoteSidebarTagBatchSearchFocus(
+        selectionStart: number | null = null,
+        selectionEnd: number | null = null,
+    ): void {
+        const shell = this.noteSidebarShell;
+        if (!shell) {
+            return;
+        }
+
+        const searchInput = shell.toolbarSlotEl.querySelector(
+            ".sidenote2-note-search-input.sidenote2-note-tag-batch-search-input",
+        );
+        if (!(searchInput instanceof HTMLInputElement)) {
+            return;
+        }
+
+        const maxSelection = searchInput.value.length;
+        const resolvedSelectionStart = Math.max(0, Math.min(selectionStart ?? maxSelection, maxSelection));
+        const resolvedSelectionEnd = Math.max(0, Math.min(selectionEnd ?? resolvedSelectionStart, maxSelection));
+
+        this.interactionController.claimSidebarInteractionOwnership(searchInput);
+        searchInput.focus();
+        searchInput.setSelectionRange(resolvedSelectionStart, resolvedSelectionEnd);
     }
 
     private syncPinnedSidebarThreadIds<T extends Pick<CommentThread, "id" | "isPinned">>(threads: readonly T[]): void {
@@ -578,13 +863,81 @@ export default class SideNote2View extends ItemView {
         this.noteSidebarSearchDebounceTimer = null;
     }
 
-    private clearIndexSidebarSearchDebounceTimer(): void {
-        if (this.indexSidebarSearchDebounceTimer === null) {
+    private clearNoteSidebarBatchTagSearchDebounceTimer(): void {
+        if (this.noteSidebarBatchTagSearchDebounceTimer === null) {
             return;
         }
 
-        window.clearTimeout(this.indexSidebarSearchDebounceTimer);
-        this.indexSidebarSearchDebounceTimer = null;
+        window.clearTimeout(this.noteSidebarBatchTagSearchDebounceTimer);
+        this.noteSidebarBatchTagSearchDebounceTimer = null;
+    }
+
+    private scheduleNoteSidebarBatchTagSearchQuery(query: string): void {
+        const activeElement = document.activeElement;
+        const isBatchSearchInputFocused = activeElement instanceof HTMLInputElement
+            && activeElement.matches(".sidenote2-note-search-input.sidenote2-note-tag-batch-search-input");
+        const activeSelectionStart = isBatchSearchInputFocused ? activeElement.selectionStart : null;
+        const activeSelectionEnd = isBatchSearchInputFocused ? activeElement.selectionEnd : null;
+        const normalizedQuery = this.normalizeTagSearchQuery(query);
+        const normalizedTagKey = this.getNormalizedTagKey(normalizedQuery);
+        const exactTagKey = normalizedTagKey && this.getBatchTagFlowHasExactMatch(normalizedTagKey)
+            ? normalizedTagKey
+            : null;
+        this.noteSidebarBatchTagFlow = {
+            ...this.noteSidebarBatchTagFlow,
+            query: normalizedQuery,
+            selectedTagKey: exactTagKey,
+            selectedTagText: exactTagKey
+                ? (this.getTagDisplayForKey(exactTagKey) ?? normalizeTagText(normalizedQuery))
+                : (normalizedQuery.trim() ? normalizeTagText(normalizedQuery) : null),
+            candidateTagTexts: [],
+            failures: [],
+            isOpen: true,
+        };
+        this.clearNoteSidebarBatchTagSearchDebounceTimer();
+        const requestVersion = ++this.noteSidebarBatchTagSearchRequestVersion;
+        this.noteSidebarBatchTagSearchDebounceTimer = window.setTimeout(() => {
+            this.noteSidebarBatchTagSearchDebounceTimer = null;
+            (() => {
+                if (requestVersion !== this.noteSidebarBatchTagSearchRequestVersion) {
+                    return;
+                }
+
+                this.updateNoteSidebarBatchTagCandidateTexts(normalizedQuery);
+                this.refreshNoteSidebarTagBatchPanel();
+                if (
+                    requestVersion !== this.noteSidebarBatchTagSearchRequestVersion
+                    || !isBatchSearchInputFocused
+                ) {
+                    return;
+                }
+
+                this.restoreNoteSidebarTagBatchSearchFocus(activeSelectionStart, activeSelectionEnd);
+            })();
+        }, SideNote2View.NOTE_SIDEBAR_SEARCH_DEBOUNCE_MS);
+    }
+
+    private refreshNoteSidebarTagBatchPanel(): void {
+        const shell = this.noteSidebarShell;
+        if (!shell) {
+            return;
+        }
+
+        const toolbarEl = shell.toolbarSlotEl.querySelector<HTMLElement>(".sidenote2-sidebar-toolbar");
+        if (!toolbarEl) {
+            return;
+        }
+
+        const existingRow = toolbarEl.querySelector(".is-note-tag-batch-row");
+        if (existingRow) {
+            existingRow.remove();
+        }
+
+        if (!this.noteSidebarBatchTagFlow.isOpen) {
+            return;
+        }
+
+        this.renderNoteSidebarTagBatchFlowPanel(toolbarEl);
     }
 
     private scheduleNoteSidebarSearchQuery(
@@ -624,7 +977,7 @@ export default class SideNote2View extends ItemView {
         const shouldRestoreFocus = activeElement instanceof HTMLInputElement
             && activeElement.matches(".sidenote2-note-search-input")
             && this.containerEl.contains(activeElement);
-        if (query.trim() && this.noteSidebarMode !== "list") {
+        if (query.trim() && this.noteSidebarMode === "thought-trail") {
             this.noteSidebarMode = "list";
             void this.plugin.logEvent("info", "note", "note.mode.changed", {
                 mode: "list",
@@ -645,81 +998,6 @@ export default class SideNote2View extends ItemView {
             !currentFilePath
             || this.file?.path !== currentFilePath
             || this.plugin.isAllCommentsNotePath(currentFilePath)
-            || !shouldRestoreFocus
-        ) {
-            return;
-        }
-
-        const inputEl = this.containerEl.querySelector(".sidenote2-note-search-input");
-        if (!(inputEl instanceof HTMLInputElement)) {
-            return;
-        }
-
-        const maxSelection = inputEl.value.length;
-        const selectionStart = Math.max(0, Math.min(options.selectionStart ?? maxSelection, maxSelection));
-        const selectionEnd = Math.max(0, Math.min(options.selectionEnd ?? selectionStart, maxSelection));
-        this.interactionController.claimSidebarInteractionOwnership(inputEl);
-        inputEl.setSelectionRange(selectionStart, selectionEnd);
-    }
-
-    private scheduleIndexSidebarSearchQuery(
-        query: string,
-        options: {
-            selectionStart?: number | null;
-            selectionEnd?: number | null;
-        } = {},
-    ): void {
-        this.indexSidebarSearchInputValue = query;
-        const requestVersion = ++this.indexSidebarSearchRequestVersion;
-        this.clearIndexSidebarSearchDebounceTimer();
-        if (this.indexSidebarSearchQuery === query) {
-            return;
-        }
-
-        this.indexSidebarSearchDebounceTimer = window.setTimeout(() => {
-            this.indexSidebarSearchDebounceTimer = null;
-            void this.applyIndexSidebarSearchQuery(query, requestVersion, options);
-        }, SideNote2View.NOTE_SIDEBAR_SEARCH_DEBOUNCE_MS);
-    }
-
-    private async applyIndexSidebarSearchQuery(
-        query: string,
-        requestVersion: number,
-        options: {
-            selectionStart?: number | null;
-            selectionEnd?: number | null;
-        } = {},
-    ): Promise<void> {
-        if (this.indexSidebarSearchQuery === query) {
-            return;
-        }
-
-        this.indexSidebarSearchInputValue = query;
-        const activeElement = document.activeElement;
-        const shouldRestoreFocus = activeElement instanceof HTMLInputElement
-            && activeElement.matches(".sidenote2-note-search-input")
-            && this.containerEl.contains(activeElement);
-        if (query.trim() && this.indexSidebarMode !== "list") {
-            this.indexSidebarMode = "list";
-            void this.plugin.logEvent("info", "index", "index.mode.changed", {
-                mode: "list",
-                source: "search",
-            });
-        }
-
-        this.indexSidebarSearchQuery = query;
-        const currentFilePath = this.file?.path ?? null;
-        await this.renderComments({
-            skipDataRefresh: true,
-        });
-        if (requestVersion !== this.indexSidebarSearchRequestVersion) {
-            return;
-        }
-
-        if (
-            !currentFilePath
-            || this.file?.path !== currentFilePath
-            || !this.plugin.isAllCommentsNotePath(currentFilePath)
             || !shouldRestoreFocus
         ) {
             return;
@@ -813,7 +1091,6 @@ export default class SideNote2View extends ItemView {
         this.unsubscribeFromAgentStreamUpdates?.();
         this.unsubscribeFromAgentStreamUpdates = null;
         this.clearNoteSidebarSearchDebounceTimer();
-        this.clearIndexSidebarSearchDebounceTimer();
         this.noteSidebarShell = null;
         this.resetStreamedReplyControllers();
         document.removeEventListener("keydown", this.interactionController.documentKeydownHandler, true);
@@ -900,22 +1177,37 @@ export default class SideNote2View extends ItemView {
     }
 
     public highlightComment(commentId: string, options: { skipDataRefresh?: boolean } = {}) {
+        const previousMode = this.noteSidebarMode;
         this.ensureListModeForCommentFocus();
         this.interactionController.highlightComment(commentId, options);
         const currentFilePath = this.file?.path ?? null;
         if (currentFilePath && this.plugin.isAllCommentsNotePath(currentFilePath)) {
             void this.plugin.syncIndexCommentHighlightPair(commentId, currentFilePath);
         }
+        if (previousMode === "tags" && this.noteSidebarMode !== "tags" && this.file
+            && !this.plugin.isAllCommentsNotePath(this.file.path)) {
+            this.noteSidebarMode = "tags";
+        }
     }
 
     public async highlightAndFocusDraft(commentId: string) {
+        const previousMode = this.noteSidebarMode;
         this.ensureListModeForCommentFocus();
         await this.interactionController.highlightAndFocusDraft(commentId);
+        if (previousMode === "tags" && this.noteSidebarMode !== "tags" && this.file
+            && !this.plugin.isAllCommentsNotePath(this.file.path)) {
+            this.noteSidebarMode = "tags";
+        }
     }
 
     public focusDraft(commentId: string): void {
+        const previousMode = this.noteSidebarMode;
         this.ensureListModeForCommentFocus();
         this.interactionController.focusDraft(commentId);
+        if (previousMode === "tags" && this.noteSidebarMode !== "tags" && this.file
+            && !this.plugin.isAllCommentsNotePath(this.file.path)) {
+            this.noteSidebarMode = "tags";
+        }
     }
 
     public clearActiveState(): void {
@@ -1290,6 +1582,13 @@ export default class SideNote2View extends ItemView {
         const deletedCommentCount = countDeletedComments(pageThreadsWithDeleted);
         const showResolved = this.plugin.shouldShowResolvedComments();
         const hasResolvedThreadsInFile = persistedThreads.some((thread) => thread.resolved);
+        this.noteSidebarTagIndex = this.rebuildNoteSidebarTagIndex(file.path, persistedThreads);
+        if (
+            this.noteSidebarVisibleTagFilterKey
+            && !this.noteSidebarTagIndex.threadIdsByTag.has(this.noteSidebarVisibleTagFilterKey)
+        ) {
+            this.noteSidebarVisibleTagFilterKey = null;
+        }
         this.syncPinnedSidebarThreadIds(persistedThreads);
         const contentFilteredThreads = this.filterNoteSidebarThreadsByContentFilter(file.path, persistedThreads);
         const pinnedContentFilteredThreads = filterThreadsByPinnedSidebarViewState(
@@ -1297,8 +1596,13 @@ export default class SideNote2View extends ItemView {
             this.pinnedSidebarThreadIds,
             this.showPinnedSidebarThreadsOnly,
         );
+        const tagModeThreads = this.noteSidebarMode === "tags" && this.noteSidebarVisibleTagFilterKey
+            ? pinnedContentFilteredThreads.filter((thread) =>
+                this.noteSidebarTagIndex?.threadIdsByTag.get(this.noteSidebarVisibleTagFilterKey ?? "")?.has(thread.id) ?? false,
+            )
+            : pinnedContentFilteredThreads;
         const searchMatchedThreads = rankThreadsBySidebarSearchQuery(
-            pinnedContentFilteredThreads,
+            tagModeThreads,
             this.noteSidebarSearchQuery,
         );
         const allAgentRuns = this.plugin.getAgentRuns();
@@ -1396,6 +1700,7 @@ export default class SideNote2View extends ItemView {
             nestedEditDraftThreadId,
             nestedAppendDraftThreadId,
             visibleDraftComment,
+            enableTagSelection: this.noteSidebarMode === "tags",
         });
         await this.reconcileNoteSidebarItems(shell.commentsBodyEl, renderDescriptors);
         this.refreshSidebarSearchHighlights(shell.commentsBodyEl, this.noteSidebarSearchQuery);
@@ -1404,6 +1709,9 @@ export default class SideNote2View extends ItemView {
             showResolved,
             totalScopedCount,
             hasResolvedComments,
+            noteSidebarMode: this.noteSidebarMode,
+            visibleTagFilterKey: this.noteSidebarVisibleTagFilterKey,
+            hasAnyTags: (this.noteSidebarTagIndex?.threadIdsByTag.size ?? 0) > 0,
             contentFilter: this.noteSidebarContentFilter,
             showPinnedThreadsOnly: this.showPinnedSidebarThreadsOnly,
             searchQuery: this.noteSidebarSearchQuery,
@@ -1542,6 +1850,7 @@ export default class SideNote2View extends ItemView {
             nestedEditDraftThreadId: string | null;
             nestedAppendDraftThreadId: string | null;
             visibleDraftComment: DraftComment | null;
+            enableTagSelection: boolean;
         },
     ): NoteSidebarRenderDescriptor[] {
         return renderableItems.map((item) => {
@@ -1581,7 +1890,9 @@ export default class SideNote2View extends ItemView {
                     isPinned: this.isPinnedSidebarThread(item.thread.id),
                     showNestedComments,
                     showNestedCommentsByDefault: this.plugin.shouldShowNestedComments(),
+                    isSelectedForTagBatch: options.enableTagSelection && this.noteSidebarSelectedTagIds.has(item.thread.id),
                     enablePageThreadReorder: options.enablePageThreadReorder,
+                    enableTagSelection: options.enableTagSelection,
                     editDraftComment,
                     appendDraftComment,
                     threadAgentRuns,
@@ -1603,11 +1914,317 @@ export default class SideNote2View extends ItemView {
                     if (!(nextNode instanceof HTMLElement)) {
                         throw new Error("Failed to render sidebar thread card.");
                     }
-                    return nextNode;
+                    if (!options.enableTagSelection) {
+                        return nextNode;
+                    }
+
+                    const wrapper = stagingEl.createDiv("sidenote2-comment-thread-select-wrapper");
+                    const checkRow = wrapper.createEl("label", {
+                        cls: "sidenote2-comment-thread-select-row",
+                    });
+                    const checkbox = checkRow.createEl("input", {
+                        type: "checkbox",
+                    });
+                    checkbox.checked = this.noteSidebarSelectedTagIds.has(item.thread.id);
+                    checkbox.addEventListener("change", (event: Event) => {
+                        event.stopPropagation();
+                        this.toggleNoteSidebarTagSelection(item.thread.id, checkbox.checked);
+                    });
+                    checkbox.addEventListener("click", (event: MouseEvent) => {
+                        event.stopPropagation();
+                    });
+                    wrapper.append(nextNode);
+                    return wrapper;
                 },
             };
         });
     }
+
+    private toggleNoteSidebarTagSelection(threadId: string, isSelected: boolean): void {
+        const nextSelection = new Set(this.noteSidebarSelectedTagIds);
+        if (isSelected) {
+            nextSelection.add(threadId);
+        } else {
+            nextSelection.delete(threadId);
+        }
+
+        this.updateNoteSidebarTagSelection(nextSelection);
+        void this.renderComments({
+            skipDataRefresh: true,
+        });
+    }
+
+    private updateNoteSidebarTagSelection(nextSelection: Set<string>): void {
+        this.noteSidebarSelectedTagIds = nextSelection;
+        if (nextSelection.size === 0) {
+            this.clearNoteSidebarBatchTagFlowPanel();
+            return;
+        }
+
+        this.noteSidebarBatchTagFlow = {
+            ...this.noteSidebarBatchTagFlow,
+            isOpen: true,
+            failures: [],
+        };
+    }
+
+    private toggleVisibleTagBatchThreadSelection(): void {
+        const visibleThreadIds = this.getNoteSidebarTagBatchVisibleThreadIds();
+        if (visibleThreadIds.length === 0) {
+            return;
+        }
+
+        const areAllVisibleThreadsSelected = visibleThreadIds.every((threadId) => this.noteSidebarSelectedTagIds.has(threadId));
+        const nextSelection = new Set(this.noteSidebarSelectedTagIds);
+
+        if (areAllVisibleThreadsSelected) {
+            for (const threadId of visibleThreadIds) {
+                nextSelection.delete(threadId);
+            }
+        } else {
+            for (const threadId of visibleThreadIds) {
+                nextSelection.add(threadId);
+            }
+        }
+
+        this.updateNoteSidebarTagSelection(nextSelection);
+        void this.renderComments({
+            skipDataRefresh: true,
+        });
+    }
+
+    private getNoteSidebarTagBatchVisibleThreadIds(): string[] {
+        const filePath = this.file?.path ?? null;
+        if (!filePath || this.noteSidebarMode !== "tags") {
+            return [];
+        }
+
+        const persistedThreads = this.plugin.getThreadsForFile(filePath, {
+            includeDeleted: this.plugin.shouldShowDeletedComments(),
+        });
+        const showResolved = this.plugin.shouldShowResolvedComments();
+        const contentFilteredThreads = this.filterNoteSidebarThreadsByContentFilter(filePath, persistedThreads);
+        const pinnedContentFilteredThreads = filterThreadsByPinnedSidebarViewState(
+            contentFilteredThreads,
+            this.pinnedSidebarThreadIds,
+            this.showPinnedSidebarThreadsOnly,
+        );
+        const tagModeThreads = this.noteSidebarVisibleTagFilterKey
+            ? pinnedContentFilteredThreads.filter((thread) =>
+                this.noteSidebarTagIndex?.threadIdsByTag.get(this.noteSidebarVisibleTagFilterKey ?? "")?.has(thread.id) ?? false,
+            )
+            : pinnedContentFilteredThreads;
+        const searchMatchedThreads = rankThreadsBySidebarSearchQuery(
+            tagModeThreads,
+            this.noteSidebarSearchQuery,
+        );
+        return searchMatchedThreads
+            .filter((thread) => matchesPageSidebarVisibility(thread, {
+                showResolved,
+                showDeleted: this.plugin.shouldShowDeletedComments(),
+            }))
+            .map((thread) => thread.id);
+    }
+
+    private clearNoteSidebarBatchTagPanelAndQuery(): void {
+        this.clearNoteSidebarBatchTagSearchDebounceTimer();
+        this.noteSidebarBatchTagSearchRequestVersion += 1;
+        this.noteSidebarBatchTagFlow = {
+            ...DEFAULT_BATCH_TAG_FLOW_STATE,
+            candidateTagTexts: [],
+            failures: [],
+        };
+    }
+
+    private closeNoteSidebarBatchTagFlow(): void {
+        this.clearNoteSidebarBatchTagSearchDebounceTimer();
+        this.noteSidebarBatchTagSearchRequestVersion += 1;
+        this.noteSidebarBatchTagFlow = {
+            ...this.noteSidebarBatchTagFlow,
+            isOpen: false,
+            failures: [],
+        };
+    }
+
+    private async selectOrCreateBatchTag(): Promise<void> {
+        const filePath = this.file?.path ?? null;
+        if (!filePath || this.plugin.isAllCommentsNotePath(filePath)) {
+            return;
+        }
+        if (this.noteSidebarBatchTagFlow.isApplying || this.noteSidebarSelectedTagIds.size === 0) {
+            return;
+        }
+        const selectedTagText = this.getNoteSidebarBatchTagText();
+        const normalizedTagText = selectedTagText ? normalizeTagText(selectedTagText) : "";
+        if (!normalizedTagText) {
+            new Notice("Enter a valid tag before applying.");
+            return;
+        }
+        const normalizedTagKey = normalizedTagText.slice(1).toLowerCase();
+        this.noteSidebarBatchTagFlow = {
+            ...this.noteSidebarBatchTagFlow,
+            isApplying: true,
+            failures: [],
+        };
+        this.refreshNoteSidebarTagBatchPanel();
+        const selectedThreadIds = Array.from(this.noteSidebarSelectedTagIds);
+
+        try {
+            const result = await persistBatchTagMutation({
+                filePath,
+                selectedThreadIds,
+                manager: this.plugin.getCommentManager(),
+                mutate: () => applyBatchTagToThreads({
+                    filePath,
+                    selectedThreadIds,
+                    getThreadById: (threadId) => this.plugin.getThreadById(threadId) ?? undefined,
+                    editComment: (commentId, nextBody) => {
+                        this.plugin.getCommentManager().editComment(commentId, nextBody);
+                    },
+                    normalizedTagText,
+                }),
+                persist: async () => {
+                    if (this.file) {
+                        await this.plugin.persistCommentsForFile(this.file, { immediateAggregateRefresh: true });
+                    }
+                },
+            });
+
+            this.noteSidebarBatchTagFlow = {
+                ...this.noteSidebarBatchTagFlow,
+                failures: result.failures,
+                selectedTagText: normalizedTagText,
+                selectedTagKey: result.persistError === null && this.getBatchTagFlowHasExactMatch(normalizedTagKey)
+                    ? normalizedTagKey
+                    : null,
+                query: normalizedTagText,
+                candidateTagTexts: this.getNoteSidebarTagCandidateTexts(normalizedTagText),
+                isOpen: true,
+            };
+            if (result.failures.length === 0) {
+                this.noteSidebarSelectedTagIds.clear();
+            } else {
+                this.noteSidebarSelectedTagIds = new Set(result.failedIds);
+            }
+
+            await this.renderComments({ skipDataRefresh: true });
+
+            if (result.persistError !== null) {
+                void new Notice("Failed to save tag changes. Your comments were restored.");
+                return;
+            }
+
+            void new Notice(
+                result.failures.length === 0
+                    ? `Applied ${normalizedTagText} to ${result.successfulIds.length} thread${result.successfulIds.length === 1 ? "" : "s"}.`
+                    : `Applied ${normalizedTagText} to ${result.successfulIds.length} thread${result.successfulIds.length === 1 ? "" : "s"} with ${result.failures.length} failure${result.failures.length === 1 ? "" : "s"}.`,
+            );
+        } finally {
+            this.noteSidebarBatchTagFlow = {
+                ...this.noteSidebarBatchTagFlow,
+                isApplying: false,
+            };
+            if (this.noteSidebarSelectedTagIds.size === 0) {
+                this.clearNoteSidebarBatchTagFlowPanel();
+            } else {
+                this.clearNoteSidebarBatchTagSearchInput();
+            }
+            this.refreshNoteSidebarTagBatchPanel();
+        }
+    }
+
+    private async removeBatchTagFromSelectedThreads(): Promise<void> {
+        const filePath = this.file?.path ?? null;
+        if (!filePath || this.plugin.isAllCommentsNotePath(filePath)) {
+            return;
+        }
+        if (this.noteSidebarBatchTagFlow.isApplying || this.noteSidebarSelectedTagIds.size === 0) {
+            return;
+        }
+
+        const selectedTagText = this.getBatchTagActionTagText();
+        const normalizedTagText = selectedTagText ? normalizeTagText(selectedTagText) : "";
+        if (!normalizedTagText) {
+            return;
+        }
+        const normalizedTagKey = normalizedTagText.slice(1).toLowerCase();
+
+        this.noteSidebarBatchTagFlow = {
+            ...this.noteSidebarBatchTagFlow,
+            isApplying: true,
+            failures: [],
+        };
+        this.refreshNoteSidebarTagBatchPanel();
+        const selectedThreadIds = Array.from(this.noteSidebarSelectedTagIds);
+        const targetTagTextForNotice = selectedTagText ?? "selected tag";
+        try {
+            const result = await persistBatchTagMutation({
+                filePath,
+                selectedThreadIds,
+                manager: this.plugin.getCommentManager(),
+                mutate: () => removeBatchTagFromThreads({
+                    filePath,
+                    selectedThreadIds,
+                    getThreadById: (threadId) => this.plugin.getThreadById(threadId) ?? undefined,
+                    editComment: (commentId, nextBody) => {
+                        this.plugin.getCommentManager().editComment(commentId, nextBody);
+                    },
+                    normalizedTagText,
+                    targetTagTextForNotice,
+                }),
+                persist: async () => {
+                    if (this.file) {
+                        await this.plugin.persistCommentsForFile(this.file, { immediateAggregateRefresh: true });
+                    }
+                },
+            });
+
+            this.noteSidebarBatchTagFlow = {
+                ...this.noteSidebarBatchTagFlow,
+                failures: result.failures,
+                selectedTagText: normalizedTagText,
+                selectedTagKey: result.persistError === null && this.getBatchTagFlowHasExactMatch(normalizedTagKey)
+                    ? normalizedTagKey
+                    : null,
+                query: this.noteSidebarBatchTagFlow.query,
+                candidateTagTexts: this.getNoteSidebarTagCandidateTexts(normalizedTagText),
+                isOpen: true,
+            };
+
+            if (result.failures.length === 0) {
+                this.noteSidebarSelectedTagIds.clear();
+            } else {
+                this.noteSidebarSelectedTagIds = new Set(result.failedIds);
+            }
+
+            await this.renderComments({
+                skipDataRefresh: true,
+            });
+
+            if (result.persistError !== null) {
+                void new Notice("Failed to save tag changes. Your comments were restored.");
+                return;
+            }
+
+            void new Notice(
+                result.failures.length === 0
+                    ? `Removed ${normalizedTagText} from ${result.successfulIds.length} thread${result.successfulIds.length === 1 ? "" : "s"}.`
+                    : `Removed ${normalizedTagText} from ${result.successfulIds.length} thread${result.successfulIds.length === 1 ? "" : "s"} with ${result.failures.length} failure${result.failures.length === 1 ? "" : "s"}.`,
+            );
+        } finally {
+            this.noteSidebarBatchTagFlow = {
+                ...this.noteSidebarBatchTagFlow,
+                isApplying: false,
+            };
+            if (this.noteSidebarSelectedTagIds.size === 0) {
+                this.clearNoteSidebarBatchTagFlowPanel();
+            } else {
+                this.clearNoteSidebarBatchTagSearchInput();
+            }
+            this.refreshNoteSidebarTagBatchPanel();
+        }
+    }
+
 
     private async reconcileNoteSidebarItems(
         commentsBody: HTMLDivElement,
@@ -1683,6 +2300,9 @@ export default class SideNote2View extends ItemView {
             contentFilter: SidebarContentFilter;
             showPinnedThreadsOnly: boolean;
             searchQuery: string;
+            noteSidebarMode: SidebarPrimaryMode;
+            visibleTagFilterKey: string | null;
+            hasAnyTags: boolean;
         },
     ): void {
         for (const child of Array.from(commentsBody.children)) {
@@ -1714,6 +2334,45 @@ export default class SideNote2View extends ItemView {
             : options.contentFilter === "all"
                 ? "side notes"
                 : pluralFilterLabel;
+        const selectedTagLabel = options.noteSidebarMode === "tags" && options.visibleTagFilterKey
+            ? this.getTagDisplayForKey(options.visibleTagFilterKey) ?? `#${options.visibleTagFilterKey}`
+            : null;
+
+        if (options.noteSidebarMode === "tags" && !options.hasAnyTags) {
+            const emptyStateEl = commentsBody.createDiv("sidenote2-empty-state sidenote2-section-empty-state");
+            emptyStateEl.createEl("p", {
+                text: hasSearchQuery
+                    ? `No tags match "${trimmedSearchQuery}" in this file.`
+                    : "No tags exist in this file yet.",
+            });
+            emptyStateEl.createEl("p", {
+                text: hasSearchQuery
+                    ? "Try a different search term."
+                    : "Add tags in side note content to use local tag filtering.",
+            });
+            return;
+        }
+
+        if (options.noteSidebarMode === "tags" && options.visibleTagFilterKey && selectedTagLabel) {
+            const emptyStateEl = commentsBody.createDiv("sidenote2-empty-state sidenote2-section-empty-state");
+            const tagSubjectLabel = options.showResolved
+                ? `resolved ${searchSubjectLabel}`
+                : searchSubjectLabel;
+            const baseLabel = hasSearchQuery
+                ? `No ${tagSubjectLabel} tagged with ${selectedTagLabel} match "${trimmedSearchQuery}" in this file.`
+                : `No ${tagSubjectLabel} tagged with ${selectedTagLabel} in this file.`;
+            const suggestion = hasSearchQuery
+                ? "Clear search or choose a different tag."
+                : "Choose a different tag or clear the tag filter.";
+
+            emptyStateEl.createEl("p", {
+                text: baseLabel,
+            });
+            emptyStateEl.createEl("p", {
+                text: suggestion,
+            });
+            return;
+        }
 
         if (options.showResolved && options.totalScopedCount > 0) {
             const emptyStateEl = commentsBody.createDiv("sidenote2-empty-state sidenote2-section-empty-state");
@@ -2041,30 +2700,31 @@ export default class SideNote2View extends ItemView {
         const activePrimaryMode = options.isAllCommentsView
             ? this.indexSidebarMode
             : options.noteSidebarMode;
-        const showListOnlyToolbarChips = options.isAllCommentsView
+        const showListOrTagToolbarChips = options.isAllCommentsView
             ? shouldShowIndexListToolbarChips(options.isAllCommentsView, this.indexSidebarMode)
-            : activePrimaryMode === "list";
-        const shouldShowIndexSearchInput = options.isAllCommentsView && activePrimaryMode === "list";
-        const shouldShowNoteSearchInput = !options.isAllCommentsView && activePrimaryMode === "list";
+            : activePrimaryMode === "list" || activePrimaryMode === "tags";
+        const shouldShowNoteSearchInput = !options.isAllCommentsView
+            && (activePrimaryMode === "list" || activePrimaryMode === "tags");
         const shouldShowAddPageCommentAction = !!options.addPageCommentAction
-            && (options.isAllCommentsView || activePrimaryMode === "list");
-        const shouldShowResolvedChip = showListOnlyToolbarChips
+            && (options.isAllCommentsView || activePrimaryMode === "list" || activePrimaryMode === "tags");
+        const shouldShowResolvedChip = showListOrTagToolbarChips
             && !options.isAgentMode
             && shouldShowResolvedToolbarChip(options.hasResolvedComments, showResolved);
-        const shouldShowNestedChip = showListOnlyToolbarChips && shouldShowNestedToolbarChip({
+        const shouldShowNestedChip = showListOrTagToolbarChips && shouldShowNestedToolbarChip({
             hasNestedComments: options.hasNestedComments,
             isAllCommentsView: options.isAllCommentsView,
             selectedIndexFileFilterRootPath: options.selectedIndexFileFilterRootPath,
             filteredIndexFileCount: options.filteredIndexFilePaths.length,
         });
         const isDeletedToolbarMode = !options.isAllCommentsView
-            && showListOnlyToolbarChips
+            && showListOrTagToolbarChips
             && showDeletedComments;
         const shouldRenderToolbar = options.isAllCommentsView
             || (!options.isAllCommentsView && options.noteSidebarMode === "thought-trail")
             || shouldShowResolvedChip
             || shouldShowNestedChip
-            || shouldShowAddPageCommentAction;
+            || shouldShowAddPageCommentAction
+            || options.noteSidebarMode === "tags";
         if (!shouldRenderToolbar) {
             return;
         }
@@ -2073,7 +2733,6 @@ export default class SideNote2View extends ItemView {
         toolbarEl.classList.toggle("is-index-toolbar", options.isAllCommentsView);
         toolbarEl.classList.toggle("is-note-toolbar", !options.isAllCommentsView);
         toolbarEl.classList.toggle("is-deleted-toolbar-mode", isDeletedToolbarMode);
-        let indexFilterGroup: HTMLDivElement | null = null;
         let indexActionGroup: HTMLDivElement | null = null;
         let indexChipRow: HTMLDivElement | null = null;
         let noteFilterGroup: HTMLDivElement | null = null;
@@ -2085,13 +2744,7 @@ export default class SideNote2View extends ItemView {
 
             indexChipRow = toolbarEl.createDiv("sidenote2-sidebar-toolbar-row");
             indexChipRow.addClass("is-index-secondary-row");
-            if (shouldShowIndexSearchInput) {
-                indexFilterGroup = indexChipRow.createDiv("sidenote2-sidebar-toolbar-group is-filter-group");
-                indexActionGroup = indexChipRow.createDiv("sidenote2-sidebar-toolbar-group is-action-group");
-                this.renderIndexSearchInput(indexFilterGroup);
-            } else {
-                indexActionGroup = indexChipRow.createDiv("sidenote2-sidebar-toolbar-group");
-            }
+            indexActionGroup = indexChipRow.createDiv("sidenote2-sidebar-toolbar-group");
             this.renderToolbarIconButton(indexActionGroup, {
                 icon: "list-filter",
                 active: !!options.selectedIndexFileFilterRootPath,
@@ -2108,15 +2761,18 @@ export default class SideNote2View extends ItemView {
             modeRow.addClass("is-note-primary-row");
             this.renderNoteModeControl(modeRow);
 
-            if (shouldShowNoteSearchInput || showListOnlyToolbarChips || shouldShowAddPageCommentAction) {
+            if (shouldShowNoteSearchInput || showListOrTagToolbarChips || shouldShowAddPageCommentAction || options.noteSidebarMode === "tags") {
                 const actionsRow = toolbarEl.createDiv("sidenote2-sidebar-toolbar-row");
+                if (shouldShowNoteSearchInput) {
+                    actionsRow.addClass("is-note-search-row");
+                }
                 actionsRow.addClass("is-note-secondary-row");
                 noteFilterGroup = actionsRow.createDiv("sidenote2-sidebar-toolbar-group is-filter-group");
                 noteActionGroup = actionsRow.createDiv("sidenote2-sidebar-toolbar-group is-action-group");
             }
         }
 
-        if (!showListOnlyToolbarChips && options.isAllCommentsView) {
+        if (!showListOrTagToolbarChips && options.isAllCommentsView) {
             return;
         }
 
@@ -2146,7 +2802,7 @@ export default class SideNote2View extends ItemView {
             }
             return;
         }
-        if (!options.isAllCommentsView && showListOnlyToolbarChips) {
+        if (!options.isAllCommentsView && showListOrTagToolbarChips) {
             this.renderToolbarIconButton(actionGroup, {
                 icon: "pin",
                 active: showPinnedThreadsOnly,
@@ -2180,7 +2836,7 @@ export default class SideNote2View extends ItemView {
             });
         }
 
-        if (!options.isAllCommentsView && showListOnlyToolbarChips) {
+        if (!options.isAllCommentsView && showListOrTagToolbarChips) {
             this.renderToolbarIconButton(actionGroup, {
                 icon: "trash-2",
                 ariaLabel: showDeletedComments ? "Hide deleted notes" : "Show deleted notes",
@@ -2216,6 +2872,169 @@ export default class SideNote2View extends ItemView {
                 onClick: options.addPageCommentAction.onClick,
             });
         }
+
+        if (!options.isAllCommentsView && options.noteSidebarMode === "tags") {
+            this.renderNoteSidebarTagFilterRow(toolbarEl);
+            this.renderNoteSidebarTagBatchFlowPanel(toolbarEl);
+        }
+    }
+
+    private renderNoteSidebarTagFilterRow(toolbarEl: HTMLElement): void {
+        const index = this.noteSidebarTagIndex;
+        if (!index || index.threadIdsByTag.size === 0) {
+            return;
+        }
+
+        const row = toolbarEl.createDiv("sidenote2-sidebar-toolbar-row is-note-tag-filter-row");
+        const tagFilterGroup = row.createDiv("sidenote2-sidebar-toolbar-group is-filter-group");
+
+        this.renderToolbarChip(tagFilterGroup, {
+            label: "All",
+            icon: "tag",
+            chipClass: "is-tag-filter-chip",
+            active: this.noteSidebarVisibleTagFilterKey === null,
+            onClick: () => {
+                if (this.noteSidebarVisibleTagFilterKey === null) {
+                    return;
+                }
+
+                this.noteSidebarVisibleTagFilterKey = null;
+                this.noteSidebarSearchQuery = "";
+                this.noteSidebarSearchInputValue = "";
+                void this.renderComments({
+                    skipDataRefresh: true,
+                });
+            },
+        });
+
+        for (const [tagKey, threadIds] of Array.from(index.threadIdsByTag.entries())) {
+            const tagText = index.tagsByDisplay.get(tagKey) ?? `#${tagKey}`;
+            const isActive = this.noteSidebarVisibleTagFilterKey === tagKey;
+            this.renderToolbarChip(tagFilterGroup, {
+                label: tagText,
+                icon: "tag",
+                chipClass: "is-tag-filter-chip",
+                count: String(threadIds.size),
+                active: isActive,
+                onClick: () => {
+                    this.noteSidebarVisibleTagFilterKey = isActive
+                        ? null
+                        : tagKey;
+                    this.noteSidebarBatchTagFlow = {
+                        ...this.noteSidebarBatchTagFlow,
+                        isOpen: false,
+                    };
+                    this.noteSidebarSearchQuery = "";
+                    this.noteSidebarSearchInputValue = "";
+                    void this.renderComments({
+                        skipDataRefresh: true,
+                    });
+                },
+            });
+        }
+    }
+
+    private renderNoteSidebarTagBatchFlowPanel(toolbarEl: HTMLElement): void {
+
+        const row = toolbarEl.createDiv("sidenote2-sidebar-toolbar-row is-note-tag-batch-row");
+        const filterGroup = row.createDiv("sidenote2-sidebar-toolbar-group is-filter-group");
+        const inputRow = filterGroup.createDiv("sidenote2-note-tag-batch-input-row");
+        const visibleThreadIds = this.getNoteSidebarTagBatchVisibleThreadIds();
+        const areAllVisibleThreadsSelected = visibleThreadIds.every((threadId) => this.noteSidebarSelectedTagIds.has(threadId));
+        const hasSelectableVisibleThreads = visibleThreadIds.length > 0;
+        const selectAllButtonLabel = "Select all";
+
+        const summary = inputRow.createDiv("sidenote2-note-tag-batch-summary");
+        summary.createSpan({
+            text: `${this.noteSidebarSelectedTagIds.size} selected`,
+        });
+        const selectAllButton = inputRow.createEl("button", {
+            text: selectAllButtonLabel,
+            cls: `sidenote2-filter-chip sidenote2-note-tag-batch-select-all-button${areAllVisibleThreadsSelected ? " is-active" : ""}`,
+        });
+        selectAllButton.setAttribute("type", "button");
+        selectAllButton.disabled = !hasSelectableVisibleThreads;
+        selectAllButton.onclick = () => {
+            if (!hasSelectableVisibleThreads) {
+                return;
+            }
+
+            this.toggleVisibleTagBatchThreadSelection();
+        };
+
+        const tagInputRow = inputRow.createDiv("sidenote2-note-search-field is-tag-batch-input");
+        const iconEl = tagInputRow.createSpan({
+            cls: "sidenote2-note-search-icon",
+        });
+        setIcon(iconEl, "search");
+        const inputEl = tagInputRow.createEl("input", {
+            cls: "sidenote2-note-search-input sidenote2-note-tag-batch-search-input",
+        });
+        inputEl.type = "search";
+        inputEl.value = this.noteSidebarBatchTagFlow.query;
+        inputEl.spellcheck = false;
+        inputEl.placeholder = "Tag to apply";
+        inputEl.addEventListener("focus", () => {
+            this.interactionController.claimSidebarInteractionOwnership(inputEl);
+        });
+        inputEl.addEventListener("input", () => {
+            this.scheduleNoteSidebarBatchTagSearchQuery(inputEl.value);
+        });
+        inputEl.addEventListener("keydown", (event) => {
+            if (event.key === "Enter") {
+                event.preventDefault();
+                event.stopPropagation();
+                void this.selectOrCreateBatchTag();
+                return;
+            }
+
+            if (event.key === "Escape") {
+                if (!inputEl.value) {
+                    return;
+                }
+
+                event.preventDefault();
+                event.stopPropagation();
+                this.scheduleNoteSidebarBatchTagSearchQuery("");
+                return;
+            }
+        });
+
+        const hasValidAddTag = Boolean(this.getNormalizedTagKey(this.getNoteSidebarBatchTagText() || ""));
+        const hasRemoveTargetTag = Boolean(this.getNormalizedTagKey(this.getBatchTagActionTagText() || ""));
+        const isApplying = this.noteSidebarBatchTagFlow.isApplying;
+        const isSelectionEmpty = this.noteSidebarSelectedTagIds.size === 0;
+
+        this.renderToolbarIconButton(inputRow, {
+            icon: "plus",
+            active: false,
+            disabled: isSelectionEmpty || !hasValidAddTag || isApplying,
+            onClick: () => {
+                void this.selectOrCreateBatchTag();
+            },
+        });
+        this.renderToolbarIconButton(inputRow, {
+            icon: "minus",
+            active: false,
+            disabled: isSelectionEmpty || !hasRemoveTargetTag || isApplying,
+            onClick: () => {
+                void this.removeBatchTagFromSelectedThreads();
+            },
+        });
+
+        if (this.noteSidebarBatchTagFlow.failures.length > 0) {
+            const failureList = filterGroup.createDiv("sidenote2-note-tag-batch-failures");
+            failureList.createDiv({
+                text: `${this.noteSidebarBatchTagFlow.failures.length} failure${this.noteSidebarBatchTagFlow.failures.length === 1 ? "" : "s"}`,
+                cls: "sidenote2-note-tag-batch-failure-title",
+            });
+            for (const failure of this.noteSidebarBatchTagFlow.failures.slice(0, 5)) {
+                failureList.createDiv({
+                    text: `${failure.threadId}: ${failure.message}`,
+                    cls: "sidenote2-note-tag-batch-failure-item",
+                });
+            }
+        }
     }
 
     private renderToolbarChip(
@@ -2224,20 +3043,25 @@ export default class SideNote2View extends ItemView {
             label: string;
             active: boolean;
             pressed?: boolean;
-            ariaLabel: string;
+            ariaLabel?: string;
             onClick: () => void;
             count?: string;
             showIndicator?: boolean;
             disabled?: boolean;
             icon?: string;
+            hideLabel?: boolean;
+            chipClass?: string;
         },
     ): void {
+        const isTagFilterChip = options.chipClass?.includes("is-tag-filter-chip") ?? false;
         const button = container.createEl("button", {
-            cls: `sidenote2-filter-chip${options.active ? " is-active" : ""}`,
+            cls: `sidenote2-filter-chip${options.active ? " is-active" : ""}${options.chipClass ? ` ${options.chipClass}` : ""}`,
         });
         button.setAttribute("type", "button");
         button.setAttribute("aria-pressed", (options.pressed ?? options.active) ? "true" : "false");
-        button.setAttribute("aria-label", options.ariaLabel);
+        if (options.ariaLabel) {
+            button.setAttribute("aria-label", options.ariaLabel);
+        }
         button.disabled = options.disabled ?? false;
 
         if (options.showIndicator) {
@@ -2253,10 +3077,12 @@ export default class SideNote2View extends ItemView {
             setIcon(iconEl, options.icon);
         }
 
-        button.createSpan({
-            text: options.label,
-            cls: "sidenote2-filter-chip-label",
-        });
+        if (!options.hideLabel) {
+            button.createSpan({
+                text: options.label,
+                cls: `sidenote2-filter-chip-label${isTagFilterChip ? " is-visible" : ""}`,
+            });
+        }
 
         if (options.count !== undefined) {
             button.createSpan({
@@ -2277,7 +3103,7 @@ export default class SideNote2View extends ItemView {
         container: HTMLElement,
         options: {
             icon: string;
-            ariaLabel: string;
+            ariaLabel?: string;
             active?: boolean;
             activeVisual?: boolean;
             disabled?: boolean;
@@ -2290,7 +3116,9 @@ export default class SideNote2View extends ItemView {
         });
         button.setAttribute("type", "button");
         button.setAttribute("aria-pressed", options.active ? "true" : "false");
-        button.setAttribute("aria-label", options.ariaLabel);
+        if (options.ariaLabel) {
+            button.setAttribute("aria-label", options.ariaLabel);
+        }
         button.disabled = options.disabled ?? false;
         setIcon(button, options.icon);
         button.onclick = async () => {
@@ -2323,7 +3151,8 @@ export default class SideNote2View extends ItemView {
         container: HTMLElement,
         options: {
             value: string;
-            ariaLabel: string;
+            ariaLabel?: string;
+            placeholder: string;
             onClear: () => void;
             onInput: (value: string, selection: { selectionStart: number | null; selectionEnd: number | null }) => void;
         },
@@ -2340,7 +3169,10 @@ export default class SideNote2View extends ItemView {
         inputEl.type = "search";
         inputEl.value = options.value;
         inputEl.spellcheck = false;
-        inputEl.setAttribute("aria-label", options.ariaLabel);
+        inputEl.placeholder = options.placeholder;
+        if (options.ariaLabel) {
+            inputEl.setAttribute("aria-label", options.ariaLabel);
+        }
         inputEl.addEventListener("focus", () => {
             this.interactionController.claimSidebarInteractionOwnership(inputEl);
         });
@@ -2364,7 +3196,7 @@ export default class SideNote2View extends ItemView {
     private renderNoteSearchInput(container: HTMLElement): void {
         this.renderSidebarSearchInput(container, {
             value: this.noteSidebarSearchInputValue,
-            ariaLabel: "Search side notes in this file",
+            placeholder: "Search side notes in this file",
             onClear: () => {
                 this.clearNoteSidebarSearchDebounceTimer();
                 const requestVersion = ++this.noteSidebarSearchRequestVersion;
@@ -2380,28 +3212,10 @@ export default class SideNote2View extends ItemView {
         });
     }
 
-    private renderIndexSearchInput(container: HTMLElement): void {
-        this.renderSidebarSearchInput(container, {
-            value: this.indexSidebarSearchInputValue,
-            ariaLabel: "Search side notes in the index",
-            onClear: () => {
-                this.clearIndexSidebarSearchDebounceTimer();
-                const requestVersion = ++this.indexSidebarSearchRequestVersion;
-                this.indexSidebarSearchInputValue = "";
-                void this.applyIndexSidebarSearchQuery("", requestVersion, {
-                    selectionStart: 0,
-                    selectionEnd: 0,
-                });
-            },
-            onInput: (value, selection) => {
-                this.scheduleIndexSidebarSearchQuery(value, selection);
-            },
-        });
-    }
-
     private renderIndexModeControl(container: HTMLElement): void {
         this.renderSidebarModeControl(container, {
             mode: this.indexSidebarMode,
+            showTagsTab: false,
             onChange: (mode) => {
                 if (this.indexSidebarMode === mode) {
                     return;
@@ -2424,12 +3238,18 @@ export default class SideNote2View extends ItemView {
     private renderNoteModeControl(container: HTMLElement): void {
         this.renderSidebarModeControl(container, {
             mode: this.noteSidebarMode,
+            showTagsTab: true,
             onChange: (mode) => {
                 if (this.noteSidebarMode === mode) {
                     return;
                 }
 
+                const previousMode = this.noteSidebarMode;
                 this.noteSidebarMode = mode;
+                if (previousMode === "tags" && mode !== "tags") {
+                    this.noteSidebarSelectedTagIds.clear();
+                    this.clearNoteSidebarBatchTagFlowPanel();
+                }
                 if (mode !== "list") {
                     this.showPinnedSidebarThreadsOnly = false;
                     this.savePinnedSidebarStateForFilePath(this.file?.path ?? null);
@@ -2447,6 +3267,7 @@ export default class SideNote2View extends ItemView {
         container: HTMLElement,
         options: {
             mode: SidebarPrimaryMode;
+            showTagsTab: boolean;
             onChange: (mode: SidebarPrimaryMode) => void;
         },
     ): void {
@@ -2460,6 +3281,15 @@ export default class SideNote2View extends ItemView {
                 options.onChange("list");
             },
         });
+        if (options.showTagsTab) {
+            this.renderTabButton(tabList, {
+                label: "Tags",
+                active: options.mode === "tags",
+                onClick: () => {
+                    options.onChange("tags");
+                },
+            });
+        }
         this.renderTabButton(tabList, {
             label: "Thought Trail",
             active: options.mode === "thought-trail",
@@ -2579,7 +3409,7 @@ export default class SideNote2View extends ItemView {
             return;
         }
 
-        if (this.noteSidebarMode === "list") {
+        if (this.noteSidebarMode === "tags" || this.noteSidebarMode === "list") {
             return;
         }
 
@@ -2854,7 +3684,16 @@ export default class SideNote2View extends ItemView {
                     return;
                 }
 
+                const previousMode = this.noteSidebarMode;
                 await this.interactionController.openCommentInEditor(persistedComment);
+                if (
+                    previousMode === "tags"
+                    && this.noteSidebarMode !== "tags"
+                    && this.file
+                    && !this.plugin.isAllCommentsNotePath(this.file.path)
+                ) {
+                    this.noteSidebarMode = "tags";
+                }
             },
             openCommentInEditor: (persistedComment) => this.interactionController.openCommentInEditor(persistedComment),
             shareComment: async (persistedComment) => {

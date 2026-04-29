@@ -299,7 +299,7 @@
     align-items: stretch;
     gap: 2px;
     margin-bottom: 0;
-    padding: 0 2px 8px;
+    padding: 0 2px 0;
     background: transparent;
     border-bottom: none;
 }
@@ -349,14 +349,31 @@
 
 .sidenote2-sidebar-toolbar-row.is-note-secondary-row {
     justify-content: flex-start;
-    flex-wrap: nowrap;
+    flex-wrap: wrap;
     gap: 6px;
     padding: 6px 4px 8px;
     align-items: center;
 }
 
 .sidenote2-sidebar-toolbar-row.is-note-search-row {
-    align-items: stretch;
+    align-items: center;
+    padding: 2px 4px;
+}
+
+.sidenote2-sidebar-toolbar-row.is-note-tag-filter-row {
+    justify-content: flex-start;
+    flex-wrap: wrap;
+    gap: 6px;
+    padding: 0 2px;
+    align-items: center;
+}
+
+.sidenote2-sidebar-toolbar-row.is-note-tag-batch-row {
+    justify-content: flex-start;
+    flex-wrap: wrap;
+    gap: 6px;
+    padding: 0 2px;
+    align-items: center;
 }
 
 .sidenote2-sidebar-toolbar-group {
@@ -390,9 +407,15 @@
 
 .sidenote2-sidebar-toolbar-group.is-search-group {
     width: auto;
-    flex: 1 1 auto;
+    flex: 1 1 11rem;
     min-width: 0;
     gap: 0;
+}
+
+.sidenote2-sidebar-toolbar-row.is-note-tag-filter-row .sidenote2-sidebar-toolbar-group.is-filter-group,
+.sidenote2-sidebar-toolbar-row.is-note-tag-batch-row .sidenote2-sidebar-toolbar-group.is-filter-group {
+    flex-wrap: wrap;
+    row-gap: 6px;
 }
 
 .sidenote2-note-search-field {
@@ -401,8 +424,11 @@
     align-items: center;
     gap: 6px;
     width: 100%;
-    min-height: 28px;
-    padding: 0 8px;
+    min-width: 0;
+    max-width: 100%;
+    min-height: 26px;
+    height: 26px;
+    padding: 0;
     border: 1px solid var(--sidenote2-note-toolbar-border);
     border-radius: var(--sidenote2-note-toolbar-radius);
     background: var(--sidenote2-note-toolbar-control-surface);
@@ -434,7 +460,8 @@
 .sidenote2-note-search-field > input.sidenote2-note-search-input {
     display: block;
     width: 100%;
-    min-height: 26px !important;
+    min-height: 24px !important;
+    height: 24px !important;
     padding: 0 !important;
     border: none !important;
     border-radius: 0;
@@ -472,6 +499,95 @@
     border-color: transparent !important;
     background: transparent !important;
     box-shadow: none !important;
+}
+
+.sidenote2-note-search-field.is-tag-batch-input {
+    width: clamp(9rem, 42vw, 14rem);
+    min-width: 0;
+    max-width: 100%;
+    flex: 1 1 10rem;
+    min-height: 28px;
+}
+
+.sidenote2-note-tag-batch-input-row {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 6px;
+    width: 100%;
+    min-width: 0;
+}
+
+.sidenote2-note-tag-batch-input-row > .sidenote2-note-search-field {
+    flex: 1 1 10rem;
+}
+
+.sidenote2-note-tag-batch-summary {
+    margin-right: 2px;
+    color: var(--text-faint, var(--text-muted));
+    font-size: var(--font-ui-smaller);
+    white-space: nowrap;
+    line-height: 1.2;
+}
+
+.sidenote2-note-tag-batch-select-all-button {
+    width: auto;
+    min-height: var(--sidenote2-toolbar-control-height);
+    padding: 2px 7px;
+    line-height: 1.2;
+}
+
+.sidenote2-note-tag-batch-failures {
+    display: flex;
+    flex: 1 1 100%;
+    flex-direction: column;
+    gap: 3px;
+    margin-top: 2px;
+    color: color-mix(in srgb, var(--text-error, #e53935) 80%, var(--text-muted) 20%);
+    font-size: var(--font-ui-smaller);
+    line-height: 1.3;
+}
+
+.sidenote2-note-tag-batch-failure-title {
+    font-weight: 600;
+}
+
+.sidenote2-note-tag-batch-failure-item {
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.sidenote2-comment-thread-select-wrapper {
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+}
+
+.sidenote2-comment-thread-select-row {
+    display: inline-flex;
+    align-items: center;
+    flex-wrap: nowrap;
+    gap: 4px;
+    margin: 0;
+    width: fit-content;
+    height: 22px;
+    padding: 0;
+    color: var(--text-faint, var(--text-muted));
+    white-space: nowrap;
+}
+
+.sidenote2-comment-thread-select-row input[type="checkbox"] {
+    margin: 0;
+    width: 14px;
+    height: 14px;
+    accent-color: var(--interactive-accent);
+}
+
+.sidenote2-comment-thread-select-label {
+    color: inherit;
+    font-size: var(--font-ui-smaller);
+    line-height: 1.2;
 }
 
 .sidenote2-search-match {
@@ -592,6 +708,7 @@ button.sidenote2-tab-button.sidenote2-tab-button--active {
 }
 
 .sidenote2-filter-chip {
+    position: relative;
     display: inline-flex;
     align-items: center;
     gap: 6px;
@@ -619,7 +736,7 @@ button.sidenote2-tab-button.sidenote2-tab-button--active {
 .sidenote2-filter-chip:hover {
     border-color: var(--background-modifier-border-hover, var(--interactive-accent-hover));
     background: var(--background-modifier-hover);
-    color: var(--text-normal);
+    color: var(--text-faint, var(--text-muted));
 }
 
 .sidenote2-filter-chip:focus-visible {
@@ -657,7 +774,16 @@ button.sidenote2-tab-button.sidenote2-tab-button--active {
 }
 
 .sidenote2-filter-chip-label {
+    display: none;
     white-space: nowrap;
+}
+
+.sidenote2-filter-chip-label.is-visible {
+    display: inline-flex;
+}
+
+.sidenote2-filter-chip.is-tag-filter-chip .sidenote2-filter-chip-label {
+    display: inline-flex;
 }
 
 .sidenote2-filter-chip-icon {
@@ -677,6 +803,15 @@ button.sidenote2-tab-button.sidenote2-tab-button--active {
 .sidenote2-filter-chip:hover .sidenote2-filter-chip-icon,
 .sidenote2-filter-chip:focus-visible .sidenote2-filter-chip-icon {
     color: var(--text-muted);
+}
+
+.sidenote2-filter-chip:hover .sidenote2-filter-chip-label,
+.sidenote2-filter-chip:focus-visible .sidenote2-filter-chip-label {
+    color: var(--text-muted);
+}
+
+.sidenote2-filter-chip.is-active .sidenote2-filter-chip-label {
+    color: var(--text-normal);
 }
 
 .sidenote2-filter-chip.is-active .sidenote2-filter-chip-icon {
@@ -1128,7 +1263,6 @@ button.sidenote2-tab-button.sidenote2-tab-button--active {
     user-select: text;
     cursor: text;
 }
-
 
 .sidenote2-comment-content:focus {
     outline: none;

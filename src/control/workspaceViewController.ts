@@ -28,7 +28,7 @@ interface MarkdownViewLike extends FileViewLike {
 
 interface SidebarViewLike {
     getViewType(): string;
-    renderComments(): Promise<void>;
+    renderComments(options?: { skipDataRefresh?: boolean }): Promise<void>;
     file?: TFile | null | undefined;
 }
 
@@ -203,21 +203,25 @@ export class WorkspaceViewController {
         await this.host.loadCommentsForFile(file);
     }
 
-    public async refreshCommentViews(): Promise<void> {
-        await this.refreshSidebarViews(() => true);
+    public async refreshCommentViews(options: { skipDataRefresh?: boolean } = {}): Promise<void> {
+        await this.refreshSidebarViews(() => true, options);
     }
 
-    public async refreshAllCommentsSidebarViews(): Promise<void> {
-        await this.refreshSidebarViews((view) =>
-            this.host.isAllCommentsNotePath(view.file?.path ?? ""),
+    public async refreshAllCommentsSidebarViews(options: { skipDataRefresh?: boolean } = {}): Promise<void> {
+        await this.refreshSidebarViews(
+            (view) => this.host.isAllCommentsNotePath(view.file?.path ?? ""),
+            options,
         );
     }
 
-    private async refreshSidebarViews(predicate: (view: SidebarViewLike) => boolean): Promise<void> {
+    private async refreshSidebarViews(
+        predicate: (view: SidebarViewLike) => boolean,
+        options: { skipDataRefresh?: boolean } = {},
+    ): Promise<void> {
         const leaves = this.host.app.workspace.getLeavesOfType("sidenote2-view");
         for (const leaf of leaves) {
             if (isSidebarViewLike(leaf.view) && predicate(leaf.view)) {
-                await leaf.view.renderComments();
+                await leaf.view.renderComments(options);
             }
         }
     }

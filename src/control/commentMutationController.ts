@@ -63,7 +63,7 @@ export interface CommentMutationHost {
     setDraftCommentValue(draftComment: DraftComment | null): void;
     clearDraftState(): void;
     setSavingDraftCommentId(commentId: string | null): void;
-    refreshCommentViews(): Promise<void>;
+    refreshCommentViews(options?: { skipDataRefresh?: boolean }): Promise<void>;
     refreshEditorDecorations(): void;
     getKnownCommentById(commentId: string): Comment | null;
     getLoadedCommentById(commentId: string): Comment | null;
@@ -124,7 +124,8 @@ export class CommentMutationController {
         }
 
         const commentBody = shortenBareUrlsInMarkdown(draft.comment).trim();
-        if (!commentBody && !canSaveDraftWithoutComment(draft)) {
+        const canSaveWithoutComment = canSaveDraftWithoutComment(draft) || draft.mode === "edit";
+        if (!commentBody && !canSaveWithoutComment) {
             return;
         }
         if (exceedsCommentWordLimit(commentBody)) {
@@ -146,7 +147,9 @@ export class CommentMutationController {
         this.host.setDraftCommentValue(trimmedDraft);
         this.host.setSavingDraftCommentId(commentId);
         if (trimmedDraft.mode !== "edit" && !normalizedOptions.skipPreSaveRefresh) {
-            await this.host.refreshCommentViews();
+            await this.host.refreshCommentViews({
+                skipDataRefresh: true,
+            });
         }
 
         let preparedDraft: DraftComment | null;
@@ -156,14 +159,18 @@ export class CommentMutationController {
                 : trimmedDraft;
         } catch (error) {
             this.host.setSavingDraftCommentId(null);
-            await this.host.refreshCommentViews();
+            await this.host.refreshCommentViews({
+                skipDataRefresh: true,
+            });
             this.host.refreshEditorDecorations();
             throw error;
         }
 
         if (!preparedDraft) {
             this.host.setSavingDraftCommentId(null);
-            await this.host.refreshCommentViews();
+            await this.host.refreshCommentViews({
+                skipDataRefresh: true,
+            });
             this.host.refreshEditorDecorations();
             return;
         }
@@ -181,7 +188,9 @@ export class CommentMutationController {
                 this.host.clearDraftState();
             }
             this.host.setSavingDraftCommentId(null);
-            await this.host.refreshCommentViews();
+            await this.host.refreshCommentViews({
+                skipDataRefresh: true,
+            });
             this.host.refreshEditorDecorations();
             finalizedDraftUi = true;
         };
@@ -194,7 +203,11 @@ export class CommentMutationController {
             } else if (preparedDraft.mode === "append") {
                 saved = await this.appendEntry(preparedDraft);
             } else {
-                saved = await this.editComment(preparedDraft.id, preparedDraft.comment);
+                saved = await this.editComment(preparedDraft.id, preparedDraft.comment, {
+                    skipCommentViewRefresh: true,
+                    deferAggregateRefresh: true,
+                    refreshEditorDecorations: false,
+                });
             }
             if (saved) {
                 void this.host.log?.("info", "draft", preparedDraft.mode === "edit" ? "draft.edit.success" : "draft.save.success", {
@@ -270,7 +283,11 @@ export class CommentMutationController {
     public async editComment(
         commentId: string,
         newCommentText: string,
-        options: { skipCommentViewRefresh?: boolean } = {},
+        options: {
+            skipCommentViewRefresh?: boolean;
+            deferAggregateRefresh?: boolean;
+            refreshEditorDecorations?: boolean;
+        } = {},
     ): Promise<boolean> {
         const latestTarget = await this.loadLatestCommentTarget(commentId);
         if (!latestTarget) {
@@ -279,8 +296,9 @@ export class CommentMutationController {
 
         this.host.getCommentManager().editComment(commentId, newCommentText);
         await this.host.persistCommentsForFile(latestTarget.file, {
-            immediateAggregateRefresh: true,
+            immediateAggregateRefresh: options.deferAggregateRefresh !== true,
             skipCommentViewRefresh: options.skipCommentViewRefresh,
+            refreshEditorDecorations: options.refreshEditorDecorations,
         });
         return true;
     }

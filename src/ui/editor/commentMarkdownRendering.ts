@@ -7,19 +7,12 @@ import {
 
 const DASH_RULE_LINE = /^ {0,3}-(?:[ \t]*-){2,}[ \t]*$/;
 const FENCE_LINE = /^ {0,3}(`{3,}|~{3,})/;
-const LIST_ITEM_LINE = /^(\s{0,3})([-+*]|\d+[.)]|[A-Za-z][.)])[ \t]+/;
-const LIST_CONTINUATION_BLOCK_BOUNDARY_LINE = /^ {0,3}(?:#{1,6}(?:[ \t]|$)|>[ \t]?)/;
 const DISPLAY_MATH_OPEN_LINE = /^(\s*)\\\[\s*$/;
 const DISPLAY_MATH_CLOSE_LINE = /^(\s*)\\\]\s*$/;
 
 type FenceState = {
     marker: "`" | "~";
     length: number;
-};
-
-type ListState = {
-    continuationIndent: string;
-    pendingIndentedContinuation: boolean;
 };
 
 function parseFenceState(line: string): FenceState | null {
@@ -49,24 +42,6 @@ function isClosingFence(line: string, fenceState: FenceState): boolean {
     return markerRun.length >= fenceState.length
         && markerRun.split("").every((char) => char === fenceState.marker)
         && trimmed.slice(markerRun.length).trim().length === 0;
-}
-
-function getListContinuationIndent(line: string): string | null {
-    const match = line.match(LIST_ITEM_LINE);
-    if (!match) {
-        return null;
-    }
-
-    const [, leadingWhitespace, marker] = match;
-    return leadingWhitespace + " ".repeat(marker.length + 1);
-}
-
-function shouldKeepLineOutsideListContinuation(line: string): boolean {
-    return DASH_RULE_LINE.test(line) || FENCE_LINE.test(line) || LIST_CONTINUATION_BLOCK_BOUNDARY_LINE.test(line);
-}
-
-function countLeadingWhitespace(line: string): number {
-    return line.match(/^[ \t]*/)?.[0].length ?? 0;
 }
 
 function replaceLatexMathDelimitersOutsideInlineCode(line: string): string {
@@ -111,7 +86,6 @@ function normalizePreparedCommentMarkdownForRender(markdown: string): string {
     const lines = shortenBareUrlsInMarkdown(markdown).split("\n");
     const normalized: string[] = [];
     let activeFence: FenceState | null = null;
-    let activeList: ListState | null = null;
 
     for (const line of lines) {
         if (activeFence) {
@@ -142,39 +116,6 @@ function normalizePreparedCommentMarkdownForRender(markdown: string): string {
         }
 
         const normalizedLine = replaceLatexMathDelimitersOutsideInlineCode(line);
-        const listContinuationIndent = getListContinuationIndent(normalizedLine);
-        if (listContinuationIndent) {
-            normalized.push(normalizedLine);
-            activeList = {
-                continuationIndent: listContinuationIndent,
-                pendingIndentedContinuation: false,
-            };
-            continue;
-        }
-
-        if (activeList) {
-            if (normalizedLine.trim().length === 0) {
-                normalized.push(normalizedLine);
-                activeList.pendingIndentedContinuation = true;
-                continue;
-            }
-
-            if (activeList.pendingIndentedContinuation) {
-                if (shouldKeepLineOutsideListContinuation(normalizedLine)) {
-                    activeList = null;
-                } else {
-                    const leadingWhitespace = countLeadingWhitespace(normalizedLine);
-                    if (leadingWhitespace < activeList.continuationIndent.length) {
-                        normalized.push(activeList.continuationIndent + normalizedLine.slice(leadingWhitespace));
-                    } else {
-                        normalized.push(normalizedLine);
-                    }
-                    activeList.pendingIndentedContinuation = false;
-                    continue;
-                }
-            }
-        }
-
         if (
             DASH_RULE_LINE.test(normalizedLine)
             && normalized.length > 0

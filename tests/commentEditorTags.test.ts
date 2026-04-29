@@ -1,6 +1,6 @@
 import * as assert from "node:assert/strict";
 import test from "node:test";
-import { extractTagsFromText } from "../src/core/text/commentTags";
+import { extractTagsFromText, normalizeTagText } from "../src/core/text/commentTags";
 import {
     findOpenTagQuery,
     replaceOpenTagQuery,
@@ -56,4 +56,10 @@ test("extractTagsFromText finds inline comment tags", () => {
         extractTagsFromText("Status #hi and #follow/up, but not release#candidate or # heading"),
         ["#hi", "#follow/up"],
     );
+});
+
+test("normalizeTagText trims whitespace and strips leading #", () => {
+    assert.equal(normalizeTagText("  #Project/Alpha  "), "#Project/Alpha");
+    assert.equal(normalizeTagText("##todo"), "#todo");
+    assert.equal(normalizeTagText(""), "");
 });

@@ -178,7 +178,7 @@ export default class SideNote2 extends Plugin {
         loadCommentsForFile: (file) => this.loadCommentsForFile(file),
     });
     private readonly commentSessionController = new CommentSessionController({
-        refreshCommentViews: () => this.workspaceViewController.refreshCommentViews(),
+        refreshCommentViews: (options) => this.workspaceViewController.refreshCommentViews(options),
         refreshEditorDecorations: () => this.refreshEditorDecorations(),
         refreshMarkdownPreviews: () => this.workspaceViewController.refreshMarkdownPreviews(),
         clearMarkdownSelection: (filePath) => this.workspaceViewController.clearMarkdownSelection(filePath),
@@ -231,7 +231,7 @@ export default class SideNote2 extends Plugin {
         setDraftCommentValue: (draftComment) => this.commentSessionController.setDraftCommentValue(draftComment),
         clearDraftState: () => this.commentSessionController.clearDraftState(),
         setSavingDraftCommentId: (commentId) => this.commentSessionController.setSavingDraftCommentId(commentId),
-        refreshCommentViews: () => this.workspaceViewController.refreshCommentViews(),
+        refreshCommentViews: (options) => this.workspaceViewController.refreshCommentViews(options),
         refreshEditorDecorations: () => this.refreshEditorDecorations(),
         getKnownCommentById: (commentId) => this.getKnownCommentById(commentId),
         getLoadedCommentById: (commentId) => this.commentManager.getCommentById(commentId) ?? null,
@@ -296,8 +296,8 @@ export default class SideNote2 extends Plugin {
         hashText: (text) => generateHash(text),
         syncDerivedCommentLinksForFile: (file, noteContent, comments) =>
             this.derivedCommentMetadataManager.syncDerivedCommentLinksForFile(file, noteContent, comments),
-        refreshCommentViews: () => this.workspaceViewController.refreshCommentViews(),
-        refreshAllCommentsSidebarViews: () => this.workspaceViewController.refreshAllCommentsSidebarViews(),
+        refreshCommentViews: (options) => this.workspaceViewController.refreshCommentViews(options),
+        refreshAllCommentsSidebarViews: (options) => this.workspaceViewController.refreshAllCommentsSidebarViews(options),
         refreshEditorDecorations: () => this.refreshEditorDecorations(),
         refreshMarkdownPreviews: () => this.workspaceViewController.refreshMarkdownPreviews(),
         getCommentMentionedPageLabels: (comment) => this.getCommentMentionedPageLabels(comment),
@@ -1157,7 +1157,7 @@ export default class SideNote2 extends Plugin {
         return this.commentSessionController.setShowNestedCommentsForThread(threadId, showNested, options);
     }
 
-    private async persistCommentsForFile(
+    public async persistCommentsForFile(
         file: TFile,
         options: {
             immediateAggregateRefresh?: boolean;
@@ -1243,6 +1243,10 @@ export default class SideNote2 extends Plugin {
 
     public getThreadById(commentId: string): CommentThread | null {
         return this.getKnownThreadById(commentId);
+    }
+
+    public getCommentManager(): CommentManager {
+        return this.commentManager;
     }
 
     public async reorderThreadsForFile(
@@ -1449,6 +1453,17 @@ export default class SideNote2 extends Plugin {
 
     async addComment(newComment: Comment): Promise<boolean> {
         return this.commentMutationController.addComment(newComment);
+    }
+
+    async appendTextToThread(
+        threadId: string,
+        commentText: string,
+    ): Promise<boolean> {
+        return this.commentMutationController.appendThreadEntry(threadId, {
+            id: generateCommentId(),
+            body: commentText,
+            timestamp: Date.now(),
+        });
     }
 
     async editComment(commentId: string, newCommentText: string): Promise<boolean> {

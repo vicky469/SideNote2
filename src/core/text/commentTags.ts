@@ -9,7 +9,7 @@ export function normalizeTagText(value: string): string {
     return normalized ? `#${normalized}` : "";
 }
 
-function isTagBoundaryChar(char: string): boolean {
+export function isTagBoundaryChar(char: string): boolean {
     return !char || !isTagCharacter(char);
 }
 

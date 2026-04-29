@@ -3,7 +3,7 @@ import { RevealedCommentSelectionStore } from "../domain/RevealedCommentSelectio
 import type { DraftComment } from "../domain/drafts";
 
 export interface CommentSessionHost {
-    refreshCommentViews(): Promise<void>;
+    refreshCommentViews(options?: { skipDataRefresh?: boolean }): Promise<void>;
     refreshEditorDecorations(): void;
     refreshMarkdownPreviews(): void;
     clearMarkdownSelection(filePath: string): void;
@@ -67,7 +67,9 @@ export class CommentSessionController {
     ): Promise<void> {
         this.draftSessionStore.setDraftComment(draftComment, hostFilePath);
         if (!options.skipCommentViewRefresh) {
-            await this.host.refreshCommentViews();
+            await this.host.refreshCommentViews({
+                skipDataRefresh: true,
+            });
         }
         if (options.refreshEditorDecorations !== false) {
             this.host.refreshEditorDecorations();
@@ -91,7 +93,9 @@ export class CommentSessionController {
             return false;
         }
 
-        await this.host.refreshCommentViews();
+        await this.host.refreshCommentViews({
+            skipDataRefresh: true,
+        });
         this.host.refreshEditorDecorations();
         return true;
     }
@@ -114,7 +118,9 @@ export class CommentSessionController {
 
         this.showResolvedComments = showResolved;
         if (!options.skipCommentViewRefresh) {
-            await this.host.refreshCommentViews();
+            await this.host.refreshCommentViews({
+                skipDataRefresh: true,
+            });
         }
         this.host.refreshEditorDecorations();
         this.host.refreshMarkdownPreviews();
@@ -147,7 +153,9 @@ export class CommentSessionController {
 
         this.showDeletedComments = showDeleted;
         if (!options.skipCommentViewRefresh) {
-            await this.host.refreshCommentViews();
+            await this.host.refreshCommentViews({
+                skipDataRefresh: true,
+            });
         }
         return true;
     }
@@ -163,7 +171,9 @@ export class CommentSessionController {
         this.showNestedComments = showNested;
         this.nestedCommentThreadOverrideIds.clear();
         if (!options.skipCommentViewRefresh) {
-            await this.host.refreshCommentViews();
+            await this.host.refreshCommentViews({
+                skipDataRefresh: true,
+            });
         }
         return true;
     }
@@ -184,7 +194,9 @@ export class CommentSessionController {
             this.nestedCommentThreadOverrideIds.add(threadId);
         }
         if (!options.skipCommentViewRefresh) {
-            await this.host.refreshCommentViews();
+            await this.host.refreshCommentViews({
+                skipDataRefresh: true,
+            });
         }
         return true;
     }

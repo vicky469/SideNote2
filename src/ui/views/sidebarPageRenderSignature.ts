@@ -2,90 +2,89 @@ import type { CommentThread } from "../../commentManager";
 import type { AgentRunRecord } from "../../core/agents/agentRuns";
 import type { DraftComment } from "../../domain/drafts";
 
-type SerializableThreadEntry = {
-    id: string;
-    body: string;
-    timestamp: number;
-    deletedAt: number | null;
-};
-
-type SerializableDraftComment = {
-    id: string;
-    filePath: string;
-    startLine: number;
-    startChar: number;
-    endLine: number;
-    endChar: number;
-    selectedText: string;
-    selectedTextHash: string;
-    comment: string;
-    timestamp: number;
-    anchorKind: DraftComment["anchorKind"] | null;
-    orphaned: boolean;
-    resolved: boolean;
-    deletedAt: number | null;
-    mode: DraftComment["mode"];
-    threadId: string | null;
-    appendAfterCommentId: string | null;
-};
-
-type SerializableAgentRun = {
-    id: string;
-    requestedAgent: AgentRunRecord["requestedAgent"];
-    runtime: AgentRunRecord["runtime"];
-    status: AgentRunRecord["status"];
-    startedAt: number | null;
-    endedAt: number | null;
-    outputEntryId: string | null;
-    error: string | null;
-};
-
-function serializeDraftComment(draft: DraftComment | null): SerializableDraftComment | null {
-    if (!draft) {
-        return null;
+function hashString(value: string): number {
+    let hash = 2166136261;
+    for (let index = 0; index < value.length; index += 1) {
+        hash ^= value.charCodeAt(index);
+        hash = Math.imul(hash, 16777619);
     }
 
-    return {
-        id: draft.id,
-        filePath: draft.filePath,
-        startLine: draft.startLine,
-        startChar: draft.startChar,
-        endLine: draft.endLine,
-        endChar: draft.endChar,
-        selectedText: draft.selectedText,
-        selectedTextHash: draft.selectedTextHash,
-        comment: draft.comment,
-        timestamp: draft.timestamp,
-        anchorKind: draft.anchorKind ?? null,
-        orphaned: draft.orphaned === true,
-        resolved: draft.resolved === true,
-        deletedAt: draft.deletedAt ?? null,
-        mode: draft.mode,
-        threadId: draft.threadId ?? null,
-        appendAfterCommentId: draft.appendAfterCommentId ?? null,
-    };
+    return hash >>> 0;
 }
 
-function serializeAgentRun(run: AgentRunRecord): SerializableAgentRun {
-    return {
-        id: run.id,
-        requestedAgent: run.requestedAgent,
-        runtime: run.runtime,
-        status: run.status,
-        startedAt: run.startedAt ?? null,
-        endedAt: run.endedAt ?? null,
-        outputEntryId: run.outputEntryId ?? null,
-        error: run.error ?? null,
-    };
+function hashStrings(values: readonly string[]): string {
+    let hash = 2166136261;
+    for (const value of values) {
+        hash ^= hashString(value);
+        hash = Math.imul(hash, 16777619);
+    }
+
+    return (hash >>> 0).toString(36);
 }
 
-function serializeThreadEntries(thread: CommentThread): SerializableThreadEntry[] {
-    return thread.entries.map((entry) => ({
-        id: entry.id,
-        body: entry.body,
-        timestamp: entry.timestamp,
-        deletedAt: entry.deletedAt ?? null,
-    }));
+const STRING_HASH_CACHE_LIMIT = 2048;
+const cachedStringHashes = new Map<string, string>();
+
+function getCachedStringHash(value: string): string {
+    const cached = cachedStringHashes.get(value);
+    if (cached !== undefined) {
+        return cached;
+    }
+
+    const nextHash = hashString(value).toString(36);
+    if (cachedStringHashes.size >= STRING_HASH_CACHE_LIMIT) {
+        cachedStringHashes.clear();
+    }
+    cachedStringHashes.set(value, nextHash);
+    return nextHash;
+}
+
+function getDraftIdentity(draft: DraftComment | null): string {
+    if (!draft) {
+        return "draft:none";
+    }
+
+    return [
+        "draft",
+        draft.id,
+        draft.filePath,
+        draft.startLine,
+        draft.startChar,
+        draft.endLine,
+        draft.endChar,
+        draft.selectedTextHash,
+        draft.timestamp,
+        draft.anchorKind ?? "",
+        draft.orphaned === true ? 1 : 0,
+        draft.resolved === true ? 1 : 0,
+        draft.deletedAt ?? "",
+        draft.mode,
+        draft.threadId ?? "",
+        draft.appendAfterCommentId ?? "",
+        getCachedStringHash(draft.comment),
+    ].join("|");
+}
+
+function getThreadEntriesIdentity(thread: CommentThread): string {
+    return hashStrings(thread.entries.map((entry) => [
+        entry.id,
+        entry.timestamp,
+        entry.deletedAt ?? "",
+        getCachedStringHash(entry.body),
+    ].join(":")));
+}
+
+function getAgentRunsIdentity(runs: readonly AgentRunRecord[]): string {
+    return hashStrings(runs.map((run) => [
+        run.id,
+        run.requestedAgent,
+        run.runtime,
+        run.status,
+        run.startedAt ?? "",
+        run.endedAt ?? "",
+        run.outputEntryId ?? "",
+        run.error ? getCachedStringHash(run.error) : "",
+    ].join(":")));
 }
 
 function isActiveCommentInThread(thread: CommentThread, activeCommentId: string | null): boolean {
@@ -106,47 +105,51 @@ export function buildPageSidebarThreadRenderSignature(options: {
     isPinned: boolean;
     showNestedComments: boolean;
     showNestedCommentsByDefault: boolean;
+    isSelectedForTagBatch: boolean;
+    enableTagSelection: boolean;
     enablePageThreadReorder: boolean;
     editDraftComment: DraftComment | null;
     appendDraftComment: DraftComment | null;
     threadAgentRuns: readonly AgentRunRecord[];
 }): string {
     const { thread } = options;
-    return JSON.stringify({
-        thread: {
-            id: thread.id,
-            filePath: thread.filePath,
-            startLine: thread.startLine,
-            startChar: thread.startChar,
-            endLine: thread.endLine,
-            endChar: thread.endChar,
-            selectedText: thread.selectedText,
-            selectedTextHash: thread.selectedTextHash,
-            anchorKind: thread.anchorKind ?? null,
-            orphaned: thread.orphaned === true,
-            resolved: thread.resolved === true,
-            deletedAt: thread.deletedAt ?? null,
-            createdAt: thread.createdAt,
-            updatedAt: thread.updatedAt,
-            entries: serializeThreadEntries(thread),
-        },
-        isActive: isActiveCommentInThread(thread, options.activeCommentId),
-        isPinned: options.isPinned,
-        showNestedComments: options.showNestedComments,
-        showNestedCommentsByDefault: options.showNestedCommentsByDefault,
-        enablePageThreadReorder: options.enablePageThreadReorder,
-        editDraftComment: serializeDraftComment(options.editDraftComment),
-        appendDraftComment: serializeDraftComment(options.appendDraftComment),
-        threadAgentRuns: options.threadAgentRuns.map((run) => serializeAgentRun(run)),
-    });
+    return [
+        "thread",
+        thread.id,
+        thread.filePath,
+        thread.startLine,
+        thread.startChar,
+        thread.endLine,
+        thread.endChar,
+        thread.selectedTextHash,
+        thread.anchorKind ?? "",
+        thread.orphaned === true ? 1 : 0,
+        thread.resolved === true ? 1 : 0,
+        thread.deletedAt ?? "",
+        thread.createdAt,
+        thread.updatedAt,
+        thread.isPinned === true ? 1 : 0,
+        thread.entries.length,
+        getThreadEntriesIdentity(thread),
+        isActiveCommentInThread(thread, options.activeCommentId) ? 1 : 0,
+        options.isSelectedForTagBatch ? 1 : 0,
+        options.isPinned ? 1 : 0,
+        options.showNestedComments ? 1 : 0,
+        options.showNestedCommentsByDefault ? 1 : 0,
+        options.enableTagSelection ? 1 : 0,
+        options.enablePageThreadReorder ? 1 : 0,
+        getDraftIdentity(options.editDraftComment),
+        getDraftIdentity(options.appendDraftComment),
+        getAgentRunsIdentity(options.threadAgentRuns),
+    ].join("|");
 }
 
 export function buildPageSidebarDraftRenderSignature(
     draft: DraftComment,
     activeCommentId: string | null,
 ): string {
-    return JSON.stringify({
-        draft: serializeDraftComment(draft),
-        isActive: draft.id === activeCommentId,
-    });
+    return [
+        getDraftIdentity(draft),
+        draft.id === activeCommentId ? 1 : 0,
+    ].join("|");
 }

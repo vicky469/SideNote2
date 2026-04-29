@@ -255,7 +255,9 @@ export class SidebarInteractionController {
             this.clearActiveState();
             const existingTextarea = this.host.containerEl.querySelector(`[data-draft-id="${commentId}"] textarea`);
             if (!existingTextarea) {
-                await this.host.renderComments();
+                await this.host.renderComments({
+                    skipDataRefresh: true,
+                });
             }
 
             const draftEl = this.host.containerEl.querySelector(`[data-draft-id="${commentId}"]`);
@@ -275,7 +277,9 @@ export class SidebarInteractionController {
         let commentEl: Element | null = null;
 
         if (draftEl || !persistedEl) {
-            await this.host.renderComments();
+            await this.host.renderComments({
+                skipDataRefresh: true,
+            });
             commentEl = this.host.containerEl.querySelector(`[data-comment-id="${commentId}"], [data-draft-id="${commentId}"]`);
         } else {
             this.host.containerEl.querySelectorAll(".sidenote2-comment-item.active").forEach((el) => {

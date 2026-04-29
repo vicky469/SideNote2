@@ -37,11 +37,10 @@ type DraftEditorLayout = "card" | "inline-edit";
 export function isDraftSaveActionDisabled(
     comment: Pick<DraftComment, "mode" | "anchorKind">,
     commentText: string,
-    saving: boolean,
 ): boolean {
-    return saving
-        || exceedsCommentWordLimit(commentText)
-        || (commentText.trim().length === 0 && !canSaveDraftWithoutComment(comment));
+    const allowEmptyComment = comment.mode === "edit" || canSaveDraftWithoutComment(comment);
+    return exceedsCommentWordLimit(commentText)
+        || (commentText.trim().length === 0 && !allowEmptyComment);
 }
 
 export function buildDraftCommentPresentation(
@@ -274,21 +273,7 @@ function renderDraftEditor(
     const syncActionState = () => {
         const wordCount = countCommentWords(textarea.value);
         wordCountEl.setText(`${wordCount}/${MAX_SIDENOTE_WORDS} words`);
-        textarea.disabled = savePending;
-        if (boldButton) {
-            boldButton.disabled = savePending;
-        }
-        if (highlightButton) {
-            highlightButton.disabled = savePending;
-        }
-        if (inlineEditBoldButton) {
-            inlineEditBoldButton.disabled = savePending;
-        }
-        if (inlineEditHighlightButton) {
-            inlineEditHighlightButton.disabled = savePending;
-        }
-        cancelButton.disabled = savePending;
-        saveButton.disabled = isDraftSaveActionDisabled(comment, textarea.value, savePending);
+        saveButton.disabled = isDraftSaveActionDisabled(comment, textarea.value);
     };
 
     syncActionState();
@@ -406,17 +391,15 @@ function renderDraftEditor(
     };
     saveButton.onclick = (event) => {
         stopPropagation(event);
-        if (saveButton.disabled) {
+        if (savePending) {
             return;
         }
         savePending = true;
-        syncActionState();
         void (async () => {
             try {
                 await host.saveDraft(comment.id);
             } finally {
                 savePending = false;
-                syncActionState();
             }
         })();
     };

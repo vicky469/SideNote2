@@ -9,6 +9,7 @@ import {
 
 test("normalizeSidebarPrimaryMode accepts the supported sidebar modes only", () => {
     assert.equal(normalizeSidebarPrimaryMode("list"), "list");
+    assert.equal(normalizeSidebarPrimaryMode("tags"), "tags");
     assert.equal(normalizeSidebarPrimaryMode("thought-trail"), "thought-trail");
     assert.equal(normalizeSidebarPrimaryMode("agent"), null);
     assert.equal(normalizeSidebarPrimaryMode(undefined), null);

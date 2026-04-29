@@ -1,8 +1,45 @@
 import { getNormalizedFilterPath, normalizeIndexFileFilterPaths } from "./indexFileFilter";
 
-export type SidebarPrimaryMode = "list" | "thought-trail";
+export type SidebarPrimaryMode = "list" | "tags" | "thought-trail";
 export type IndexSidebarMode = SidebarPrimaryMode;
 export type NoteSidebarMode = SidebarPrimaryMode;
+
+export interface CommentTagProjection {
+    filePath: string;
+    threadId: string;
+    tagRaw: string;
+    tagKey: string;
+}
+
+export interface FileTagIndex {
+    filePath: string;
+    threadIdsByTag: Map<string, Set<string>>;
+    tagsByThreadId: Map<string, Set<string>>;
+    tagsByDisplay: Map<string, string>;
+}
+
+export interface BatchTagFlowState {
+    isOpen: boolean;
+    isApplying: boolean;
+    query: string;
+    selectedTagKey: string | null;
+    selectedTagText: string | null;
+    candidateTagTexts: readonly string[];
+    failures: readonly {
+        threadId: string;
+        reason: string;
+        message: string;
+    }[];
+}
+
+export interface NoteSidebarTagsUiState {
+    mode: "list" | "tags" | "thought-trail";
+    searchQuery: string;
+    searchInputValue: string;
+    selectedThreadIds: readonly string[];
+    visibleTagFilterKey: string | null;
+    batchTagFlow: BatchTagFlowState;
+}
 
 export interface PinnedSidebarFileState {
     threadIds: string[];
@@ -19,7 +56,7 @@ export interface CustomViewState extends Record<string, unknown> {
 }
 
 export function normalizeSidebarPrimaryMode(value: unknown): SidebarPrimaryMode | null {
-    return value === "list" || value === "thought-trail"
+    return value === "list" || value === "tags" || value === "thought-trail"
         ? value
         : null;
 }

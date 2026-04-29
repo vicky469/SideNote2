@@ -70,12 +70,12 @@ test("normalizeCommentMarkdownForRender leaves LaTeX delimiters alone inside cod
     );
 });
 
-test("normalizeCommentMarkdownForRender keeps follow-up paragraphs inside bullet items", () => {
+test("normalizeCommentMarkdownForRender leaves blank-line paragraphs outside the previous bullet", () => {
     assert.equal(
         normalizeCommentMarkdownForRender(
-            "- cost-effective purchasing? ❌\nA seven-month inventory of stainless steel sheet? All kinds of stuff.\n\nNo, put it that way, and economical purchasing is definitely not the goal of this plant.\n\n- supplying jobs to people? ❌\nthe plant wasn't built for the purpose of paying wages and giving people something to do.\n\n- produce products？❌ \n   quality products? ❌ \n\n- low-cost production? efficiency + quality products? ❌\nBut can that goal keep the plant working?",
+            "- The Innovator's Solution (Clayton Christensen, with Michael Raynor): This explains why strong companies still get disrupted, and what to do about it.\n\nShort version: Drucker teaches how to operate effectively; Christensen teaches how to avoid being outflanked while scaling.",
         ),
-        "- cost-effective purchasing? ❌\nA seven-month inventory of stainless steel sheet? All kinds of stuff.\n\n  No, put it that way, and economical purchasing is definitely not the goal of this plant.\n\n- supplying jobs to people? ❌\nthe plant wasn't built for the purpose of paying wages and giving people something to do.\n\n- produce products？❌ \n   quality products? ❌ \n\n- low-cost production? efficiency + quality products? ❌\nBut can that goal keep the plant working?",
+        "- The Innovator's Solution (Clayton Christensen, with Michael Raynor): This explains why strong companies still get disrupted, and what to do about it.\n\nShort version: Drucker teaches how to operate effectively; Christensen teaches how to avoid being outflanked while scaling.",
     );
 });
 
@@ -83,5 +83,12 @@ test("normalizeCommentMarkdownForRender leaves top-level headings outside a list
     assert.equal(
         normalizeCommentMarkdownForRender("- item\n\n## next section"),
         "- item\n\n## next section",
+    );
+});
+
+test("normalizeCommentMarkdownForRender preserves explicitly indented continuation paragraphs inside bullet items", () => {
+    assert.equal(
+        normalizeCommentMarkdownForRender("- item\n\n  Continued detail"),
+        "- item\n\n  Continued detail",
     );
 });
