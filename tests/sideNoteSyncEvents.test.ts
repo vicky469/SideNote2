@@ -136,6 +136,109 @@ test("side-note sync diff emits compact mutation events", () => {
     assert.deepEqual(inputs.map((input) => input.op), ["setThreadResolved", "appendEntry"]);
 });
 
+test("side-note sync diff preserves child-targeted append entry order", () => {
+    const previous = createThread("docs/note.md", {
+        entries: [
+            {
+                id: "thread-1",
+                body: "Parent",
+                timestamp: 1710000000000,
+            },
+            {
+                id: "entry-2",
+                body: "First child",
+                timestamp: 1710000000100,
+            },
+            {
+                id: "entry-3",
+                body: "Second child",
+                timestamp: 1710000000200,
+            },
+        ],
+        updatedAt: 1710000000200,
+    });
+    const next = createThread("docs/note.md", {
+        entries: [
+            previous.entries[0],
+            previous.entries[1],
+            {
+                id: "entry-4",
+                body: "Inserted after first child",
+                timestamp: 1710000000300,
+            },
+            previous.entries[2],
+        ],
+        updatedAt: 1710000000300,
+    });
+
+    const inputs = buildSideNoteSyncEventInputsForThreadDiff([previous], [next]);
+    const events = inputs.map((input, index) => createEvent({
+        eventId: `event-${index + 1}`,
+        logicalClock: index + 1,
+        op: input.op,
+        payload: input.payload,
+    }));
+    const reduced = reduceSideNoteSyncEvents([previous], events);
+
+    assert.deepEqual(inputs.map((input) => input.op), ["appendEntry", "moveEntry"]);
+    assert.deepEqual(
+        reduced.threads[0].entries.map((entry) => entry.id),
+        ["thread-1", "entry-2", "entry-4", "entry-3"],
+    );
+});
+
+test("side-note sync diff preserves reordered child entries", () => {
+    const previous = createThread("docs/note.md", {
+        entries: [
+            {
+                id: "thread-1",
+                body: "Parent",
+                timestamp: 1710000000000,
+            },
+            {
+                id: "entry-2",
+                body: "First child",
+                timestamp: 1710000000100,
+            },
+            {
+                id: "entry-3",
+                body: "Second child",
+                timestamp: 1710000000200,
+            },
+            {
+                id: "entry-4",
+                body: "Third child",
+                timestamp: 1710000000300,
+            },
+        ],
+        updatedAt: 1710000000300,
+    });
+    const next = createThread("docs/note.md", {
+        entries: [
+            previous.entries[0],
+            previous.entries[2],
+            previous.entries[3],
+            previous.entries[1],
+        ],
+        updatedAt: 1710000000400,
+    });
+
+    const inputs = buildSideNoteSyncEventInputsForThreadDiff([previous], [next]);
+    const events = inputs.map((input, index) => createEvent({
+        eventId: `event-${index + 1}`,
+        logicalClock: index + 1,
+        op: input.op,
+        payload: input.payload,
+    }));
+    const reduced = reduceSideNoteSyncEvents([previous], events);
+
+    assert.deepEqual(inputs.map((input) => input.op), ["moveEntry", "moveEntry"]);
+    assert.deepEqual(
+        reduced.threads[0].entries.map((entry) => entry.id),
+        ["thread-1", "entry-3", "entry-4", "entry-2"],
+    );
+});
+
 test("side-note sync diff includes previous entry snapshots for conflict recovery", () => {
     const previous = createThread("docs/note.md");
     const next = createThread("docs/note.md", {

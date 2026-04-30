@@ -561,6 +561,52 @@ function hasAnchorChanged(left: CommentThread, right: CommentThread): boolean {
         || (left.orphaned === true) !== (right.orphaned === true);
 }
 
+function buildMoveEntryInputsForOrderDiff(
+    previousThread: CommentThread,
+    nextThread: CommentThread,
+): SideNoteSyncEventInput[] {
+    const desiredOrder = nextThread.entries.map((entry) => entry.id);
+    const currentOrder = previousThread.entries.map((entry) => entry.id);
+    for (const entryId of desiredOrder) {
+        if (!currentOrder.includes(entryId)) {
+            currentOrder.push(entryId);
+        }
+    }
+
+    const inputs: SideNoteSyncEventInput[] = [];
+    for (let desiredIndex = 1; desiredIndex < desiredOrder.length; desiredIndex += 1) {
+        const entryId = desiredOrder[desiredIndex];
+        const currentIndex = currentOrder.indexOf(entryId);
+        if (currentIndex === -1 || currentIndex === desiredIndex) {
+            continue;
+        }
+
+        const beforeEntryId = currentOrder[desiredIndex];
+        if (!beforeEntryId) {
+            continue;
+        }
+
+        inputs.push({
+            op: "moveEntry",
+            payload: {
+                threadId: nextThread.id,
+                entryId,
+                beforeEntryId,
+            },
+        });
+
+        currentOrder.splice(currentIndex, 1);
+        const beforeIndex = currentOrder.indexOf(beforeEntryId);
+        if (beforeIndex === -1) {
+            currentOrder.push(entryId);
+        } else {
+            currentOrder.splice(beforeIndex, 0, entryId);
+        }
+    }
+
+    return inputs;
+}
+
 export function buildSideNoteSyncEventInputsForThreadDiff(
     previousThreads: CommentThread[],
     nextThreads: CommentThread[],
@@ -680,6 +726,8 @@ export function buildSideNoteSyncEventInputsForThreadDiff(
                 },
             });
         }
+
+        inputs.push(...buildMoveEntryInputsForOrderDiff(previousThread, nextThread));
     }
 
     const nextIds = new Set(nextThreads.map((thread) => thread.id));

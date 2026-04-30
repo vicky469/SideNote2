@@ -152,6 +152,128 @@ function areThreadEntriesEqual(left: CommentThreadEntry, right: CommentThreadEnt
         && normalizeDeletedAt(left.deletedAt) === normalizeDeletedAt(right.deletedAt);
 }
 
+function getThreadEntryVersion(entry: CommentThreadEntry): number {
+    return Math.max(entry.timestamp, normalizeDeletedAt(entry.deletedAt) ?? 0);
+}
+
+function getThreadStateVersion(thread: CommentThread): number {
+    return Math.max(
+        thread.createdAt,
+        thread.updatedAt,
+        normalizeDeletedAt(thread.deletedAt) ?? 0,
+        ...thread.entries.map((entry) => getThreadEntryVersion(entry)),
+    );
+}
+
+function chooseSnapshotThreadEntry(
+    localEntry: CommentThreadEntry,
+    snapshotEntry: CommentThreadEntry,
+): CommentThreadEntry {
+    return getThreadEntryVersion(snapshotEntry) >= getThreadEntryVersion(localEntry)
+        ? cloneThreadEntry(snapshotEntry)
+        : cloneThreadEntry(localEntry);
+}
+
+function mergeThreadEntriesFromSnapshot(
+    localEntries: CommentThreadEntry[],
+    snapshotEntries: CommentThreadEntry[],
+): CommentThreadEntry[] {
+    const mergedEntries = localEntries.map((entry) => cloneThreadEntry(entry));
+
+    for (let snapshotIndex = 0; snapshotIndex < snapshotEntries.length; snapshotIndex += 1) {
+        const snapshotEntry = snapshotEntries[snapshotIndex];
+        const existingIndex = mergedEntries.findIndex((entry) => entry.id === snapshotEntry.id);
+        if (existingIndex !== -1) {
+            mergedEntries[existingIndex] = chooseSnapshotThreadEntry(mergedEntries[existingIndex], snapshotEntry);
+            continue;
+        }
+
+        let insertIndex = -1;
+        for (let previousIndex = snapshotIndex - 1; previousIndex >= 0; previousIndex -= 1) {
+            const previousSnapshotEntryId = snapshotEntries[previousIndex].id;
+            const previousMergedIndex = mergedEntries.findIndex((entry) => entry.id === previousSnapshotEntryId);
+            if (previousMergedIndex !== -1) {
+                insertIndex = previousMergedIndex + 1;
+                break;
+            }
+        }
+
+        mergedEntries.splice(insertIndex === -1 ? 0 : insertIndex, 0, cloneThreadEntry(snapshotEntry));
+    }
+
+    return mergedEntries;
+}
+
+function mergeThreadFromSnapshot(localThread: CommentThread, snapshotThread: CommentThread): CommentThread {
+    const snapshotIsNewer = getThreadStateVersion(snapshotThread) >= getThreadStateVersion(localThread);
+    const baseThread = cloneThread(snapshotIsNewer ? snapshotThread : localThread);
+    const entries = mergeThreadEntriesFromSnapshot(localThread.entries, snapshotThread.entries);
+    return {
+        ...baseThread,
+        createdAt: Math.min(localThread.createdAt, snapshotThread.createdAt),
+        updatedAt: Math.max(
+            baseThread.updatedAt,
+            ...entries.map((entry) => getThreadEntryVersion(entry)),
+        ),
+        entries,
+    };
+}
+
+function mergeSnapshotThreadsWithSidecar(
+    sidecarThreads: CommentThread[],
+    snapshotThreads: CommentThread[],
+): CommentThread[] {
+    const mergedThreads = sidecarThreads.map((thread) => cloneThread(thread));
+
+    for (let snapshotIndex = 0; snapshotIndex < snapshotThreads.length; snapshotIndex += 1) {
+        const snapshotThread = snapshotThreads[snapshotIndex];
+        const existingIndex = mergedThreads.findIndex((thread) => thread.id === snapshotThread.id);
+        if (existingIndex !== -1) {
+            mergedThreads[existingIndex] = mergeThreadFromSnapshot(mergedThreads[existingIndex], snapshotThread);
+            continue;
+        }
+
+        let insertIndex = -1;
+        for (let previousIndex = snapshotIndex - 1; previousIndex >= 0; previousIndex -= 1) {
+            const previousSnapshotThreadId = snapshotThreads[previousIndex].id;
+            const previousMergedIndex = mergedThreads.findIndex((thread) => thread.id === previousSnapshotThreadId);
+            if (previousMergedIndex !== -1) {
+                insertIndex = previousMergedIndex + 1;
+                break;
+            }
+        }
+
+        mergedThreads.splice(insertIndex === -1 ? mergedThreads.length : insertIndex, 0, cloneThread(snapshotThread));
+    }
+
+    return mergedThreads;
+}
+
+function areCommentThreadsEqual(left: CommentThread, right: CommentThread): boolean {
+    return left.id === right.id
+        && left.filePath === right.filePath
+        && left.startLine === right.startLine
+        && left.startChar === right.startChar
+        && left.endLine === right.endLine
+        && left.endChar === right.endChar
+        && left.selectedText === right.selectedText
+        && left.selectedTextHash === right.selectedTextHash
+        && (left.anchorKind ?? "selection") === (right.anchorKind ?? "selection")
+        && (left.orphaned === true) === (right.orphaned === true)
+        && (left.isPinned === true) === (right.isPinned === true)
+        && (left.resolved === true) === (right.resolved === true)
+        && normalizeDeletedAt(left.deletedAt) === normalizeDeletedAt(right.deletedAt)
+        && left.createdAt === right.createdAt
+        && left.updatedAt === right.updatedAt
+        && left.entries.length === right.entries.length
+        && left.entries.every((entry, index) => areThreadEntriesEqual(entry, right.entries[index]));
+}
+
+function areCommentThreadListsEqual(left: CommentThread[], right: CommentThread[]): boolean {
+    return left.length === right.length
+        && left.every((thread, index) => areCommentThreadsEqual(thread, right[index]));
+}
+
 function getLegacyInlineConflictEntryId(entryId: string): string {
     return `legacy-inline-conflict-${entryId}`;
 }
@@ -729,12 +851,21 @@ export class CommentPersistenceController {
 
         let hydratedCount = 0;
         for (const snapshot of snapshots) {
-            const hasSidecar = await this.sidecarStorage.exists(snapshot.notePath);
-            if (hasSidecar && snapshot.threads.length > 0) {
+            const existingSidecarThreads = await this.sidecarStorage.read(snapshot.notePath);
+            const normalizedSnapshotThreads = await this.normalizeThreadsForFile(snapshot.notePath, snapshot.threads);
+            const normalizedExistingThreads = existingSidecarThreads
+                ? await this.normalizeThreadsForFile(snapshot.notePath, existingSidecarThreads)
+                : null;
+            const normalizedThreads = normalizedExistingThreads && normalizedSnapshotThreads.length > 0
+                ? mergeSnapshotThreadsWithSidecar(normalizedExistingThreads, normalizedSnapshotThreads)
+                : normalizedSnapshotThreads;
+            if (
+                normalizedExistingThreads
+                && areCommentThreadListsEqual(normalizedExistingThreads, normalizedThreads)
+            ) {
                 continue;
             }
 
-            const normalizedThreads = await this.normalizeThreadsForFile(snapshot.notePath, snapshot.threads);
             await this.sidecarStorage.write(snapshot.notePath, normalizedThreads);
             const file = this.host.getMarkdownFileByPath(snapshot.notePath);
             if (file && this.host.isCommentableFile(file)) {
