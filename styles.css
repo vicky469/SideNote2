@@ -1720,6 +1720,7 @@ button.sidenote2-tab-button.sidenote2-tab-button--active {
 
 .sidenote2-comment-item:not(.sidenote2-agent-stream-item) .sidenote2-thread-footer-actions,
 .sidenote2-comment-item:not(.sidenote2-agent-stream-item) .sidenote2-thread-reanchor-button {
+    display: none;
     opacity: 0;
     visibility: hidden;
     pointer-events: none;
@@ -1727,6 +1728,7 @@ button.sidenote2-tab-button.sidenote2-tab-button--active {
 
 .sidenote2-comment-item:not(.sidenote2-agent-stream-item).active .sidenote2-thread-footer-actions,
 .sidenote2-comment-item:not(.sidenote2-agent-stream-item).active .sidenote2-thread-reanchor-button {
+    display: flex;
     opacity: 1;
     visibility: visible;
     pointer-events: auto;

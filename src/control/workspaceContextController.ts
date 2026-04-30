@@ -5,6 +5,7 @@ import {
     resolveWorkspaceTargetInput,
     resolveIndexLeafMode,
     resolveWorkspaceFileTargets,
+    shouldIgnoreWorkspaceFileOpen,
     shouldIgnoreWorkspaceLeafChange,
 } from "./workspaceContextPlanner";
 
@@ -36,6 +37,10 @@ export class WorkspaceContextController {
     }
 
     public handleFileOpen(file: TFile | null): void {
+        if (shouldIgnoreWorkspaceFileOpen(file)) {
+            return;
+        }
+
         void this.syncIndexNoteLeafMode(this.host.app.workspace.getActiveViewOfType(MarkdownView)?.leaf ?? null);
         this.syncIndexNoteViewClasses();
         this.applyWorkspaceFileTargets(resolveWorkspaceTargetInput(

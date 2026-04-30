@@ -1,6 +1,9 @@
 import * as assert from "node:assert/strict";
 import test from "node:test";
-import { shouldIgnoreWorkspaceLeafChange } from "../src/control/workspaceContextPlanner";
+import {
+    shouldIgnoreWorkspaceFileOpen,
+    shouldIgnoreWorkspaceLeafChange,
+} from "../src/control/workspaceContextPlanner";
 
 type LeafKind = "markdown" | "sidenote" | "other";
 
@@ -70,4 +73,12 @@ test("fixed active-leaf-change logic still refreshes for markdown leaves", async
 
     assert.strictEqual(plugin.view.updateCount, 1);
     assert.deepStrictEqual(plugin.activeMarkdownFile, { path: "other.md" });
+});
+
+test("file-open null is ignored because it should not clear the sidebar context", () => {
+    assert.equal(shouldIgnoreWorkspaceFileOpen(null), true);
+});
+
+test("file-open with a file is still handled", () => {
+    assert.equal(shouldIgnoreWorkspaceFileOpen({ path: "note.md" }), false);
 });

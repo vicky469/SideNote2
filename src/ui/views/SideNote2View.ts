@@ -5,6 +5,7 @@ import {
     Notice,
     TFile,
     WorkspaceLeaf,
+    Platform,
     loadMermaid,
     setIcon,
     type ViewStateResult,
@@ -317,7 +318,7 @@ export default class SideNote2View extends ItemView {
         const electronRequire = typeof window !== "undefined"
             ? (window as Window & { require?: unknown }).require
             : undefined;
-        return typeof electronRequire !== "function";
+        return Platform.isMobile || Platform.isMobileApp || typeof electronRequire !== "function";
     }
 
     private syncViewContainerClasses(): void {
@@ -3669,6 +3670,11 @@ export default class SideNote2View extends ItemView {
                 if (isIndexView && currentFilePath) {
                     this.interactionController.setActiveComment(persistedComment.id);
                     await this.plugin.revealIndexCommentFromSidebar(persistedComment.id, currentFilePath);
+                    return;
+                }
+
+                if (this.isNonDesktopClient()) {
+                    this.interactionController.setActiveComment(persistedComment.id);
                     return;
                 }
 

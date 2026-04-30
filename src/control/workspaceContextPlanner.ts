@@ -45,6 +45,10 @@ export function shouldIgnoreWorkspaceLeafChange(viewType: string | null): boolea
     return viewType === "sidenote2-view";
 }
 
+export function shouldIgnoreWorkspaceFileOpen<T>(eventFile: T | null): boolean {
+    return eventFile === null;
+}
+
 export interface ResolvedMarkdownViewState {
     mode: MarkdownViewModeType;
     // Obsidian uses mode: "source" for both live preview and source mode.
