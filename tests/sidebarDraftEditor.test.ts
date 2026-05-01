@@ -121,12 +121,18 @@ test("estimateDraftTextareaRows keeps draft editors within their intended bounds
     assert.equal(estimateDraftTextareaRows(longLine, true), 18);
 });
 
-test("computePinnedDraftScrollTop aligns the draft near the top of the sidebar", () => {
-    assert.equal(computePinnedDraftScrollTop(120, 260, 40), 332);
-    assert.equal(computePinnedDraftScrollTop(0, 4, 20), 0);
+test("computePinnedDraftScrollTop only scrolls enough to keep the draft visible", () => {
+    assert.equal(computePinnedDraftScrollTop(120, 260, 460, 40, 420), 168);
+    assert.equal(computePinnedDraftScrollTop(120, 24, 224, 40, 420), 96);
+    assert.equal(computePinnedDraftScrollTop(120, 80, 280, 40, 420), 120);
+    assert.equal(computePinnedDraftScrollTop(0, 4, 204, 20, 420), 0);
 });
 
-test("pinDraftToTopOnMobile performs a single scroll adjustment when the draft is offscreen", () => {
+test("computePinnedDraftScrollTop keeps draft actions above floating bottom controls", () => {
+    assert.equal(computePinnedDraftScrollTop(220, 660, 835, 143, 843, 777), 286);
+});
+
+test("pinDraftToTopOnMobile performs a minimal scroll adjustment when the draft is offscreen", () => {
     const originalHTMLElement = globalThis.HTMLElement;
     class FakeElement {}
     Object.assign(globalThis, {
@@ -137,13 +143,13 @@ test("pinDraftToTopOnMobile performs a single scroll adjustment when the draft i
     const scrollCalls: Array<{ top: number; behavior: string }> = [];
         const scrollContainer = Object.assign(new FakeElement(), {
             scrollTop: 120,
-            getBoundingClientRect: () => ({ top: 40 }),
+            getBoundingClientRect: () => ({ top: 40, bottom: 420 }),
             scrollTo: (options: { top: number; behavior: string }) => {
                 scrollCalls.push(options);
             },
         }) as unknown as HTMLElement;
         const draftEl = Object.assign(new FakeElement(), {
-            getBoundingClientRect: () => ({ top: 260 }),
+            getBoundingClientRect: () => ({ top: 260, bottom: 460 }),
         }) as unknown as HTMLElement;
         const textarea = {
             closest: (selector: string) => {
@@ -160,7 +166,7 @@ test("pinDraftToTopOnMobile performs a single scroll adjustment when the draft i
         pinDraftToTopOnMobile(textarea);
 
         assert.deepEqual(scrollCalls, [{
-            top: 332,
+            top: 168,
             behavior: "auto",
         }]);
     } finally {
@@ -180,14 +186,14 @@ test("pinDraftToTopOnMobile skips no-op scroll corrections", () => {
     try {
         const scrollCalls: Array<{ top: number; behavior: string }> = [];
         const scrollContainer = Object.assign(new FakeElement(), {
-            scrollTop: 332,
-            getBoundingClientRect: () => ({ top: 40 }),
+            scrollTop: 120,
+            getBoundingClientRect: () => ({ top: 40, bottom: 420 }),
             scrollTo: (options: { top: number; behavior: string }) => {
                 scrollCalls.push(options);
             },
         }) as unknown as HTMLElement;
         const draftEl = Object.assign(new FakeElement(), {
-            getBoundingClientRect: () => ({ top: 48 }),
+            getBoundingClientRect: () => ({ top: 80, bottom: 280 }),
         }) as unknown as HTMLElement;
         const textarea = {
             closest: (selector: string) => {

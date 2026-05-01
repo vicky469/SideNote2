@@ -1959,6 +1959,48 @@ button.sidenote2-tab-button.sidenote2-tab-button--active {
     padding-inline: 10px;
 }
 
+.sidenote2-view-container .sidenote2-inline-editor button.sidenote2-inline-format-button {
+    appearance: none;
+    -webkit-appearance: none;
+    flex: 0 0 30px;
+    width: 30px;
+    height: 30px;
+    min-width: 30px;
+    min-height: 30px;
+    padding: 0;
+    line-height: 1;
+}
+
+.sidenote2-view-container .sidenote2-inline-editor-actions button.sidenote2-inline-cancel-button,
+.sidenote2-view-container .sidenote2-inline-editor-actions button.sidenote2-inline-save-button {
+    appearance: none;
+    -webkit-appearance: none;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    box-sizing: border-box;
+    flex: 0 0 auto;
+    min-width: 64px;
+    height: 32px;
+    min-height: 32px;
+    padding: 0 12px;
+    border: 1px solid var(--background-modifier-border);
+    border-radius: 8px;
+    background: var(--interactive-normal);
+    color: var(--text-normal);
+    font-size: var(--font-ui-smaller);
+    line-height: 1;
+    white-space: nowrap;
+    word-break: normal;
+    box-shadow: none;
+}
+
+.sidenote2-view-container .sidenote2-inline-editor-actions button.sidenote2-inline-save-button {
+    border-color: var(--interactive-accent);
+    background: var(--interactive-accent);
+    color: var(--text-on-accent);
+}
+
 .sidenote2-comment-action-resolve {
     color: var(--icon-color, var(--text-faint, var(--text-muted)));
 }

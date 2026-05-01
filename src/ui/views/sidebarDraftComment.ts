@@ -149,12 +149,35 @@ function getSidebarScrollContainer(textarea: HTMLTextAreaElement): HTMLElement |
 export function computePinnedDraftScrollTop(
     currentScrollTop: number,
     draftTop: number,
+    draftBottom: number,
     containerTop: number,
+    containerBottom: number,
+    bottomObstructionTop?: number,
 ): number {
-    return Math.max(
-        0,
-        currentScrollTop + (draftTop - containerTop) - 8,
+    const visibleTop = containerTop + 8;
+    const visibleBottom = Math.min(
+        containerBottom - 8,
+        bottomObstructionTop === undefined ? Number.POSITIVE_INFINITY : bottomObstructionTop - 8,
     );
+    if (draftTop < visibleTop) {
+        return Math.max(0, currentScrollTop + draftTop - visibleTop);
+    }
+    if (draftBottom > visibleBottom) {
+        return Math.max(0, currentScrollTop + draftBottom - visibleBottom);
+    }
+    return currentScrollTop;
+}
+
+function getDraftBottomObstructionTop(scrollContainer: HTMLElement, containerRect: DOMRect): number | undefined {
+    const supportSlot = scrollContainer.querySelector?.(".sidenote2-support-button-slot");
+    if (!(supportSlot instanceof HTMLElement)) {
+        return undefined;
+    }
+    const supportRect = supportSlot.getBoundingClientRect();
+    if (supportRect.bottom <= containerRect.top || supportRect.top >= containerRect.bottom) {
+        return undefined;
+    }
+    return supportRect.top;
 }
 
 export function pinDraftToTopOnMobile(textarea: HTMLTextAreaElement): void {
@@ -169,7 +192,10 @@ export function pinDraftToTopOnMobile(textarea: HTMLTextAreaElement): void {
     const nextScrollTop = computePinnedDraftScrollTop(
         scrollContainer.scrollTop,
         draftRect.top,
+        draftRect.bottom,
         containerRect.top,
+        containerRect.bottom,
+        getDraftBottomObstructionTop(scrollContainer, containerRect),
     );
     if (Math.abs(scrollContainer.scrollTop - nextScrollTop) < 2) {
         return;
