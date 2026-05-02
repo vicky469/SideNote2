@@ -16,7 +16,10 @@ import { buildEditorHighlightRanges } from "../core/derived/editorHighlightRange
 import { matchesResolvedCommentVisibility } from "../core/rules/resolvedCommentVisibility";
 import { chooseCommentStateForOpenEditor } from "../core/rules/commentSyncPolicy";
 import { findClickedHighlightCommentId } from "./commentHighlightClickTarget";
-import { findClickedIndexLivePreviewTarget } from "./commentIndexClickTarget";
+import {
+    findClickedIndexLivePreviewTarget,
+    isIndexNativeCollapseControlTarget,
+} from "./commentIndexClickTarget";
 import { buildPreviewHighlightWraps } from "./commentHighlightPlanner";
 import {
     estimateIndexPreviewScrollTop,
@@ -226,16 +229,8 @@ export class CommentHighlightController {
             return;
         }
 
-        if (context.clickedTarget.kind === "comment") {
-            void this.host.activateIndexComment(
-                context.clickedTarget.commentId,
-                context.indexFilePath,
-                context.clickedTarget.filePath,
-            );
-            return;
-        }
-
-        void this.host.activateIndexFileScope(
+        void this.host.activateIndexComment(
+            context.clickedTarget.commentId,
             context.indexFilePath,
             context.clickedTarget.filePath,
         );
@@ -384,17 +379,63 @@ export class CommentHighlightController {
             return false;
         }
 
+        return this.expandCollapsedIndexHeading(previewRoot, "h3", "el-h3", folderPath);
+    }
+
+    private expandCollapsedIndexFileChunk(
+        previewRoot: HTMLElement,
+        filePath: string,
+    ): boolean {
         let expanded = false;
-        previewRoot.querySelectorAll("h3[data-heading]").forEach((heading) => {
+        previewRoot.querySelectorAll(this.indexPreviewFileHeadingSelector).forEach((headingLabel) => {
+            if (!(headingLabel instanceof HTMLElement)) {
+                return;
+            }
+
+            if (headingLabel.getAttribute("title")?.trim() !== filePath) {
+                return;
+            }
+
+            const heading = headingLabel.closest("h5") ?? headingLabel.closest("h4");
             if (!(heading instanceof HTMLHeadingElement)) {
                 return;
             }
 
-            if ((heading.dataset.heading ?? "").trim() !== folderPath) {
+            const headingContainer = heading.closest(heading.tagName.toLowerCase() === "h5" ? ".el-h5" : ".el-h4");
+            if (!(headingContainer instanceof HTMLElement) || !headingContainer.classList.contains("is-collapsed")) {
                 return;
             }
 
-            const headingContainer = heading.closest(".el-h3");
+            const collapseToggle = heading.querySelector(".heading-collapse-indicator, .collapse-indicator, .collapse-icon");
+            if (collapseToggle instanceof HTMLElement) {
+                collapseToggle.click();
+            } else {
+                heading.click();
+            }
+
+            expanded = true;
+        });
+
+        return expanded;
+    }
+
+    private expandCollapsedIndexHeading(
+        previewRoot: HTMLElement,
+        headingSelector: string,
+        containerClass: string,
+        headingText: string,
+    ): boolean {
+        let expanded = false;
+        previewRoot.querySelectorAll(`${headingSelector}[data-heading]`).forEach((heading) => {
+            if (!(heading instanceof HTMLHeadingElement)) {
+                return;
+            }
+
+            if ((heading.dataset.heading ?? "").trim() !== headingText) {
+                return;
+            }
+
+            const headingContainer = heading.closest(`.${containerClass}`);
             if (!(headingContainer instanceof HTMLElement) || !headingContainer.classList.contains("is-collapsed")) {
                 return;
             }
@@ -543,64 +584,6 @@ export class CommentHighlightController {
         });
     }
 
-    private bindIndexPreviewHeadingClicks(element: HTMLElement, sourcePath: string): void {
-        element.querySelectorAll(this.indexPreviewFileHeadingSelector).forEach((heading) => {
-            if (!(heading instanceof HTMLElement) || heading.dataset.sidenote2IndexBound === "true") {
-                return;
-            }
-
-            const filePath = heading.getAttribute("title")?.trim();
-            if (!filePath) {
-                return;
-            }
-
-            const activateHeading = () => {
-                void this.host.activateIndexFileScope(sourcePath, filePath);
-            };
-
-            const bindActivator = (targetEl: HTMLElement) => {
-                if (targetEl.dataset.sidenote2IndexBound === "true") {
-                    return;
-                }
-
-                targetEl.dataset.sidenote2IndexBound = "true";
-                targetEl.addEventListener("mousedown", (event: MouseEvent) => {
-                    if (!this.isPlainPrimaryClick(event)) {
-                        return;
-                    }
-
-                    event.preventDefault();
-                    event.stopPropagation();
-                });
-                targetEl.addEventListener("click", (event: MouseEvent) => {
-                    if (!this.isPlainPrimaryClick(event)) {
-                        return;
-                    }
-
-                    event.preventDefault();
-                    event.stopPropagation();
-                    event.stopImmediatePropagation();
-                    activateHeading();
-                });
-                targetEl.addEventListener("keydown", (event: KeyboardEvent) => {
-                    if (event.key !== "Enter" && event.key !== " ") {
-                        return;
-                    }
-
-                    event.preventDefault();
-                    event.stopPropagation();
-                    activateHeading();
-                });
-            };
-
-            bindActivator(heading);
-            const rowEl = heading.closest("p, li");
-            if (rowEl instanceof HTMLElement) {
-                bindActivator(rowEl);
-            }
-        });
-    }
-
     public syncIndexPreviewSelection(
         indexFilePath: string,
         commentId: string,
@@ -679,6 +662,11 @@ export class CommentHighlightController {
                 await this.waitForPreviewFrame();
             }
 
+            if (this.expandCollapsedIndexFileChunk(previewRoot, navigationTarget.filePath)) {
+                await this.waitForPreviewFrame();
+                await this.waitForPreviewFrame();
+            }
+
             this.prepareIndexPreviewLinks(previewRoot);
             this.syncIndexPreviewLinkStates(previewRoot, indexFilePath);
             const nextRenderedRow = this.findRenderedIndexCommentRow(previewRoot, commentId);
@@ -708,9 +696,12 @@ export class CommentHighlightController {
             event.preventDefault();
             event.stopPropagation();
             event.stopImmediatePropagation();
-            this.activateIndexInteraction(context);
         }, true);
         plugin.registerDomEvent(document, "click", (event) => {
+            if (!this.isPlainPrimaryClick(event)) {
+                return;
+            }
+
             const context = this.resolveIndexInteractionContext(event.target);
             if (!context) {
                 return;
@@ -719,6 +710,7 @@ export class CommentHighlightController {
             event.preventDefault();
             event.stopPropagation();
             event.stopImmediatePropagation();
+            this.activateIndexInteraction(context);
         }, true);
         plugin.registerDomEvent(document, "keydown", (event) => {
             if (event.key !== "Enter" && event.key !== " ") {
@@ -928,47 +920,11 @@ export class CommentHighlightController {
                 return;
             }
 
-            if (clickedTarget.kind === "comment") {
-                void host.activateIndexComment(clickedTarget.commentId, indexFilePath, clickedTarget.filePath);
-            } else {
-                void host.activateIndexFileScope(indexFilePath, clickedTarget.filePath);
-            }
+            void host.activateIndexComment(clickedTarget.commentId, indexFilePath, clickedTarget.filePath);
         };
 
         return EditorView.domEventHandlers({
             mousedown(event, view) {
-                if (
-                    event.button !== 0
-                    || event.metaKey
-                    || event.ctrlKey
-                    || event.shiftKey
-                    || event.altKey
-                ) {
-                    return false;
-                }
-
-                const target = event.target;
-                if (!(target instanceof HTMLElement)) {
-                    return false;
-                }
-
-                const markdownView = host.getMarkdownViewForEditorView(view);
-                const filePath = markdownView?.file?.path ?? null;
-                if (!filePath || !host.isAllCommentsNotePath(filePath)) {
-                    return false;
-                }
-
-                const clickedTarget = findClickedIndexLivePreviewTarget(target);
-                if (!clickedTarget) {
-                    return false;
-                }
-
-                event.preventDefault();
-                event.stopPropagation();
-                activateClickedTarget(clickedTarget, filePath);
-                return true;
-            },
-            click(event, view) {
                 if (
                     event.button !== 0
                     || event.metaKey
@@ -997,6 +953,10 @@ export class CommentHighlightController {
                     return true;
                 }
 
+                if (isIndexNativeCollapseControlTarget(target)) {
+                    return false;
+                }
+
                 const lineEl = target.closest(".cm-line");
                 if (!(lineEl instanceof HTMLElement)) {
                     return false;
@@ -1012,17 +972,70 @@ export class CommentHighlightController {
                 const safePos = Math.max(0, Math.min(pos, view.state.doc.length));
                 const lineText = view.state.doc.lineAt(safePos).text;
                 const lineTarget = findIndexMarkdownLineTarget(lineText);
-                if (!lineTarget) {
+                if (!lineTarget || lineTarget.kind !== "comment") {
                     return false;
                 }
 
                 event.preventDefault();
                 event.stopPropagation();
-                if (lineTarget.kind === "comment") {
-                    void host.activateIndexComment(lineTarget.commentId, filePath, lineTarget.filePath);
-                } else {
-                    void host.activateIndexFileScope(filePath, lineTarget.filePath);
+                return true;
+            },
+            click(event, view) {
+                if (
+                    event.button !== 0
+                    || event.metaKey
+                    || event.ctrlKey
+                    || event.shiftKey
+                    || event.altKey
+                ) {
+                    return false;
                 }
+
+                const target = event.target;
+                if (!(target instanceof HTMLElement)) {
+                    return false;
+                }
+
+                const markdownView = host.getMarkdownViewForEditorView(view);
+                const filePath = markdownView?.file?.path ?? null;
+                if (!filePath || !host.isAllCommentsNotePath(filePath)) {
+                    return false;
+                }
+
+                const clickedTarget = findClickedIndexLivePreviewTarget(target);
+                if (clickedTarget) {
+                    event.preventDefault();
+                    event.stopPropagation();
+                    activateClickedTarget(clickedTarget, filePath);
+                    return true;
+                }
+
+                if (isIndexNativeCollapseControlTarget(target)) {
+                    return false;
+                }
+
+                const lineEl = target.closest(".cm-line");
+                if (!(lineEl instanceof HTMLElement)) {
+                    return false;
+                }
+
+                let pos: number;
+                try {
+                    pos = view.posAtDOM(lineEl, 0);
+                } catch {
+                    return false;
+                }
+
+                const safePos = Math.max(0, Math.min(pos, view.state.doc.length));
+                const lineText = view.state.doc.lineAt(safePos).text;
+                const lineTarget = findIndexMarkdownLineTarget(lineText);
+                if (!lineTarget || lineTarget.kind !== "comment") {
+                    return false;
+                }
+
+                event.preventDefault();
+                event.stopPropagation();
+                void host.activateIndexComment(lineTarget.commentId, filePath, lineTarget.filePath);
                 return true;
             },
         });
@@ -1053,7 +1066,6 @@ export class CommentHighlightController {
             this.prepareIndexPreviewLinks(element);
             this.syncIndexPreviewLinkStates(element, context.sourcePath);
             this.bindIndexPreviewLinkClicks(element, context.sourcePath);
-            this.bindIndexPreviewHeadingClicks(element, context.sourcePath);
             return;
         }
 

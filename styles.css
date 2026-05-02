@@ -89,8 +89,14 @@
     margin-bottom: 0.08rem;
 }
 
-.sidenote2-index-note-view .markdown-preview-view p:has(.sidenote2-index-heading-label),
-.sidenote2-index-note-view .markdown-source-view.mod-cm6 .markdown-rendered p:has(.sidenote2-index-heading-label) {
+.sidenote2-index-note-view .markdown-preview-view h4:has(.sidenote2-index-heading-label),
+.sidenote2-index-note-view .markdown-source-view.mod-cm6 .markdown-rendered h4:has(.sidenote2-index-heading-label),
+.sidenote2-index-note-view .markdown-preview-view h5:has(.sidenote2-index-heading-label),
+.sidenote2-index-note-view .markdown-source-view.mod-cm6 .markdown-rendered h5:has(.sidenote2-index-heading-label) {
+    color: var(--text-normal);
+    font-size: 0.9em;
+    font-weight: 400;
+    line-height: 1.28;
     margin-top: 0.12rem;
     margin-bottom: 0.18rem;
 }
@@ -115,13 +121,13 @@
     background: hsla(var(--interactive-accent-hsl), calc(var(--sidenote2-highlight-bg-alpha) + 0.06));
     border-radius: 6px;
     box-shadow: inset 3px 0 0 hsla(var(--interactive-accent-hsl), calc(var(--sidenote2-highlight-line-alpha) + 0.16));
-    margin-inline: -0.3rem;
-    padding-inline: 0.3rem;
 }
 
 .sidenote2-index-heading-label {
     color: var(--text-normal);
-    font-weight: 500;
+    display: inline-block;
+    font-weight: 400;
+    margin-inline-start: 1rem;
 }
 
 .markdown-preview-view img[alt="SideNote2 index header image"],

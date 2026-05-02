@@ -9,7 +9,7 @@ import { SideNoteSyncEventStore } from "../src/control/sideNoteSyncEventStore";
 import { serializeNoteCommentThreads, parseNoteComments } from "../src/core/storage/noteCommentStorage";
 import { AggregateCommentIndex } from "../src/index/AggregateCommentIndex";
 
-class FakeAdapter implements Pick<DataAdapter, "exists" | "mkdir" | "write" | "read" | "remove" | "rename"> {
+class FakeAdapter implements Pick<DataAdapter, "exists" | "mkdir" | "write" | "read" | "remove" | "rename" | "list"> {
     public readonly directories = new Set<string>();
     public readonly files = new Map<string, string>();
 
@@ -41,6 +41,29 @@ class FakeAdapter implements Pick<DataAdapter, "exists" | "mkdir" | "write" | "r
 
         this.files.set(normalizedNewPath, content);
         this.files.delete(normalizedPath);
+    }
+
+    async list(normalizedPath: string): Promise<{ files: string[]; folders: string[] }> {
+        const prefix = normalizedPath.endsWith("/") ? normalizedPath : `${normalizedPath}/`;
+        const files: string[] = [];
+        const folders = new Set<string>();
+        for (const filePath of this.files.keys()) {
+            if (!filePath.startsWith(prefix)) {
+                continue;
+            }
+
+            const relativePath = filePath.slice(prefix.length);
+            const slashIndex = relativePath.indexOf("/");
+            if (slashIndex === -1) {
+                files.push(filePath);
+            } else {
+                folders.add(`${prefix}${relativePath.slice(0, slashIndex)}`);
+            }
+        }
+        return {
+            files: files.sort((left, right) => left.localeCompare(right)),
+            folders: Array.from(folders).sort((left, right) => left.localeCompare(right)),
+        };
     }
 }
 
@@ -80,6 +103,11 @@ function createThread(filePath: string): CommentThread {
 function getSidecarStoragePath(filePath: string): string {
     const noteHash = `hash-${filePath.replace(/\//g, "_")}`;
     return `.obsidian/plugins/side-note2/sidenotes/by-note/${noteHash.slice(0, 2)}/${noteHash}.json`;
+}
+
+function getSourceSidecarStoragePath(sourceId: string): string {
+    const sourceHash = `hash-${sourceId.replace(/\//g, "_")}`;
+    return `.obsidian/plugins/side-note2/sidenotes/by-source/${sourceHash.slice(0, 2)}/${sourceHash}.json`;
 }
 
 function serializeSidecarThreads(filePath: string, threads: CommentThread[]): string {
@@ -171,7 +199,7 @@ test("comment persistence controller syncs external managed-block updates into a
         await controller.handleMarkdownFileModified(file);
 
         assert.equal(processCount, 0);
-        assert.equal(adapter.files.size, 1);
+        assert.equal(adapter.files.size, 2);
         assert.equal(commentManager.getCommentsForFile(file.path).length, 1);
         assert.equal(commentManager.getCommentById("thread-1")?.comment, "external body");
         assert.equal(aggregateCommentIndex.getCommentById("thread-1")?.comment, "external body");
@@ -247,7 +275,7 @@ test("comment persistence controller migrates inline note storage into a sidecar
 
     assert.equal(processCount, 1);
     assert.equal(rewrittenNoteContent, noteBody);
-    assert.equal(adapter.files.size, 1);
+    assert.equal(adapter.files.size, 2);
     assert.ok(persistedData.sideNoteSyncEventState);
     assert.equal(comments.length, 1);
     assert.equal(commentManager.getCommentById("thread-1")?.comment, "external body");
@@ -406,7 +434,6 @@ test("comment persistence controller hydrates compacted snapshots over a stale s
         notePath: file.path,
         threads: [remoteThread],
     }]);
-
     const controller = new CommentPersistenceController({
         app: {
             vault: {
@@ -453,6 +480,666 @@ test("comment persistence controller hydrates compacted snapshots over a stale s
         assert.equal(appliedEventCount, 0);
         assert.deepEqual(thread?.entries.map((entry) => entry.body), ["external body", "mobile reply"]);
         assert.equal(aggregateCommentIndex.getCommentById("entry-2")?.comment, "mobile reply");
+    } finally {
+        globalThis.window = originalWindow;
+    }
+});
+
+test("comment persistence controller refreshes synced plugin data before sidebar comment load", async () => {
+    const originalWindow = globalThis.window;
+    globalThis.window = {
+        setTimeout: () => 1,
+        clearTimeout: () => {},
+    } as unknown as typeof globalThis.window;
+
+    const file = createFile("docs/note.md");
+    const otherFile = createFile("docs/other.md");
+    const noteBody = "# Title\n\nAlpha target omega\n";
+    const adapter = new FakeAdapter();
+    const commentManager = new CommentManager([]);
+    const aggregateCommentIndex = new AggregateCommentIndex();
+    let cachedPersistedData: PersistedPluginData = {};
+    let latestPersistedData: PersistedPluginData = {};
+    let eventCounter = 0;
+    const staleThread = createThread(file.path);
+    const remoteThread: CommentThread = {
+        ...createThread(file.path),
+        entries: [
+            ...staleThread.entries,
+            {
+                id: "entry-2",
+                body: "mobile reply",
+                timestamp: 1710000000200,
+            },
+        ],
+        updatedAt: 1710000000200,
+    };
+    const otherRemoteThread: CommentThread = {
+        ...createThread(otherFile.path),
+        id: "other-thread",
+        entries: [{
+            id: "other-entry",
+            body: "unrelated mobile reply",
+            timestamp: 1710000000400,
+        }],
+        createdAt: 1710000000400,
+        updatedAt: 1710000000400,
+    };
+    adapter.files.set(getSidecarStoragePath(file.path), serializeSidecarThreads(file.path, [staleThread]));
+
+    const remoteEventStore = new SideNoteSyncEventStore({
+        readPersistedPluginData: () => latestPersistedData,
+        writePersistedPluginData: async (data) => {
+            latestPersistedData = data;
+        },
+        getDeviceId: () => "device-b",
+        createEventId: () => `remote-event-${++eventCounter}`,
+        hashText: async (text) => `hash-${text.replace(/\//g, "_")}`,
+        now: () => 1710000000300 + eventCounter,
+    });
+
+    await remoteEventStore.appendLocalEvents(file.path, [{
+        op: "createThread",
+        payload: {
+            thread: remoteThread,
+        },
+    }]);
+    await remoteEventStore.compactProcessedEventsForSnapshots([{
+        notePath: file.path,
+        threads: [remoteThread],
+    }]);
+    await remoteEventStore.appendLocalEvents(otherFile.path, [{
+        op: "createThread",
+        payload: {
+            thread: otherRemoteThread,
+        },
+    }]);
+    await remoteEventStore.compactProcessedEventsForSnapshots([{
+        notePath: otherFile.path,
+        threads: [otherRemoteThread],
+    }]);
+
+    const controller = new CommentPersistenceController({
+        app: {
+            vault: {
+                adapter: adapter as unknown as DataAdapter,
+                process: async () => "",
+            },
+        } as never,
+        getAllCommentsNotePath: () => "SideNote2 index.md",
+        getIndexHeaderImageUrl: () => "",
+        getIndexHeaderImageCaption: () => "",
+        shouldShowResolvedComments: () => false,
+        getMarkdownViewForFile: () => null,
+        getMarkdownFileByPath: (path) => path === file.path ? file : null,
+        getCurrentNoteContent: async () => noteBody,
+        getStoredNoteContent: async () => noteBody,
+        getParsedNoteComments: (filePath, noteContent) => parseNoteComments(noteContent, filePath),
+        getPluginDataDirPath: () => ".obsidian/plugins/side-note2",
+        getSideNoteSyncDeviceId: () => "device-a",
+        readPersistedPluginData: () => cachedPersistedData,
+        loadPersistedPluginData: async () => latestPersistedData,
+        writePersistedPluginData: async (data) => {
+            cachedPersistedData = data;
+            latestPersistedData = data;
+        },
+        isAllCommentsNotePath: () => false,
+        isCommentableFile: (candidate): candidate is TFile => !!candidate && candidate.extension === "md",
+        isMarkdownEditorFocused: () => false,
+        getCommentManager: () => commentManager,
+        getAggregateCommentIndex: () => aggregateCommentIndex,
+        createCommentId: () => "generated-id",
+        hashText: async (text) => `hash-${text.replace(/\//g, "_")}`,
+        syncDerivedCommentLinksForFile: () => {},
+        refreshCommentViews: async () => {},
+        refreshAllCommentsSidebarViews: async () => {},
+        refreshEditorDecorations: () => {},
+        refreshMarkdownPreviews: () => {},
+        getCommentMentionedPageLabels: () => [],
+        syncIndexNoteLeafMode: async () => {},
+        log: async () => {},
+    });
+
+    try {
+        const comments = await controller.loadCommentsForFile(file);
+        const thread = commentManager.getThreadById("thread-1");
+
+        assert.equal(comments[0]?.comment, "mobile reply");
+        assert.deepEqual(thread?.entries.map((entry) => entry.body), ["external body", "mobile reply"]);
+        assert.equal(aggregateCommentIndex.getCommentById("entry-2")?.comment, "mobile reply");
+        assert.equal(adapter.files.has(getSidecarStoragePath(otherFile.path)), false);
+        assert.equal(
+            (cachedPersistedData.sideNoteSyncEventState as {
+                processedWatermarks?: Record<string, Record<string, number>>;
+            }).processedWatermarks?.["device-a"]?.["device-b"],
+            1,
+        );
+    } finally {
+        globalThis.window = originalWindow;
+    }
+});
+
+test("comment persistence controller does not recover renamed source notes when the matching source note still exists", async () => {
+    const originalWindow = globalThis.window;
+    globalThis.window = {
+        setTimeout: () => 1,
+        clearTimeout: () => {},
+    } as unknown as typeof globalThis.window;
+
+    const previousFile = createFile("Notes/The Goal - A Process of Ongoing Improvement.md");
+    const nextFile = createFile("books/The Goal.md");
+    const noteBody = "# The Goal\n\nA process of ongoing improvement.\n";
+    const adapter = new FakeAdapter();
+    const commentManager = new CommentManager([]);
+    const aggregateCommentIndex = new AggregateCommentIndex();
+    let persistedData: PersistedPluginData = {};
+    let eventCounter = 0;
+    const remoteThread: CommentThread = {
+        ...createThread(previousFile.path),
+        anchorKind: "page",
+        selectedText: "A process of ongoing improvement.",
+        selectedTextHash: "hash-subtitle",
+        startLine: 0,
+        startChar: 0,
+        endLine: 0,
+        endChar: 0,
+    };
+    const remoteThread2: CommentThread = {
+        ...createThread(previousFile.path),
+        id: "thread-2",
+        selectedText: "The Goal",
+        selectedTextHash: "hash-title",
+        entries: [{
+            id: "entry-2",
+            body: "second body",
+            timestamp: 1710000000100,
+        }],
+        createdAt: 1710000000100,
+        updatedAt: 1710000000100,
+    };
+
+    const remoteEventStore = new SideNoteSyncEventStore({
+        readPersistedPluginData: () => persistedData,
+        writePersistedPluginData: async (data) => {
+            persistedData = data;
+        },
+        getDeviceId: () => "device-b",
+        createEventId: () => `remote-event-${++eventCounter}`,
+        hashText: async (text) => `hash-${text.replace(/\//g, "_")}`,
+        now: () => 1710000000300 + eventCounter,
+    });
+    await remoteEventStore.appendLocalEvents(previousFile.path, [{
+        op: "createThread",
+        payload: {
+            thread: remoteThread,
+        },
+    }, {
+        op: "createThread",
+        payload: {
+            thread: remoteThread2,
+        },
+    }]);
+    await remoteEventStore.compactProcessedEventsForSnapshots([{
+        notePath: previousFile.path,
+        threads: [remoteThread, remoteThread2],
+    }]);
+
+    const controller = new CommentPersistenceController({
+        app: {
+            vault: {
+                adapter: adapter as unknown as DataAdapter,
+                process: async () => "",
+            },
+        } as never,
+        getAllCommentsNotePath: () => "SideNote2 index.md",
+        getIndexHeaderImageUrl: () => "",
+        getIndexHeaderImageCaption: () => "",
+        shouldShowResolvedComments: () => false,
+        getMarkdownViewForFile: () => null,
+        getMarkdownFileByPath: (path) => {
+            if (path === nextFile.path) {
+                return nextFile;
+            }
+            return path === previousFile.path ? previousFile : null;
+        },
+        getCurrentNoteContent: async () => noteBody,
+        getStoredNoteContent: async () => noteBody,
+        getParsedNoteComments: (filePath, noteContent) => parseNoteComments(noteContent, filePath),
+        getPluginDataDirPath: () => ".obsidian/plugins/side-note2",
+        getSideNoteSyncDeviceId: () => "device-a",
+        readPersistedPluginData: () => persistedData,
+        writePersistedPluginData: async (data) => {
+            persistedData = data;
+        },
+        isAllCommentsNotePath: () => false,
+        isCommentableFile: (candidate): candidate is TFile => !!candidate && candidate.extension === "md",
+        isMarkdownEditorFocused: () => false,
+        getCommentManager: () => commentManager,
+        getAggregateCommentIndex: () => aggregateCommentIndex,
+        createCommentId: () => "generated-id",
+        hashText: async (text) => `hash-${text.replace(/\//g, "_")}`,
+        syncDerivedCommentLinksForFile: () => {},
+        refreshCommentViews: async () => {},
+        refreshAllCommentsSidebarViews: async () => {},
+        refreshEditorDecorations: () => {},
+        refreshMarkdownPreviews: () => {},
+        getCommentMentionedPageLabels: () => [],
+        syncIndexNoteLeafMode: async () => {},
+        log: async () => {},
+    });
+
+    try {
+        const comments = await controller.loadCommentsForFile(nextFile);
+        const snapshots = new SideNoteSyncEventStore({
+            readPersistedPluginData: () => persistedData,
+            writePersistedPluginData: async (data) => {
+                persistedData = data;
+            },
+            getDeviceId: () => "device-a",
+            createEventId: () => "unused",
+            hashText: async (text) => `hash-${text.replace(/\//g, "_")}`,
+            now: () => 1710000000400,
+        }).getSnapshots();
+
+        assert.deepEqual(comments, []);
+        assert.equal(commentManager.getThreadById("thread-1"), undefined);
+        assert.equal(aggregateCommentIndex.getCommentById("thread-1"), null);
+        assert.equal(adapter.files.has(getSidecarStoragePath(nextFile.path)), false);
+        assert.equal(
+            snapshots.some((snapshot) =>
+                snapshot.notePath === previousFile.path
+                && snapshot.threads.some((thread) => thread.id === "thread-1")),
+            true,
+        );
+        assert.equal(
+            snapshots.some((snapshot) =>
+                snapshot.notePath === nextFile.path
+                && snapshot.threads.some((thread) => thread.id === "thread-1")),
+            false,
+        );
+    } finally {
+        globalThis.window = originalWindow;
+    }
+});
+
+test("comment persistence controller recovers renamed source notes from synced snapshots when the old source path is missing", async () => {
+    const originalWindow = globalThis.window;
+    globalThis.window = {
+        setTimeout: () => 1,
+        clearTimeout: () => {},
+    } as unknown as typeof globalThis.window;
+
+    const previousFile = createFile("Notes/The Goal - A Process of Ongoing Improvement.md");
+    const nextFile = createFile("books/The Goal.md");
+    const noteBody = "# The Goal\n\nA process of ongoing improvement.\n";
+    const adapter = new FakeAdapter();
+    const commentManager = new CommentManager([]);
+    const aggregateCommentIndex = new AggregateCommentIndex();
+    let persistedData: PersistedPluginData = {};
+    let eventCounter = 0;
+    const remoteThread: CommentThread = {
+        ...createThread(previousFile.path),
+        anchorKind: "page",
+        selectedText: "A process of ongoing improvement.",
+        selectedTextHash: "hash-subtitle",
+        startLine: 0,
+        startChar: 0,
+        endLine: 0,
+        endChar: 0,
+    };
+    const remoteThread2: CommentThread = {
+        ...createThread(previousFile.path),
+        id: "thread-2",
+        selectedText: "The Goal",
+        selectedTextHash: "hash-title",
+        entries: [{
+            id: "entry-2",
+            body: "second body",
+            timestamp: 1710000000100,
+        }],
+        createdAt: 1710000000100,
+        updatedAt: 1710000000100,
+    };
+
+    const remoteEventStore = new SideNoteSyncEventStore({
+        readPersistedPluginData: () => persistedData,
+        writePersistedPluginData: async (data) => {
+            persistedData = data;
+        },
+        getDeviceId: () => "device-b",
+        createEventId: () => `remote-event-${++eventCounter}`,
+        hashText: async (text) => `hash-${text.replace(/\//g, "_")}`,
+        now: () => 1710000000300 + eventCounter,
+    });
+    await remoteEventStore.appendLocalEvents(previousFile.path, [{
+        op: "createThread",
+        payload: {
+            thread: remoteThread,
+        },
+    }, {
+        op: "createThread",
+        payload: {
+            thread: remoteThread2,
+        },
+    }]);
+    await remoteEventStore.compactProcessedEventsForSnapshots([{
+        notePath: previousFile.path,
+        threads: [remoteThread, remoteThread2],
+    }]);
+
+    const controller = new CommentPersistenceController({
+        app: {
+            vault: {
+                adapter: adapter as unknown as DataAdapter,
+                process: async () => "",
+            },
+        } as never,
+        getAllCommentsNotePath: () => "SideNote2 index.md",
+        getIndexHeaderImageUrl: () => "",
+        getIndexHeaderImageCaption: () => "",
+        shouldShowResolvedComments: () => false,
+        getMarkdownViewForFile: () => null,
+        getMarkdownFileByPath: (path) => path === nextFile.path ? nextFile : null,
+        getCurrentNoteContent: async () => noteBody,
+        getStoredNoteContent: async () => noteBody,
+        getParsedNoteComments: (filePath, noteContent) => parseNoteComments(noteContent, filePath),
+        getPluginDataDirPath: () => ".obsidian/plugins/side-note2",
+        getSideNoteSyncDeviceId: () => "device-a",
+        readPersistedPluginData: () => persistedData,
+        writePersistedPluginData: async (data) => {
+            persistedData = data;
+        },
+        isAllCommentsNotePath: () => false,
+        isCommentableFile: (candidate): candidate is TFile => !!candidate && candidate.extension === "md",
+        isMarkdownEditorFocused: () => false,
+        getCommentManager: () => commentManager,
+        getAggregateCommentIndex: () => aggregateCommentIndex,
+        createCommentId: () => "generated-id",
+        hashText: async (text) => `hash-${text.replace(/\//g, "_")}`,
+        syncDerivedCommentLinksForFile: () => {},
+        refreshCommentViews: async () => {},
+        refreshAllCommentsSidebarViews: async () => {},
+        refreshEditorDecorations: () => {},
+        refreshMarkdownPreviews: () => {},
+        getCommentMentionedPageLabels: () => [],
+        syncIndexNoteLeafMode: async () => {},
+        log: async () => {},
+    });
+
+    try {
+        const comments = await controller.loadCommentsForFile(nextFile);
+        const sidecar = JSON.parse(adapter.files.get(getSidecarStoragePath(nextFile.path)) ?? "{}") as {
+            notePath?: string;
+            threads?: CommentThread[];
+        };
+        const snapshots = new SideNoteSyncEventStore({
+            readPersistedPluginData: () => persistedData,
+            writePersistedPluginData: async (data) => {
+                persistedData = data;
+            },
+            getDeviceId: () => "device-a",
+            createEventId: () => "unused",
+            hashText: async (text) => `hash-${text.replace(/\//g, "_")}`,
+            now: () => 1710000000400,
+        }).getSnapshots();
+
+        assert.equal(comments[0]?.filePath, nextFile.path);
+        assert.equal(comments[0]?.comment, "external body");
+        assert.equal(commentManager.getThreadById("thread-1")?.filePath, nextFile.path);
+        assert.equal(aggregateCommentIndex.getCommentById("thread-1")?.filePath, nextFile.path);
+        assert.equal(sidecar.notePath, nextFile.path);
+        assert.equal(sidecar.threads?.[0]?.filePath, nextFile.path);
+        assert.equal(adapter.files.has(getSidecarStoragePath(previousFile.path)), false);
+        assert.equal(
+            snapshots.some((snapshot) =>
+                snapshot.notePath === nextFile.path
+                && snapshot.threads.some((thread) => thread.id === "thread-1")),
+            true,
+        );
+    } finally {
+        globalThis.window = originalWindow;
+    }
+});
+
+test("comment persistence controller recovers renamed source notes from a legacy cache orphan", async () => {
+    const originalWindow = globalThis.window;
+    globalThis.window = {
+        setTimeout: () => 1,
+        clearTimeout: () => {},
+    } as unknown as typeof globalThis.window;
+
+    const previousPath = "books/The Goal_ long old name.md";
+    const nextFile = createFile("books/The Goal.md");
+    const duplicateFile = createFile("books/The Goal Copy.md");
+    const filesByPath = new Map([
+        [nextFile.path, nextFile],
+        [duplicateFile.path, duplicateFile],
+    ]);
+    const noteBody = [
+        "# The Goal",
+        "",
+        "## Chapter 1",
+        "",
+        "\"Okay, but we'll be wasting a set-up,\" says Ray.",
+        "",
+        "\"So we waste it!\" I tell him.",
+        "",
+    ].join("\n");
+    const adapter = new FakeAdapter();
+    adapter.directories.add(".obsidian/plugins/side-note2/cache");
+    const cachedThreads: CommentThread[] = [
+        {
+            ...createThread(previousPath),
+            id: "thread-1",
+            anchorKind: "page",
+            selectedText: "\"So we waste it!\" I tell him.",
+            selectedTextHash: "hash-quote-2",
+            startLine: 6,
+            startChar: 0,
+            endLine: 6,
+            endChar: 29,
+        },
+        {
+            ...createThread(previousPath),
+            id: "thread-2",
+            selectedText: "\"Okay, but we'll be wasting a set-up,\" says Ray.",
+            selectedTextHash: "hash-quote",
+            entries: [{
+                id: "entry-2",
+                body: "quote body",
+                timestamp: 1710000000200,
+            }],
+            createdAt: 1710000000200,
+            updatedAt: 1710000000200,
+        },
+    ];
+    adapter.files.set(
+        ".obsidian/plugins/side-note2/cache/hash-old-goal.json",
+        serializeSidecarThreads(previousPath, cachedThreads),
+    );
+    const commentManager = new CommentManager([]);
+    const aggregateCommentIndex = new AggregateCommentIndex();
+    let persistedData: PersistedPluginData = {};
+    let generatedIdCounter = 0;
+
+    const controller = new CommentPersistenceController({
+        app: {
+            vault: {
+                adapter: adapter as unknown as DataAdapter,
+                process: async () => "",
+            },
+        } as never,
+        getAllCommentsNotePath: () => "SideNote2 index.md",
+        getIndexHeaderImageUrl: () => "",
+        getIndexHeaderImageCaption: () => "",
+        shouldShowResolvedComments: () => false,
+        getMarkdownViewForFile: () => null,
+        getMarkdownFileByPath: (path) => filesByPath.get(path) ?? null,
+        getCurrentNoteContent: async () => noteBody,
+        getStoredNoteContent: async () => noteBody,
+        getParsedNoteComments: (filePath, noteContent) => parseNoteComments(noteContent, filePath),
+        getPluginDataDirPath: () => ".obsidian/plugins/side-note2",
+        getSideNoteSyncDeviceId: () => "device-a",
+        readPersistedPluginData: () => persistedData,
+        writePersistedPluginData: async (data) => {
+            persistedData = data;
+        },
+        isAllCommentsNotePath: () => false,
+        isCommentableFile: (candidate): candidate is TFile => !!candidate && candidate.extension === "md",
+        isMarkdownEditorFocused: () => false,
+        getCommentManager: () => commentManager,
+        getAggregateCommentIndex: () => aggregateCommentIndex,
+        createCommentId: () => `generated-id-${++generatedIdCounter}`,
+        hashText: async (text) => `hash-${text.replace(/\//g, "_")}`,
+        syncDerivedCommentLinksForFile: () => {},
+        refreshCommentViews: async () => {},
+        refreshAllCommentsSidebarViews: async () => {},
+        refreshEditorDecorations: () => {},
+        refreshMarkdownPreviews: () => {},
+        getCommentMentionedPageLabels: () => [],
+        syncIndexNoteLeafMode: async () => {},
+        log: async () => {},
+    });
+
+    try {
+        const comments = await controller.loadCommentsForFile(nextFile);
+        const sourceIdentityState = persistedData.sourceIdentityState as {
+            sources?: Record<string, { currentPath?: unknown }>;
+            pathToSourceId?: Record<string, string>;
+        };
+        const sourceId = sourceIdentityState.pathToSourceId?.[nextFile.path] ?? "";
+        const sourceSidecar = JSON.parse(adapter.files.get(getSourceSidecarStoragePath(sourceId)) ?? "{}") as {
+            notePath?: string;
+            threads?: CommentThread[];
+        };
+        const pathSidecar = JSON.parse(adapter.files.get(getSidecarStoragePath(nextFile.path)) ?? "{}") as {
+            notePath?: string;
+            threads?: CommentThread[];
+        };
+
+        assert.equal(comments.length, 2);
+        assert.equal(comments[0]?.filePath, nextFile.path);
+        assert.equal(sourceSidecar.notePath, nextFile.path);
+        assert.equal(sourceSidecar.threads?.length, 2);
+        assert.equal(sourceSidecar.threads?.[0]?.filePath, nextFile.path);
+        assert.equal(pathSidecar.notePath, nextFile.path);
+        assert.equal(pathSidecar.threads?.length, 2);
+        assert.equal(
+            sourceIdentityState.pathToSourceId?.[previousPath],
+            undefined,
+        );
+        assert.equal(
+            sourceIdentityState.pathToSourceId?.[nextFile.path],
+            sourceId,
+        );
+
+        const duplicateComments = await controller.loadCommentsForFile(duplicateFile);
+        const nextSourceIdentityState = persistedData.sourceIdentityState as {
+            sources?: Record<string, { currentPath?: unknown }>;
+            pathToSourceId?: Record<string, string>;
+        };
+
+        assert.deepEqual(duplicateComments, []);
+        assert.equal(commentManager.getCommentsForFile(duplicateFile.path).length, 0);
+        assert.equal(nextSourceIdentityState.sources?.[sourceId]?.currentPath, nextFile.path);
+        assert.notEqual(nextSourceIdentityState.pathToSourceId?.[duplicateFile.path], sourceId);
+    } finally {
+        globalThis.window = originalWindow;
+    }
+});
+
+test("comment persistence controller ignores generic chapter headings during renamed source recovery", async () => {
+    const originalWindow = globalThis.window;
+    globalThis.window = {
+        setTimeout: () => 1,
+        clearTimeout: () => {},
+    } as unknown as typeof globalThis.window;
+
+    const previousPath = "books/The Goal_ long old name.md";
+    const nextFile = createFile("books/The Effective Executive.md");
+    const noteBody = [
+        "# The Effective Executive",
+        "",
+        "## Chapter 1",
+        "",
+        "Effectiveness is a discipline.",
+        "",
+        "## Chapter 2",
+        "",
+        "Different content from the previous source.",
+    ].join("\n");
+    const adapter = new FakeAdapter();
+    adapter.directories.add(".obsidian/plugins/side-note2/cache");
+    adapter.files.set(
+        ".obsidian/plugins/side-note2/cache/hash-old-goal.json",
+        serializeSidecarThreads(previousPath, [{
+            ...createThread(previousPath),
+            id: "thread-1",
+            selectedText: "## Chapter 1",
+            selectedTextHash: "hash-chapter-1",
+        }, {
+            ...createThread(previousPath),
+            id: "thread-2",
+            selectedText: "## Chapter 2",
+            selectedTextHash: "hash-chapter-2",
+            entries: [{
+                id: "entry-2",
+                body: "chapter body",
+                timestamp: 1710000000200,
+            }],
+            createdAt: 1710000000200,
+            updatedAt: 1710000000200,
+        }]),
+    );
+    const commentManager = new CommentManager([]);
+    const aggregateCommentIndex = new AggregateCommentIndex();
+    let persistedData: PersistedPluginData = {};
+
+    const controller = new CommentPersistenceController({
+        app: {
+            vault: {
+                adapter: adapter as unknown as DataAdapter,
+                process: async () => "",
+            },
+        } as never,
+        getAllCommentsNotePath: () => "SideNote2 index.md",
+        getIndexHeaderImageUrl: () => "",
+        getIndexHeaderImageCaption: () => "",
+        shouldShowResolvedComments: () => false,
+        getMarkdownViewForFile: () => null,
+        getMarkdownFileByPath: (path) => path === nextFile.path ? nextFile : null,
+        getCurrentNoteContent: async () => noteBody,
+        getStoredNoteContent: async () => noteBody,
+        getParsedNoteComments: (filePath, noteContent) => parseNoteComments(noteContent, filePath),
+        getPluginDataDirPath: () => ".obsidian/plugins/side-note2",
+        getSideNoteSyncDeviceId: () => "device-a",
+        readPersistedPluginData: () => persistedData,
+        writePersistedPluginData: async (data) => {
+            persistedData = data;
+        },
+        isAllCommentsNotePath: () => false,
+        isCommentableFile: (candidate): candidate is TFile => !!candidate && candidate.extension === "md",
+        isMarkdownEditorFocused: () => false,
+        getCommentManager: () => commentManager,
+        getAggregateCommentIndex: () => aggregateCommentIndex,
+        createCommentId: () => "generated-id",
+        hashText: async (text) => `hash-${text.replace(/\//g, "_")}`,
+        syncDerivedCommentLinksForFile: () => {},
+        refreshCommentViews: async () => {},
+        refreshAllCommentsSidebarViews: async () => {},
+        refreshEditorDecorations: () => {},
+        refreshMarkdownPreviews: () => {},
+        getCommentMentionedPageLabels: () => [],
+        syncIndexNoteLeafMode: async () => {},
+        log: async () => {},
+    });
+
+    try {
+        const comments = await controller.loadCommentsForFile(nextFile);
+
+        assert.deepEqual(comments, []);
+        assert.equal(commentManager.getThreadById("thread-1"), undefined);
+        assert.equal(adapter.files.has(getSidecarStoragePath(nextFile.path)), false);
     } finally {
         globalThis.window = originalWindow;
     }
@@ -542,6 +1229,104 @@ test("comment persistence controller hydrates compacted snapshots into a missing
         assert.equal(commentManager.getCommentById("thread-1")?.comment, "external body");
         assert.equal(aggregateCommentIndex.getCommentById("thread-1")?.comment, "external body");
         assert.equal(sidecarPaths.some((path) => path.includes("hash-docs_note.md.json")), true);
+        assert.equal(
+            (persistedData.sideNoteSyncEventState as {
+                processedWatermarks?: Record<string, Record<string, number>>;
+            }).processedWatermarks?.["device-a"]?.["device-b"],
+            1,
+        );
+    } finally {
+        globalThis.window = originalWindow;
+    }
+});
+
+test("comment persistence controller skips incompatible compacted snapshots for existing files", async () => {
+    const originalWindow = globalThis.window;
+    globalThis.window = {
+        setTimeout: () => 1,
+        clearTimeout: () => {},
+    } as unknown as typeof globalThis.window;
+
+    const file = createFile("docs/effective.md");
+    const noteBody = "# Effective\n\nThis note has unrelated content.\n";
+    const adapter = new FakeAdapter();
+    const commentManager = new CommentManager([]);
+    const aggregateCommentIndex = new AggregateCommentIndex();
+    let persistedData: PersistedPluginData = {};
+    let eventCounter = 0;
+    const incompatibleThread: CommentThread = {
+        ...createThread(file.path),
+        selectedText: "an unrelated bottleneck quote from another source",
+        selectedTextHash: "hash-unrelated",
+    };
+    const remoteEventStore = new SideNoteSyncEventStore({
+        readPersistedPluginData: () => persistedData,
+        writePersistedPluginData: async (data) => {
+            persistedData = data;
+        },
+        getDeviceId: () => "device-b",
+        createEventId: () => `remote-event-${++eventCounter}`,
+        hashText: async (text) => `hash-${text.replace(/\//g, "_")}`,
+        now: () => 1710000000100 + eventCounter,
+    });
+
+    await remoteEventStore.appendLocalEvents(file.path, [{
+        op: "createThread",
+        payload: {
+            thread: incompatibleThread,
+        },
+    }]);
+    await remoteEventStore.compactProcessedEventsForSnapshots([{
+        notePath: file.path,
+        threads: [incompatibleThread],
+    }]);
+
+    const controller = new CommentPersistenceController({
+        app: {
+            vault: {
+                adapter: adapter as unknown as DataAdapter,
+                process: async () => "",
+            },
+        } as never,
+        getAllCommentsNotePath: () => "SideNote2 index.md",
+        getIndexHeaderImageUrl: () => "",
+        getIndexHeaderImageCaption: () => "",
+        shouldShowResolvedComments: () => false,
+        getMarkdownViewForFile: () => null,
+        getMarkdownFileByPath: (path) => path === file.path ? file : null,
+        getCurrentNoteContent: async () => noteBody,
+        getStoredNoteContent: async () => noteBody,
+        getParsedNoteComments: (filePath, noteContent) => parseNoteComments(noteContent, filePath),
+        getPluginDataDirPath: () => ".obsidian/plugins/side-note2",
+        getSideNoteSyncDeviceId: () => "device-a",
+        readPersistedPluginData: () => persistedData,
+        writePersistedPluginData: async (data) => {
+            persistedData = data;
+        },
+        isAllCommentsNotePath: () => false,
+        isCommentableFile: (candidate): candidate is TFile => !!candidate && candidate.extension === "md",
+        isMarkdownEditorFocused: () => false,
+        getCommentManager: () => commentManager,
+        getAggregateCommentIndex: () => aggregateCommentIndex,
+        createCommentId: () => "generated-id",
+        hashText: async (text) => `hash-${text.replace(/\//g, "_")}`,
+        syncDerivedCommentLinksForFile: () => {},
+        refreshCommentViews: async () => {},
+        refreshAllCommentsSidebarViews: async () => {},
+        refreshEditorDecorations: () => {},
+        refreshMarkdownPreviews: () => {},
+        getCommentMentionedPageLabels: () => [],
+        syncIndexNoteLeafMode: async () => {},
+        log: async () => {},
+    });
+
+    try {
+        const appliedEventCount = await controller.replaySyncedSideNoteEvents();
+
+        assert.equal(appliedEventCount, 0);
+        assert.equal(commentManager.getCommentById("thread-1"), undefined);
+        assert.equal(aggregateCommentIndex.getCommentById("thread-1"), null);
+        assert.equal(adapter.files.has(getSidecarStoragePath(file.path)), false);
         assert.equal(
             (persistedData.sideNoteSyncEventState as {
                 processedWatermarks?: Record<string, Record<string, number>>;

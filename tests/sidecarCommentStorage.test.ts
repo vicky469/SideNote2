@@ -120,6 +120,30 @@ test("sidecar comment storage renames the hashed file when the note path changes
     assert.equal(renamedThreads[0].filePath, renamedNotePath);
 });
 
+test("sidecar comment storage writes source-id keyed files and retargets threads on read", async () => {
+    const adapter = new FakeAdapter();
+    const storage = new SidecarCommentStorage({
+        adapter: adapter as unknown as DataAdapter,
+        pluginDirPath: ".obsidian/plugins/side-note2",
+        hashText: async (text) => hashText(text),
+    });
+    const sourceId = "src-123";
+    const originalNotePath = "books/original.md";
+    const renamedNotePath = "books/renamed.md";
+    const expectedHash = hashText(sourceId);
+    const expectedPath = `.obsidian/plugins/side-note2/sidenotes/by-source/${expectedHash.slice(0, 2)}/${expectedHash}.json`;
+
+    await storage.writeForSource(sourceId, originalNotePath, [createThread(originalNotePath)]);
+
+    assert.equal(await storage.existsForSource(sourceId), true);
+    assert.equal(adapter.files.has(expectedPath), true);
+
+    const readThreads = await storage.readForSource(sourceId, renamedNotePath);
+    assert.ok(readThreads);
+    assert.equal(readThreads[0].filePath, renamedNotePath);
+    assert.equal(readThreads[0].entries[0]?.body, "hello");
+});
+
 test("sidecar comment storage removes the sidecar file when the thread list becomes empty", async () => {
     const adapter = new FakeAdapter();
     const storage = new SidecarCommentStorage({

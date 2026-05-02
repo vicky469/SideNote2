@@ -76,8 +76,12 @@ test("findCommentLocationTargetInMarkdownLine finds the side note target in a ge
 
 test("findFileHeadingPathInMarkdownLine extracts the source file path from an index heading row", () => {
     assert.equal(
-        findFileHeadingPathInMarkdownLine('  <strong class="sidenote2-index-heading-label" title="Folder/Note.md">Note.md</strong>'),
+        findFileHeadingPathInMarkdownLine('##### <span class="sidenote2-index-heading-label" title="Folder/Note.md">Note.md</span>'),
         "Folder/Note.md",
+    );
+    assert.equal(
+        findFileHeadingPathInMarkdownLine('##### <strong class="sidenote2-index-heading-label" title="Folder/Legacy.md">Legacy.md</strong>'),
+        "Folder/Legacy.md",
     );
     assert.equal(findFileHeadingPathInMarkdownLine("### Folder"), null);
 });
@@ -92,7 +96,7 @@ test("findIndexMarkdownLineTarget resolves both comment rows and file heading ro
         },
     );
     assert.deepEqual(
-        findIndexMarkdownLineTarget('  <strong class="sidenote2-index-heading-label" title="Folder/Note.md">Note.md</strong>'),
+        findIndexMarkdownLineTarget('##### <span class="sidenote2-index-heading-label" title="Folder/Note.md">Note.md</span>'),
         {
             kind: "file",
             filePath: "Folder/Note.md",
@@ -223,8 +227,8 @@ test("buildAllCommentsNoteContent groups comments by file and shows selected tex
     assert.doesNotMatch(content, /## Connected Notes/);
     assert.doesNotMatch(content, /Page notes/);
     assert.doesNotMatch(content, /Anchored notes/);
-    assert.match(content, /<strong class="sidenote2-index-heading-label" title="A\.md">A\.md<\/strong>[\s\S]*<span class="sidenote2-index-kind-dot sidenote2-index-kind-anchored"><\/span> \[~~alpha~~\]\(obsidian:\/\/side-note2-comment\?vault=dev&file=A\.md&commentId=comment-2&kind=anchored\)/);
-    assert.doesNotMatch(content, /<strong class="sidenote2-index-heading-label" title="B\.md">B\.md<\/strong>/);
+    assert.match(content, /<span class="sidenote2-index-heading-label" title="A\.md">A\.md<\/span>[\s\S]*<span class="sidenote2-index-kind-dot sidenote2-index-kind-anchored"><\/span> \[~~alpha~~\]\(obsidian:\/\/side-note2-comment\?vault=dev&file=A\.md&commentId=comment-2&kind=anchored\)/);
+    assert.doesNotMatch(content, /<span class="sidenote2-index-heading-label" title="B\.md">B\.md<\/span>/);
     assert.doesNotMatch(content, /Comment A/);
     assert.doesNotMatch(content, /\[\[[^\]]+\]\]/);
     assert.doesNotMatch(content, /sidenote2-index-heading-link/);
@@ -249,7 +253,7 @@ test("buildAllCommentsNoteContent active mode hides resolved comments without ad
     });
 
     assert.doesNotMatch(content, /<div class="sidenote2-index-visibility-label">/);
-    assert.match(content, /<strong class="sidenote2-index-heading-label" title="B\.md">B\.md<\/strong>[\s\S]*commentId=comment-1/);
+    assert.match(content, /<span class="sidenote2-index-heading-label" title="B\.md">B\.md<\/span>[\s\S]*commentId=comment-1/);
     assert.doesNotMatch(content, /commentId=comment-2/);
 });
 
@@ -301,7 +305,7 @@ test("buildAllCommentsNoteContent ignores comments attached to the generated agg
     ]);
 
     assert.doesNotMatch(content, /\[\[SideNote2 comments\.md\]\]/);
-    assert.match(content, /<strong class="sidenote2-index-heading-label" title="Z\.md">Z\.md<\/strong>/);
+    assert.match(content, /<span class="sidenote2-index-heading-label" title="Z\.md">Z\.md<\/span>/);
 });
 
 test("buildAllCommentsNoteContent ignores comments whose source file no longer exists", () => {
@@ -321,7 +325,7 @@ test("buildAllCommentsNoteContent ignores comments whose source file no longer e
     });
 
     assert.doesNotMatch(content, /Missing\.md/);
-    assert.match(content, /<strong class="sidenote2-index-heading-label" title="Real\.md">Real\.md<\/strong>/);
+    assert.match(content, /<span class="sidenote2-index-heading-label" title="Real\.md">Real\.md<\/span>/);
 });
 
 test("buildAllCommentsNoteContent escapes markdown-heavy selections and truncates long previews", () => {
@@ -344,7 +348,7 @@ test("buildAllCommentsNoteContent groups files under a shared folder heading", (
 
     assert.match(
         content,
-        /### Clippings\n\n  <strong class="sidenote2-index-heading-label" title="Clippings\/Vlad Tenev and Tudor Achim on mathematical superintelligence and the end of buggy software\.md">Vlad Tenev and Tudor Achim on mathematical superintelligence and the end of buggy software\.md<\/strong>/,
+        /### Clippings\n\n##### <span class="sidenote2-index-heading-label" title="Clippings\/Vlad Tenev and Tudor Achim on mathematical superintelligence and the end of buggy software\.md">Vlad Tenev and Tudor Achim on mathematical superintelligence and the end of buggy software\.md<\/span>/,
     );
 });
 
@@ -363,8 +367,8 @@ test("buildAllCommentsNoteContent groups multiple files under the same path head
     ]);
 
     assert.equal(content.match(/### Projects\/Alpha/g)?.length ?? 0, 1);
-    assert.match(content, /### Projects\/Alpha\n\n  <strong class="sidenote2-index-heading-label" title="Projects\/Alpha\/Note A\.md">Note A\.md<\/strong>/);
-    assert.match(content, /  <strong class="sidenote2-index-heading-label" title="Projects\/Alpha\/Note B\.md">Note B\.md<\/strong>/);
+    assert.match(content, /### Projects\/Alpha\n\n##### <span class="sidenote2-index-heading-label" title="Projects\/Alpha\/Note A\.md">Note A\.md<\/span>/);
+    assert.match(content, /##### <span class="sidenote2-index-heading-label" title="Projects\/Alpha\/Note B\.md">Note B\.md<\/span>/);
 });
 
 test("buildAllCommentsNoteContent includes extracted comment tags for search", () => {
@@ -397,7 +401,7 @@ test("buildAllCommentsNoteContent labels page notes and orphaned notes", () => {
     ]);
 
     assert.equal(content.match(/### Folder/g)?.length ?? 0, 1);
-    assert.match(content, /### Folder\n\n  <strong class="sidenote2-index-heading-label" title="Folder\/Note\.md">Note\.md<\/strong>[\s\S]*<span class="sidenote2-index-kind-dot sidenote2-index-kind-page"><\/span> \[This is a side note\.\]\(obsidian:\/\/side-note2-comment\?vault=dev&file=Folder%2FNote\.md&commentId=page-note&kind=page\) \^sidenote2-index-comment-page-note\n\n<span class="sidenote2-index-kind-dot sidenote2-index-kind-anchored"><\/span> \[orphaned · missing text\]\(obsidian:\/\/side-note2-comment\?vault=dev&file=Folder%2FNote\.md&commentId=orphan-note&kind=anchored\) \^sidenote2-index-comment-orphan-note/);
+    assert.match(content, /### Folder\n\n##### <span class="sidenote2-index-heading-label" title="Folder\/Note\.md">Note\.md<\/span>[\s\S]*<span class="sidenote2-index-kind-dot sidenote2-index-kind-page"><\/span> \[This is a side note\.\]\(obsidian:\/\/side-note2-comment\?vault=dev&file=Folder%2FNote\.md&commentId=page-note&kind=page\) \^sidenote2-index-comment-page-note\n\n<span class="sidenote2-index-kind-dot sidenote2-index-kind-anchored"><\/span> \[orphaned · missing text\]\(obsidian:\/\/side-note2-comment\?vault=dev&file=Folder%2FNote\.md&commentId=orphan-note&kind=anchored\) \^sidenote2-index-comment-orphan-note/);
 });
 
 test("buildAllCommentsNoteContent uses page note comment previews and truncates them to 10 words", () => {
@@ -441,9 +445,9 @@ test("buildAllCommentsNoteContent uses page note comment previews and truncates 
     ]);
 
     assert.equal(content.match(/### Folder/g)?.length ?? 0, 1);
-    assert.match(content, /### Folder[\s\S]*  <strong class="sidenote2-index-heading-label" title="Folder\/Note\.md">Note\.md<\/strong>[\s\S]*\[Page note preview one from the comment body\.\]\(obsidian:\/\/side-note2-comment\?vault=dev&file=Folder%2FNote\.md&commentId=page-note-1&kind=page\)/);
-    assert.match(content, /### Folder[\s\S]*  <strong class="sidenote2-index-heading-label" title="Folder\/Note\.md">Note\.md<\/strong>[\s\S]*\[one two three four five six seven eight nine ten\.\.\.\]\(obsidian:\/\/side-note2-comment\?vault=dev&file=Folder%2FNote\.md&commentId=page-note-2&kind=page\)/);
-    assert.match(content, /### Folder[\s\S]*  <strong class="sidenote2-index-heading-label" title="Folder\/Other\.md">Other\.md<\/strong>[\s\S]*\[Other file page note body\.\]\(obsidian:\/\/side-note2-comment\?vault=dev&file=Folder%2FOther\.md&commentId=page-note-other-file&kind=page\)/);
+    assert.match(content, /### Folder[\s\S]*##### <span class="sidenote2-index-heading-label" title="Folder\/Note\.md">Note\.md<\/span>[\s\S]*\[Page note preview one from the comment body\.\]\(obsidian:\/\/side-note2-comment\?vault=dev&file=Folder%2FNote\.md&commentId=page-note-1&kind=page\)/);
+    assert.match(content, /### Folder[\s\S]*##### <span class="sidenote2-index-heading-label" title="Folder\/Note\.md">Note\.md<\/span>[\s\S]*\[one two three four five six seven eight nine ten\.\.\.\]\(obsidian:\/\/side-note2-comment\?vault=dev&file=Folder%2FNote\.md&commentId=page-note-2&kind=page\)/);
+    assert.match(content, /### Folder[\s\S]*##### <span class="sidenote2-index-heading-label" title="Folder\/Other\.md">Other\.md<\/span>[\s\S]*\[Other file page note body\.\]\(obsidian:\/\/side-note2-comment\?vault=dev&file=Folder%2FOther\.md&commentId=page-note-other-file&kind=page\)/);
 });
 
 test("buildAllCommentsNoteContent shows markdown link labels in page note previews", () => {
@@ -537,7 +541,7 @@ test("buildAllCommentsNoteContent separates index comment rows into distinct mar
 
     assert.match(
         content,
-        /### Folder\n\n  <strong class="sidenote2-index-heading-label" title="Folder\/Note\.md">Note\.md<\/strong>\n\n<span class="sidenote2-index-kind-dot sidenote2-index-kind-anchored"><\/span> \[alpha\]\(obsidian:\/\/side-note2-comment\?vault=dev&file=Folder%2FNote\.md&commentId=comment-1&kind=anchored\) \^sidenote2-index-comment-comment-1\n\n<span class="sidenote2-index-kind-dot sidenote2-index-kind-anchored"><\/span> \[beta\]\(obsidian:\/\/side-note2-comment\?vault=dev&file=Folder%2FNote\.md&commentId=comment-2&kind=anchored\) \^sidenote2-index-comment-comment-2/,
+        /### Folder\n\n##### <span class="sidenote2-index-heading-label" title="Folder\/Note\.md">Note\.md<\/span>\n\n<span class="sidenote2-index-kind-dot sidenote2-index-kind-anchored"><\/span> \[alpha\]\(obsidian:\/\/side-note2-comment\?vault=dev&file=Folder%2FNote\.md&commentId=comment-1&kind=anchored\) \^sidenote2-index-comment-comment-1\n\n<span class="sidenote2-index-kind-dot sidenote2-index-kind-anchored"><\/span> \[beta\]\(obsidian:\/\/side-note2-comment\?vault=dev&file=Folder%2FNote\.md&commentId=comment-2&kind=anchored\) \^sidenote2-index-comment-comment-2/,
     );
 });
 
@@ -571,7 +575,7 @@ test("buildAllCommentsNoteContent keeps page notes first within the same file wi
 
     assert.match(
         content,
-        /### Folder\n\n  <strong class="sidenote2-index-heading-label" title="Folder\/Note\.md">Note\.md<\/strong>\n\n<span class="sidenote2-index-kind-dot sidenote2-index-kind-page"><\/span> \[This is a side note\.\]\(obsidian:\/\/side-note2-comment\?vault=dev&file=Folder%2FNote\.md&commentId=page-note&kind=page\) \^sidenote2-index-comment-page-note\n\n<span class="sidenote2-index-kind-dot sidenote2-index-kind-anchored"><\/span> \[alpha\]\(obsidian:\/\/side-note2-comment\?vault=dev&file=Folder%2FNote\.md&commentId=anchored-note&kind=anchored\) \^sidenote2-index-comment-anchored-note\n\n<span class="sidenote2-index-kind-dot sidenote2-index-kind-anchored"><\/span> \[beta\]\(obsidian:\/\/side-note2-comment\?vault=dev&file=Folder%2FNote\.md&commentId=anchored-note-2&kind=anchored\) \^sidenote2-index-comment-anchored-note-2/,
+        /### Folder\n\n##### <span class="sidenote2-index-heading-label" title="Folder\/Note\.md">Note\.md<\/span>\n\n<span class="sidenote2-index-kind-dot sidenote2-index-kind-page"><\/span> \[This is a side note\.\]\(obsidian:\/\/side-note2-comment\?vault=dev&file=Folder%2FNote\.md&commentId=page-note&kind=page\) \^sidenote2-index-comment-page-note\n\n<span class="sidenote2-index-kind-dot sidenote2-index-kind-anchored"><\/span> \[alpha\]\(obsidian:\/\/side-note2-comment\?vault=dev&file=Folder%2FNote\.md&commentId=anchored-note&kind=anchored\) \^sidenote2-index-comment-anchored-note\n\n<span class="sidenote2-index-kind-dot sidenote2-index-kind-anchored"><\/span> \[beta\]\(obsidian:\/\/side-note2-comment\?vault=dev&file=Folder%2FNote\.md&commentId=anchored-note-2&kind=anchored\) \^sidenote2-index-comment-anchored-note-2/,
     );
 });
 

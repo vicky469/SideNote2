@@ -2,7 +2,10 @@ import * as assert from "node:assert/strict";
 import test from "node:test";
 import type { Comment } from "../src/commentManager";
 import { findClickedHighlightCommentId } from "../src/control/commentHighlightClickTarget";
-import { findClickedIndexLivePreviewTarget } from "../src/control/commentIndexClickTarget";
+import {
+    findClickedIndexLivePreviewTarget,
+    isIndexNativeCollapseControlTarget,
+} from "../src/control/commentIndexClickTarget";
 import { buildPreviewHighlightWraps } from "../src/control/commentHighlightPlanner";
 
 function createComment(overrides: Partial<Comment> = {}): Comment {
@@ -109,7 +112,7 @@ test("findClickedIndexLivePreviewTarget resolves comment links from live preview
     });
 });
 
-test("findClickedIndexLivePreviewTarget resolves file headings from live preview DOM", () => {
+test("findClickedIndexLivePreviewTarget leaves file headings to native selection and collapse", () => {
     const target = {
         closest: (selector: string) => {
             if (selector === "a.sidenote2-index-comment-link[data-sidenote2-comment-url]") {
@@ -129,10 +132,33 @@ test("findClickedIndexLivePreviewTarget resolves file headings from live preview
         },
     };
 
-    assert.deepEqual(findClickedIndexLivePreviewTarget(target), {
-        kind: "file",
-        filePath: "books/Note.md",
-    });
+    assert.equal(findClickedIndexLivePreviewTarget(target), null);
+});
+
+test("findClickedIndexLivePreviewTarget leaves native collapse controls alone", () => {
+    const target = {
+        closest: (selector: string) => {
+            if (selector.includes(".collapse-indicator")) {
+                return {
+                    dataset: {},
+                    getAttribute: () => null,
+                };
+            }
+            if (selector === "a.sidenote2-index-comment-link[data-sidenote2-comment-url]") {
+                return {
+                    dataset: {
+                        sidenote2CommentUrl: "obsidian://side-note2-comment?vault=public&file=books%2FNote.md&commentId=comment-7",
+                    },
+                    getAttribute: () => null,
+                };
+            }
+
+            return null;
+        },
+    };
+
+    assert.equal(isIndexNativeCollapseControlTarget(target), true);
+    assert.equal(findClickedIndexLivePreviewTarget(target), null);
 });
 
 test("findClickedIndexLivePreviewTarget returns null for non-index elements", () => {

@@ -116,6 +116,24 @@ test("side-note sync reducer applies duplicate events idempotently and keeps del
     assert.equal(reduced.appliedLogicalClocks.has("device-a:1"), true);
 });
 
+test("side-note sync reducer retargets renameSource events that use nextPath", () => {
+    const previous = createThread("docs/old.md");
+    const renameSource = createEvent({
+        op: "renameSource",
+        notePath: "docs/old.md",
+        noteHash: "hash-docs_old.md",
+        payload: {
+            sourceId: "src-1",
+            previousPath: "docs/old.md",
+            nextPath: "docs/new.md",
+        },
+    });
+
+    const reduced = reduceSideNoteSyncEvents([previous], [renameSource]);
+
+    assert.equal(reduced.threads[0].filePath, "docs/new.md");
+});
+
 test("side-note sync diff emits compact mutation events", () => {
     const previous = createThread("docs/note.md");
     const next = createThread("docs/note.md", {
@@ -470,6 +488,29 @@ test("side-note sync event store exposes remote events until the current device 
 
     assert.deepEqual(store.getUnprocessedEvents(), []);
     assert.equal(store.readState().processedWatermarks["device-a"]?.["device-b"], 1);
+});
+
+test("side-note sync event store skips no-op processed watermark writes", async () => {
+    let persistedData: PersistedPluginData = {};
+    let writeCount = 0;
+    const store = new SideNoteSyncEventStore({
+        readPersistedPluginData: () => persistedData,
+        writePersistedPluginData: async (data) => {
+            persistedData = data;
+            writeCount += 1;
+        },
+        getDeviceId: () => "device-a",
+        createEventId: () => "event-1",
+        hashText: async (text) => `hash-${text.replace(/\//g, "_")}`,
+        now: () => 1710000000100,
+    });
+
+    await store.markWatermarksProcessed({ "device-b": 2 });
+    await store.markWatermarksProcessed({ "device-b": 1 });
+    await store.markWatermarksProcessed({ "device-b": 2 });
+
+    assert.equal(writeCount, 1);
+    assert.equal(store.readState().processedWatermarks["device-a"]?.["device-b"], 2);
 });
 
 test("side-note sync event store compacts only globally covered log prefixes", async () => {

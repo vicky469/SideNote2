@@ -13,6 +13,7 @@ import {
 import {
     getManagedSectionEditForThreads,
     getManagedSectionKind,
+    getVisibleNoteContent,
     serializeNoteCommentThreads,
     type ParsedNoteComments,
 } from "../core/storage/noteCommentStorage";
@@ -32,6 +33,10 @@ import {
     type SideNoteSyncSnapshotInput,
 } from "./sideNoteSyncEventStore";
 import type { PersistedPluginData } from "./indexNoteSettingsPlanner";
+import {
+    SourceIdentityStore,
+    type SourceIdentityRecord,
+} from "./sourceIdentityStore";
 
 type PersistOptions = {
     immediateAggregateRefresh?: boolean;
@@ -48,6 +53,14 @@ type SyncedFileComments = {
 };
 
 type VisibleSyncedFileComments = Omit<SyncedFileComments, "source">;
+
+type LegacySourceCandidate = {
+    notePath: string;
+    threads: CommentThread[];
+    updatedAt: number;
+    origin: "snapshot" | "cache";
+    coveredWatermarks?: Record<string, number>;
+};
 
 export interface CommentPersistenceHost {
     app: Plugin["app"];
@@ -102,16 +115,217 @@ function getPayloadRecord(event: SideNoteSyncEvent): Record<string, unknown> | n
 function getSyncedEventTargetNotePath(notePath: string, events: SideNoteSyncEvent[]): string {
     let targetNotePath = notePath;
     for (const event of events) {
-        if (event.op !== "renameNote") {
+        if (event.op !== "renameNote" && event.op !== "renameSource") {
             continue;
         }
 
         const payload = getPayloadRecord(event);
         if (typeof payload?.nextNotePath === "string" && payload.nextNotePath.trim()) {
             targetNotePath = payload.nextNotePath;
+        } else if (typeof payload?.nextPath === "string" && payload.nextPath.trim()) {
+            targetNotePath = payload.nextPath;
         }
     }
     return targetNotePath;
+}
+
+function getSyncedEventSourceId(events: SideNoteSyncEvent[]): string | null {
+    for (let index = events.length - 1; index >= 0; index -= 1) {
+        const payload = getPayloadRecord(events[index]);
+        if (typeof payload?.sourceId === "string" && payload.sourceId.trim()) {
+            return payload.sourceId.trim();
+        }
+    }
+    return null;
+}
+
+function extractFirstMarkdownHeading(noteContent: string): string | null {
+    for (const line of noteContent.replace(/\r\n/g, "\n").split("\n")) {
+        const match = /^#\s+(.+?)\s*#*\s*$/.exec(line);
+        if (match?.[1]?.trim()) {
+            return match[1].trim();
+        }
+    }
+    return null;
+}
+
+function normalizeSourceIdentityLabel(value: string): string {
+    return value
+        .normalize("NFKC")
+        .toLocaleLowerCase()
+        .replace(/[^\p{Letter}\p{Number}]+/gu, " ")
+        .replace(/\s+/g, " ")
+        .trim();
+}
+
+function sourceIdentityLabelsForFile(filePath: string, noteContent: string): string[] {
+    const labels = [
+        getPageCommentLabel(filePath),
+        extractFirstMarkdownHeading(noteContent) ?? "",
+    ]
+        .map((label) => normalizeSourceIdentityLabel(label))
+        .filter((label) => label.length >= 4);
+    return Array.from(new Set(labels));
+}
+
+function sourceIdentityLabelsForSnapshot(snapshot: SideNoteSyncNoteSnapshot): string[] {
+    const labels = [
+        getPageCommentLabel(snapshot.notePath),
+        ...snapshot.threads.map((thread) => thread.selectedText),
+    ]
+        .map((label) => normalizeSourceIdentityLabel(label))
+        .filter((label) => label.length >= 4);
+    return Array.from(new Set(labels));
+}
+
+function sourceIdentityLabelsMatch(left: string, right: string): boolean {
+    return left === right
+        || left.startsWith(`${right} `)
+        || right.startsWith(`${left} `);
+}
+
+function normalizeContentMatchText(value: string): string {
+    return value
+        .normalize("NFKC")
+        .replace(/\r\n/g, "\n")
+        .replace(/\s+/g, " ")
+        .trim()
+        .toLocaleLowerCase();
+}
+
+function isGenericRecoveryHeading(value: string): boolean {
+    const headingMatch = /^#{1,6}\s+(.+?)\s*#*\s*$/.exec(value.trim());
+    if (!headingMatch?.[1]) {
+        return false;
+    }
+
+    const headingLabel = normalizeSourceIdentityLabel(headingMatch[1]);
+    return /^(chapter|part|section|book|volume|appendix)\s+([0-9]+|[ivxlcdm]+|one|two|three|four|five|six|seven|eight|nine|ten)$/.test(headingLabel)
+        || /^(introduction|conclusion|preface|foreword|afterword|prologue|epilogue|contents|table of contents|acknowledgments|acknowledgements|notes|bibliography|references|index)$/.test(headingLabel);
+}
+
+function getDistinctiveSelectedTextAnchors(
+    threads: CommentThread[],
+    options: { selectionOnly?: boolean } = {},
+): string[] {
+    const anchors = threads
+        .filter((thread) => !options.selectionOnly || thread.anchorKind !== "page")
+        .map((thread) => thread.selectedText)
+        .filter((selectedText) => !isGenericRecoveryHeading(selectedText))
+        .map((selectedText) => normalizeContentMatchText(selectedText))
+        .filter((selectedText) => selectedText.length >= 8);
+    return Array.from(new Set(anchors));
+}
+
+function getAnchorContentMatch(
+    threads: CommentThread[],
+    targetNoteContent: string,
+    options: { selectionOnly?: boolean } = {},
+): {
+    matchedAnchorCount: number;
+    anchorCount: number;
+} {
+    const targetContent = normalizeContentMatchText(getVisibleNoteContent(targetNoteContent));
+    if (!targetContent) {
+        return { matchedAnchorCount: 0, anchorCount: 0 };
+    }
+
+    const anchors = getDistinctiveSelectedTextAnchors(threads, options);
+    let matchedAnchorCount = 0;
+    for (const anchor of anchors) {
+        if (targetContent.includes(anchor)) {
+            matchedAnchorCount += 1;
+        }
+    }
+    return {
+        matchedAnchorCount,
+        anchorCount: anchors.length,
+    };
+}
+
+function areSnapshotThreadsCompatibleWithFile(
+    threads: CommentThread[],
+    targetNoteContent: string,
+): boolean {
+    const match = getAnchorContentMatch(threads, targetNoteContent, { selectionOnly: true });
+    if (match.anchorCount === 0) {
+        return true;
+    }
+
+    return match.matchedAnchorCount >= Math.min(2, match.anchorCount);
+}
+
+function normalizeSourceContentForFingerprint(noteContent: string): string {
+    return getVisibleNoteContent(noteContent)
+        .normalize("NFKC")
+        .replace(/\r\n/g, "\n")
+        .replace(/[ \t]+/g, " ")
+        .replace(/\n{3,}/g, "\n\n")
+        .trim()
+        .slice(0, 32768);
+}
+
+function getCandidateContentMatch(candidate: LegacySourceCandidate, targetFilePath: string, targetNoteContent: string): {
+    score: number;
+    matchedAnchorCount: number;
+} {
+    const targetContent = normalizeContentMatchText(getVisibleNoteContent(targetNoteContent));
+    if (!targetContent) {
+        return { score: 0, matchedAnchorCount: 0 };
+    }
+
+    const candidateAnchors = getDistinctiveSelectedTextAnchors(candidate.threads);
+    let score = 0;
+    let matchedAnchorCount = 0;
+    for (const anchor of candidateAnchors) {
+        if (!targetContent.includes(anchor)) {
+            continue;
+        }
+
+        matchedAnchorCount += 1;
+        score += Math.min(40, Math.max(8, Math.floor(anchor.length / 8)));
+    }
+
+    const targetLabels = sourceIdentityLabelsForFile(targetFilePath, targetNoteContent);
+    for (const snapshotLabel of sourceIdentityLabelsForSnapshot({
+        notePath: candidate.notePath,
+        noteHash: "",
+        updatedAt: candidate.updatedAt,
+        coveredWatermarks: candidate.coveredWatermarks ?? {},
+        threads: candidate.threads,
+    })) {
+        for (const targetLabel of targetLabels) {
+            if (sourceIdentityLabelsMatch(snapshotLabel, targetLabel)) {
+                score += snapshotLabel === targetLabel ? 4 : 2;
+            }
+        }
+    }
+
+    return { score, matchedAnchorCount };
+}
+
+function isStrongLegacySourceMatch(candidate: LegacySourceCandidate, targetFilePath: string, targetNoteContent: string): boolean {
+    const match = getCandidateContentMatch(candidate, targetFilePath, targetNoteContent);
+    if (match.matchedAnchorCount >= 2) {
+        return true;
+    }
+
+    if (candidate.threads.length === 1 && match.matchedAnchorCount === 1 && match.score >= 16) {
+        return true;
+    }
+
+    return false;
+}
+
+function mergeSyncWatermarks(
+    left: Record<string, number>,
+    right: Record<string, number>,
+): Record<string, number> {
+    const merged = { ...left };
+    for (const [deviceId, logicalClock] of Object.entries(right)) {
+        merged[deviceId] = Math.max(merged[deviceId] ?? 0, logicalClock);
+    }
+    return merged;
 }
 
 function hasDeleteNoteEvent(events: SideNoteSyncEvent[]): boolean {
@@ -357,11 +571,14 @@ export class CommentPersistenceController {
     private readonly commentViewRefreshSuppressions = new Map<string, number>();
     private readonly sidecarStorage: SidecarCommentStorage;
     private readonly syncEventStore: SideNoteSyncEventStore;
+    private readonly sourceIdentityStore: SourceIdentityStore;
     private aggregateRefreshTimer: number | null = null;
     private aggregateRefreshPromise: Promise<void> | null = null;
     private aggregateRefreshQueued = false;
     private aggregateIndexInitialized = false;
     private aggregateIndexInitializationPromise: Promise<void> | null = null;
+    private fullSyncedEventReplayPromise: Promise<number> | null = null;
+    private readonly targetedSyncedEventReplayPromises = new Map<string, Promise<number>>();
 
     constructor(private readonly host: CommentPersistenceHost) {
         this.sidecarStorage = new SidecarCommentStorage({
@@ -378,15 +595,96 @@ export class CommentPersistenceController {
             hashText: (text) => host.hashText(text),
             now: () => Date.now(),
         });
+        this.sourceIdentityStore = new SourceIdentityStore({
+            readPersistedPluginData: () => host.readPersistedPluginData(),
+            readLatestPersistedPluginData: () => host.loadPersistedPluginData?.() ?? Promise.resolve(host.readPersistedPluginData()),
+            writePersistedPluginData: (data) => host.writePersistedPluginData(data),
+            createSourceId: () => `src-${host.createCommentId()}`,
+            now: () => Date.now(),
+        });
+    }
+
+    private async getSourceContentFingerprint(noteContent: string): Promise<string | null> {
+        const normalizedContent = normalizeSourceContentForFingerprint(noteContent);
+        return normalizedContent.length > 0
+            ? this.host.hashText(normalizedContent)
+            : null;
+    }
+
+    private async ensureSourceIdentityForFilePath(
+        filePath: string,
+        noteContent?: string,
+    ): Promise<SourceIdentityRecord> {
+        await this.sourceIdentityStore.refreshFromLatestPersistedData();
+        const fingerprint = noteContent === undefined
+            ? null
+            : await this.getSourceContentFingerprint(noteContent);
+        const existingRecord = this.sourceIdentityStore.getRecordByPath(filePath);
+        if (
+            existingRecord
+            && existingRecord.currentPath !== filePath
+            && !!this.host.getMarkdownFileByPath(existingRecord.currentPath)
+        ) {
+            return this.sourceIdentityStore.createSourceForPath(filePath, fingerprint);
+        }
+        return this.sourceIdentityStore.ensureSourceForPath(filePath, fingerprint);
+    }
+
+    private async writeSourceAndPathSidecars(
+        sourceId: string,
+        filePath: string,
+        threads: CommentThread[],
+    ): Promise<void> {
+        await this.sidecarStorage.writeForSource(sourceId, filePath, threads);
+        await this.sidecarStorage.write(filePath, threads);
+    }
+
+    private async readSourceOrPathSidecar(
+        sourceRecord: SourceIdentityRecord,
+        filePath: string,
+    ): Promise<{
+        threads: CommentThread[];
+        source: "source" | "path";
+    } | null> {
+        const sourceThreads = await this.sidecarStorage.readForSource(sourceRecord.sourceId, filePath);
+        if (sourceThreads) {
+            return {
+                threads: sourceThreads,
+                source: "source",
+            };
+        }
+
+        const pathThreads = await this.sidecarStorage.read(filePath);
+        if (!pathThreads) {
+            return null;
+        }
+
+        await this.sidecarStorage.writeForSource(sourceRecord.sourceId, filePath, pathThreads);
+        return {
+            threads: pathThreads,
+            source: "path",
+        };
     }
 
     public async renameStoredComments(previousFilePath: string, nextFilePath: string): Promise<void> {
-        const previousThreads = await this.sidecarStorage.read(previousFilePath);
+        await this.sourceIdentityStore.refreshFromLatestPersistedData();
+        const existingSourceRecord = this.sourceIdentityStore.getRecordByPath(previousFilePath)
+            ?? this.sourceIdentityStore.getRecordByPath(nextFilePath);
+        const previousSourceThreads = existingSourceRecord
+            ? await this.sidecarStorage.readForSource(existingSourceRecord.sourceId, previousFilePath)
+            : null;
+        const previousThreads = previousSourceThreads ?? await this.sidecarStorage.read(previousFilePath);
+        const sourceRecord = await this.sourceIdentityStore.recordRename(previousFilePath, nextFilePath);
         await this.sidecarStorage.rename(previousFilePath, nextFilePath);
         if (previousThreads && previousThreads.length > 0) {
+            const retargetedThreads = retargetThreads(previousThreads, nextFilePath);
+            await this.writeSourceAndPathSidecars(sourceRecord.sourceId, nextFilePath, retargetedThreads);
             await this.syncEventStore.appendLocalEvents(previousFilePath, [{
-                op: "renameNote",
+                op: "renameSource",
                 payload: {
+                    sourceId: sourceRecord.sourceId,
+                    previousPath: previousFilePath,
+                    nextPath: nextFilePath,
                     previousNotePath: previousFilePath,
                     nextNotePath: nextFilePath,
                 },
@@ -394,16 +692,20 @@ export class CommentPersistenceController {
             await this.compactSyncedSideNoteEventsForSnapshots([{
                 notePath: nextFilePath,
                 coveredNotePath: previousFilePath,
-                threads: retargetThreads(previousThreads, nextFilePath),
+                threads: retargetedThreads,
             }, {
                 notePath: nextFilePath,
-                threads: retargetThreads(previousThreads, nextFilePath),
+                threads: retargetedThreads,
             }]);
         }
     }
 
     public async deleteStoredComments(filePath: string): Promise<void> {
-        const previousThreads = await this.sidecarStorage.read(filePath);
+        await this.sourceIdentityStore.refreshFromLatestPersistedData();
+        const sourceRecord = this.sourceIdentityStore.getRecordByPath(filePath);
+        const previousThreads = (sourceRecord
+            ? await this.sidecarStorage.readForSource(sourceRecord.sourceId, filePath)
+            : null) ?? await this.sidecarStorage.read(filePath);
         if (previousThreads && previousThreads.length > 0) {
             await this.syncEventStore.appendLocalEvents(filePath, [{
                 op: "deleteNote",
@@ -413,6 +715,9 @@ export class CommentPersistenceController {
             }]);
         }
         await this.sidecarStorage.remove(filePath);
+        if (sourceRecord) {
+            await this.sidecarStorage.removeForSource(sourceRecord.sourceId);
+        }
         await this.compactSyncedSideNoteEventsForSnapshots([{
             notePath: filePath,
             threads: [],
@@ -438,9 +743,51 @@ export class CommentPersistenceController {
         });
     }
 
-    public async replaySyncedSideNoteEvents(): Promise<number> {
-        await this.hydrateSyncedSideNoteSnapshots();
-        const events = this.syncEventStore.getUnprocessedEvents();
+    public async replaySyncedSideNoteEvents(targetNotePath?: string): Promise<number> {
+        const normalizedTargetNotePath = targetNotePath?.trim();
+        if (normalizedTargetNotePath) {
+            const existingTargetedReplay = this.targetedSyncedEventReplayPromises.get(normalizedTargetNotePath);
+            if (existingTargetedReplay) {
+                return existingTargetedReplay;
+            }
+
+            const targetedReplay = this.replaySyncedSideNoteEventsNow(normalizedTargetNotePath).finally(() => {
+                this.targetedSyncedEventReplayPromises.delete(normalizedTargetNotePath);
+            });
+            this.targetedSyncedEventReplayPromises.set(normalizedTargetNotePath, targetedReplay);
+            return targetedReplay;
+        }
+
+        if (this.fullSyncedEventReplayPromise) {
+            return this.fullSyncedEventReplayPromise;
+        }
+
+        this.fullSyncedEventReplayPromise = this.replaySyncedSideNoteEventsNow().finally(() => {
+            this.fullSyncedEventReplayPromise = null;
+        });
+        return this.fullSyncedEventReplayPromise;
+    }
+
+    private eventTouchesNotePath(event: SideNoteSyncEvent, notePath: string): boolean {
+        if (event.notePath === notePath) {
+            return true;
+        }
+
+        const payload = getPayloadRecord(event);
+        return payload?.notePath === notePath
+            || payload?.previousNotePath === notePath
+            || payload?.nextNotePath === notePath
+            || payload?.previousPath === notePath
+            || payload?.nextPath === notePath;
+    }
+
+    private async replaySyncedSideNoteEventsNow(targetNotePath?: string): Promise<number> {
+        await this.sourceIdentityStore.refreshFromLatestPersistedData();
+        await this.syncEventStore.refreshFromLatestPersistedData();
+        await this.hydrateSyncedSideNoteSnapshots(targetNotePath);
+        const events = this.syncEventStore
+            .getUnprocessedEvents()
+            .filter((event) => !targetNotePath || this.eventTouchesNotePath(event, targetNotePath));
         if (events.length === 0) {
             return 0;
         }
@@ -456,17 +803,54 @@ export class CommentPersistenceController {
         const processedEvents: SideNoteSyncEvent[] = [];
         const compactionSnapshots: SideNoteSyncSnapshotInput[] = [];
         for (const [notePath, noteEvents] of eventsByNotePath.entries()) {
-            const baseThreads = await this.sidecarStorage.read(notePath) ?? [];
+            const targetNotePath = getSyncedEventTargetNotePath(notePath, noteEvents);
+            const sourceId = getSyncedEventSourceId(noteEvents);
+            const existingSourceRecord = sourceId
+                ? this.sourceIdentityStore.getRecordBySourceId(sourceId)
+                : this.sourceIdentityStore.getRecordByPathIncludingAliases(notePath)
+                    ?? this.sourceIdentityStore.getRecordByPathIncludingAliases(targetNotePath);
+            const baseSourceThreads = existingSourceRecord || sourceId
+                ? await this.sidecarStorage.readForSource(existingSourceRecord?.sourceId ?? sourceId ?? "", notePath)
+                : null;
+            const baseThreads = baseSourceThreads
+                ?? await this.sidecarStorage.read(notePath)
+                ?? [];
             const reduced = reduceSideNoteSyncEvents(
                 await this.normalizeThreadsForFile(notePath, baseThreads),
                 noteEvents,
             );
-            const targetNotePath = getSyncedEventTargetNotePath(notePath, noteEvents);
             const targetThreads = retargetThreads(reduced.threads, targetNotePath);
             const noteWasDeleted = hasDeleteNoteEvent(noteEvents);
+            const targetFile = this.host.getMarkdownFileByPath(targetNotePath);
+            const targetNoteContent = targetFile && this.host.isCommentableFile(targetFile)
+                ? await this.host.getCurrentNoteContent(targetFile)
+                : null;
+
+            if (
+                !noteWasDeleted
+                && targetNotePath !== notePath
+                && targetNoteContent !== null
+                && targetThreads.length > 0
+                && !areSnapshotThreadsCompatibleWithFile(targetThreads, targetNoteContent)
+            ) {
+                void this.host.log?.("warn", "persistence", "sync.plugin-data.rename.skip-incompatible", {
+                    sourceNotePath: notePath,
+                    targetNotePath,
+                    threadCount: targetThreads.length,
+                });
+                processedEvents.push(...noteEvents);
+                continue;
+            }
+
+            const sourceRecord = sourceId
+                ? await this.sourceIdentityStore.attachPathToSource(sourceId, targetNotePath, {
+                    aliases: [notePath],
+                })
+                : await this.sourceIdentityStore.recordRename(notePath, targetNotePath);
 
             if (noteWasDeleted) {
                 await this.sidecarStorage.remove(notePath);
+                await this.sidecarStorage.removeForSource(sourceRecord.sourceId);
                 if (targetNotePath !== notePath) {
                     await this.sidecarStorage.remove(targetNotePath);
                 }
@@ -477,7 +861,7 @@ export class CommentPersistenceController {
                 this.host.getAggregateCommentIndex().deleteFile(notePath);
                 this.host.getAggregateCommentIndex().deleteFile(targetNotePath);
             } else {
-                await this.sidecarStorage.write(targetNotePath, targetThreads);
+                await this.writeSourceAndPathSidecars(sourceRecord.sourceId, targetNotePath, targetThreads);
                 if (targetNotePath !== notePath) {
                     await this.sidecarStorage.remove(notePath);
                     this.host.getCommentManager().replaceThreadsForFile(notePath, []);
@@ -512,11 +896,9 @@ export class CommentPersistenceController {
                 });
             }
 
-            const file = this.host.getMarkdownFileByPath(targetNotePath);
-            if (file && this.host.isCommentableFile(file)) {
-                const noteContent = await this.host.getCurrentNoteContent(file);
-                const parsed = await this.parseAndNormalizeFileComments(targetNotePath, noteContent);
-                await this.syncThreadsIntoVisibleNoteContent(file, parsed.mainContent, noteWasDeleted ? [] : targetThreads);
+            if (targetFile && this.host.isCommentableFile(targetFile) && targetNoteContent !== null) {
+                const parsed = await this.parseAndNormalizeFileComments(targetNotePath, targetNoteContent);
+                await this.syncThreadsIntoVisibleNoteContent(targetFile, parsed.mainContent, noteWasDeleted ? [] : targetThreads);
                 this.clearPendingCommentPersistTimer(targetNotePath);
                 await this.afterCommentsChanged(targetNotePath);
             } else {
@@ -531,6 +913,7 @@ export class CommentPersistenceController {
         await this.compactSyncedSideNoteEventsForSnapshots(compactionSnapshots);
         void this.host.log?.("info", "persistence", "sync.plugin-data.replay.complete", {
             appliedEventCount,
+            ...(targetNotePath ? { targetNotePath } : {}),
         });
         return appliedEventCount;
     }
@@ -549,6 +932,9 @@ export class CommentPersistenceController {
             }
 
             const normalizedThreads = await this.normalizeThreadsForFile(file.path, threads);
+            const noteContent = await this.host.getCurrentNoteContent(file);
+            const sourceRecord = await this.ensureSourceIdentityForFilePath(file.path, noteContent);
+            await this.writeSourceAndPathSidecars(sourceRecord.sourceId, file.path, normalizedThreads);
             const eventInputs = buildSideNoteSyncEventInputsForThreadDiff([], normalizedThreads);
             if (eventInputs.length === 0) {
                 continue;
@@ -567,6 +953,58 @@ export class CommentPersistenceController {
         });
     }
 
+    public async migrateSourceIdentitiesOnStartup(): Promise<void> {
+        await this.sourceIdentityStore.refreshFromLatestPersistedData();
+        const markdownFiles = this.host.app.vault
+            .getMarkdownFiles()
+            .filter((file) => !this.host.isAllCommentsNotePath(file.path))
+            .sort((left, right) => left.path.localeCompare(right.path));
+        const snapshotsByPath = new Map(
+            this.getLatestSnapshotsByNotePath(this.syncEventStore.getSnapshots())
+                .map((snapshot) => [snapshot.notePath, snapshot]),
+        );
+
+        let sourceCount = 0;
+        let sourceSidecarCount = 0;
+        for (const file of markdownFiles) {
+            const noteContent = await this.host.getCurrentNoteContent(file);
+            const sourceRecord = await this.ensureSourceIdentityForFilePath(file.path, noteContent);
+            sourceCount += 1;
+
+            const sourceThreads = await this.sidecarStorage.readForSource(sourceRecord.sourceId, file.path);
+            if (sourceThreads) {
+                continue;
+            }
+
+            const pathThreads = await this.sidecarStorage.read(file.path);
+            if (pathThreads) {
+                const normalizedThreads = await this.normalizeThreadsForFile(file.path, pathThreads);
+                await this.writeSourceAndPathSidecars(sourceRecord.sourceId, file.path, normalizedThreads);
+                sourceSidecarCount += 1;
+                continue;
+            }
+
+            const snapshot = snapshotsByPath.get(file.path);
+            if (snapshot && snapshot.threads.length > 0) {
+                const normalizedThreads = await this.normalizeThreadsForFile(file.path, snapshot.threads);
+                if (!areSnapshotThreadsCompatibleWithFile(normalizedThreads, noteContent)) {
+                    void this.host.log?.("warn", "persistence", "source-identity.snapshot.skip-incompatible", {
+                        targetNotePath: file.path,
+                        threadCount: normalizedThreads.length,
+                    });
+                    continue;
+                }
+                await this.writeSourceAndPathSidecars(sourceRecord.sourceId, file.path, normalizedThreads);
+                sourceSidecarCount += 1;
+            }
+        }
+
+        void this.host.log?.("info", "persistence", "source-identity.migrate.complete", {
+            sourceCount,
+            sourceSidecarCount,
+        });
+    }
+
     public async handleMarkdownFileModified(file: TFile): Promise<void> {
         if (file.extension !== "md") {
             return;
@@ -574,6 +1012,7 @@ export class CommentPersistenceController {
 
         try {
             const fileContent = await this.host.getCurrentNoteContent(file);
+            const sourceRecord = await this.ensureSourceIdentityForFilePath(file.path, fileContent);
             const storedContent = await this.host.getStoredNoteContent(file);
             const hasSidecar = await this.sidecarStorage.exists(file.path);
             if (!hasSidecar && fileContent !== storedContent && this.host.getMarkdownViewForFile(file)) {
@@ -581,7 +1020,7 @@ export class CommentPersistenceController {
                 const storedParsed = await this.parseAndNormalizeFileComments(file.path, storedContent);
                 if (currentParsed.mainContent === storedParsed.mainContent && storedParsed.threads.length > 0) {
                     const synced = await this.syncThreadsIntoVisibleNoteContent(file, currentParsed.mainContent, storedParsed.threads);
-                    await this.sidecarStorage.write(file.path, synced.threads);
+                    await this.writeSourceAndPathSidecars(sourceRecord.sourceId, file.path, synced.threads);
                     await this.syncEventStore.appendLocalEvents(
                         file.path,
                         buildSideNoteSyncEventInputsForThreadDiff([], synced.threads),
@@ -601,7 +1040,7 @@ export class CommentPersistenceController {
             }
             const parsed = await this.syncFileCommentsFromContent(file, fileContent);
             if (parsed.source !== "none" || parsed.threads.length > 0) {
-                await this.sidecarStorage.write(file.path, parsed.threads);
+                await this.writeSourceAndPathSidecars(sourceRecord.sourceId, file.path, parsed.threads);
             }
 
             this.clearPendingCommentPersistTimer(file.path);
@@ -620,12 +1059,14 @@ export class CommentPersistenceController {
             return [];
         }
 
+        await this.replaySyncedSideNoteEvents(file.path);
         const noteContent = await this.host.getCurrentNoteContent(file);
         const parsed = await this.syncFileCommentsFromContent(file, noteContent);
         return parsed.comments;
     }
 
     public async ensureIndexedCommentsLoaded(): Promise<void> {
+        await this.replaySyncedSideNoteEvents();
         const initializedNow = await this.ensureAggregateCommentIndexInitialized();
         if (initializedNow) {
             await this.refreshAggregateNoteNow();
@@ -843,19 +1284,42 @@ export class CommentPersistenceController {
             .sort((left, right) => left.notePath.localeCompare(right.notePath));
     }
 
-    private async hydrateSyncedSideNoteSnapshots(): Promise<number> {
-        const snapshots = this.getLatestSnapshotsByNotePath(this.syncEventStore.getSnapshots());
+    private async hydrateSyncedSideNoteSnapshots(targetNotePath?: string): Promise<number> {
+        const snapshots = this.getLatestSnapshotsByNotePath(this.syncEventStore.getSnapshots())
+            .filter((snapshot) => !targetNotePath || snapshot.notePath === targetNotePath);
         if (snapshots.length === 0) {
             return 0;
         }
 
         let hydratedCount = 0;
+        let coveredWatermarks: Record<string, number> = {};
         for (const snapshot of snapshots) {
-            const existingSidecarThreads = await this.sidecarStorage.read(snapshot.notePath);
+            coveredWatermarks = mergeSyncWatermarks(coveredWatermarks, snapshot.coveredWatermarks);
+            const file = this.host.getMarkdownFileByPath(snapshot.notePath);
+            const noteContent = file && this.host.isCommentableFile(file)
+                ? await this.host.getCurrentNoteContent(file)
+                : null;
+            const sourceRecord = await this.ensureSourceIdentityForFilePath(
+                snapshot.notePath,
+                noteContent ?? undefined,
+            );
+            const existingSidecarThreads = (await this.sidecarStorage.readForSource(sourceRecord.sourceId, snapshot.notePath))
+                ?? await this.sidecarStorage.read(snapshot.notePath);
             const normalizedSnapshotThreads = await this.normalizeThreadsForFile(snapshot.notePath, snapshot.threads);
             const normalizedExistingThreads = existingSidecarThreads
                 ? await this.normalizeThreadsForFile(snapshot.notePath, existingSidecarThreads)
                 : null;
+            if (
+                noteContent !== null
+                && normalizedSnapshotThreads.length > 0
+                && !areSnapshotThreadsCompatibleWithFile(normalizedSnapshotThreads, noteContent)
+            ) {
+                void this.host.log?.("warn", "persistence", "sync.plugin-data.snapshot.skip-incompatible", {
+                    targetNotePath: snapshot.notePath,
+                    threadCount: normalizedSnapshotThreads.length,
+                });
+                continue;
+            }
             const normalizedThreads = normalizedExistingThreads && normalizedSnapshotThreads.length > 0
                 ? mergeSnapshotThreadsWithSidecar(normalizedExistingThreads, normalizedSnapshotThreads)
                 : normalizedSnapshotThreads;
@@ -866,10 +1330,8 @@ export class CommentPersistenceController {
                 continue;
             }
 
-            await this.sidecarStorage.write(snapshot.notePath, normalizedThreads);
-            const file = this.host.getMarkdownFileByPath(snapshot.notePath);
-            if (file && this.host.isCommentableFile(file)) {
-                const noteContent = await this.host.getCurrentNoteContent(file);
+            await this.writeSourceAndPathSidecars(sourceRecord.sourceId, snapshot.notePath, normalizedThreads);
+            if (file && this.host.isCommentableFile(file) && noteContent !== null) {
                 const parsed = await this.parseAndNormalizeFileComments(snapshot.notePath, noteContent);
                 await this.syncThreadsIntoVisibleNoteContent(file, parsed.mainContent, normalizedThreads);
                 this.clearPendingCommentPersistTimer(snapshot.notePath);
@@ -880,10 +1342,15 @@ export class CommentPersistenceController {
             hydratedCount += 1;
         }
 
-        await this.syncEventStore.markWatermarksProcessed(this.syncEventStore.getCompactedWatermarks());
+        if (!targetNotePath) {
+            await this.syncEventStore.markWatermarksProcessed(this.syncEventStore.getCompactedWatermarks());
+        } else {
+            await this.syncEventStore.markWatermarksProcessed(coveredWatermarks);
+        }
         if (hydratedCount > 0) {
             void this.host.log?.("info", "persistence", "sync.plugin-data.snapshot.hydrate", {
                 hydratedCount,
+                ...(targetNotePath ? { targetNotePath } : {}),
             });
         }
         return hydratedCount;
@@ -901,6 +1368,169 @@ export class CommentPersistenceController {
         });
     }
 
+    private async readLegacyCacheCandidate(storagePath: string): Promise<LegacySourceCandidate | null> {
+        try {
+            const rawContent = await this.host.app.vault.adapter.read(storagePath);
+            const parsed = JSON.parse(rawContent) as unknown;
+            if (
+                !parsed
+                || typeof parsed !== "object"
+                || Array.isArray(parsed)
+                || typeof (parsed as { notePath?: unknown }).notePath !== "string"
+                || !Array.isArray((parsed as { threads?: unknown }).threads)
+            ) {
+                return null;
+            }
+
+            const notePath = (parsed as { notePath: string }).notePath;
+            const threads = await this.normalizeThreadsForFile(
+                notePath,
+                (parsed as { threads: CommentThread[] }).threads,
+            );
+            if (threads.length === 0) {
+                return null;
+            }
+
+            return {
+                notePath,
+                threads,
+                updatedAt: 0,
+                origin: "cache",
+            };
+        } catch {
+            return null;
+        }
+    }
+
+    private async readLegacyCacheCandidates(): Promise<LegacySourceCandidate[]> {
+        const cacheDirPath = `${this.host.getPluginDataDirPath()}/cache`;
+        try {
+            if (!(await this.host.app.vault.adapter.exists(cacheDirPath))) {
+                return [];
+            }
+
+            const listed = await this.host.app.vault.adapter.list(cacheDirPath);
+            const candidates: LegacySourceCandidate[] = [];
+            for (const filePath of listed.files.filter((path) => path.endsWith(".json"))) {
+                const candidate = await this.readLegacyCacheCandidate(filePath);
+                if (candidate) {
+                    candidates.push(candidate);
+                }
+            }
+            return candidates;
+        } catch {
+            return [];
+        }
+    }
+
+    private async findRenamedSourceCandidate(filePath: string, noteContent: string): Promise<LegacySourceCandidate | null> {
+        const snapshotCandidates: LegacySourceCandidate[] = this.getLatestSnapshotsByNotePath(this.syncEventStore.getSnapshots())
+            .filter((snapshot) =>
+                snapshot.notePath !== filePath
+                && snapshot.threads.length > 0)
+            .map((snapshot) => ({
+                notePath: snapshot.notePath,
+                threads: snapshot.threads,
+                updatedAt: snapshot.updatedAt,
+                origin: "snapshot" as const,
+                coveredWatermarks: snapshot.coveredWatermarks,
+            }));
+        const cacheCandidates = await this.readLegacyCacheCandidates();
+        const candidates = [...snapshotCandidates, ...cacheCandidates]
+            .filter((candidate) =>
+                candidate.notePath !== filePath
+                && candidate.threads.length > 0
+                && !this.host.getMarkdownFileByPath(candidate.notePath)
+                && this.canRecoverLegacyCandidateForFile(candidate.notePath, filePath)
+                && isStrongLegacySourceMatch(candidate, filePath, noteContent))
+            .map((candidate) => ({
+                candidate,
+                match: getCandidateContentMatch(candidate, filePath, noteContent),
+            }))
+            .sort((left, right) =>
+                right.match.score - left.match.score
+                || right.match.matchedAnchorCount - left.match.matchedAnchorCount
+                || right.candidate.updatedAt - left.candidate.updatedAt
+                || right.candidate.threads.length - left.candidate.threads.length
+                || right.candidate.notePath.localeCompare(left.candidate.notePath));
+
+        if (candidates.length === 0) {
+            return null;
+        }
+
+        const [best, second] = candidates;
+        if (
+            second
+            && second.match.score === best.match.score
+            && second.match.matchedAnchorCount === best.match.matchedAnchorCount
+            && second.candidate.updatedAt === best.candidate.updatedAt
+        ) {
+            void this.host.log?.("warn", "persistence", "source-identity.recover.ambiguous", {
+                targetNotePath: filePath,
+                candidateCount: candidates.length,
+                bestNotePath: best.candidate.notePath,
+                secondNotePath: second.candidate.notePath,
+            });
+            return null;
+        }
+
+        return best.candidate;
+    }
+
+    private canRecoverLegacyCandidateForFile(candidateNotePath: string, targetFilePath: string): boolean {
+        const claimedSourceRecord = this.sourceIdentityStore.getRecordByPathIncludingAliases(candidateNotePath);
+        if (!claimedSourceRecord || claimedSourceRecord.currentPath === targetFilePath) {
+            return true;
+        }
+
+        return !this.host.getMarkdownFileByPath(claimedSourceRecord.currentPath);
+    }
+
+    private async recoverRenamedSourceThreadsForFile(
+        file: TFile,
+        noteContent: string,
+    ): Promise<CommentThread[] | null> {
+        const candidate = await this.findRenamedSourceCandidate(file.path, noteContent);
+        if (!candidate) {
+            return null;
+        }
+
+        const normalizedThreads = await this.normalizeThreadsForFile(file.path, candidate.threads);
+        if (normalizedThreads.length === 0) {
+            return null;
+        }
+
+        const fingerprint = await this.getSourceContentFingerprint(noteContent);
+        const sourceRecord = await this.sourceIdentityStore.recordRename(candidate.notePath, file.path, fingerprint);
+        await this.writeSourceAndPathSidecars(sourceRecord.sourceId, file.path, normalizedThreads);
+        await this.sidecarStorage.remove(candidate.notePath);
+        await this.syncEventStore.appendLocalEvents(candidate.notePath, [{
+            op: "renameSource",
+            payload: {
+                sourceId: sourceRecord.sourceId,
+                previousPath: candidate.notePath,
+                nextPath: file.path,
+                previousNotePath: candidate.notePath,
+                nextNotePath: file.path,
+            },
+        }]);
+        await this.compactSyncedSideNoteEventsForSnapshots([{
+            notePath: file.path,
+            coveredNotePath: candidate.notePath,
+            threads: normalizedThreads,
+        }, {
+            notePath: file.path,
+            threads: normalizedThreads,
+        }]);
+        void this.host.log?.("info", "persistence", "sync.plugin-data.rename.recover", {
+            previousNotePath: candidate.notePath,
+            nextNotePath: file.path,
+            threadCount: normalizedThreads.length,
+            origin: candidate.origin,
+        });
+        return normalizedThreads;
+    }
+
     private async writeCommentsForFile(file: TFile, options: PersistOptions = {}): Promise<string> {
         this.clearPendingCommentPersistTimer(file.path);
         this.host.getCommentManager().purgeExpiredDeletedComments();
@@ -909,8 +1539,11 @@ export class CommentPersistenceController {
             filePath: file.path,
             threadCount: threads.length,
         });
-        const previousThreads = await this.sidecarStorage.read(file.path) ?? [];
         const currentContent = await this.host.getCurrentNoteContent(file);
+        const sourceRecord = await this.ensureSourceIdentityForFilePath(file.path, currentContent);
+        const previousThreads = (await this.sidecarStorage.readForSource(sourceRecord.sourceId, file.path))
+            ?? await this.sidecarStorage.read(file.path)
+            ?? [];
         const parsedCurrentContent = await this.parseAndNormalizeFileComments(file.path, currentContent);
         const synced = await this.syncThreadsIntoVisibleNoteContent(file, parsedCurrentContent.mainContent, threads);
         const eventInputs = buildSideNoteSyncEventInputsForThreadDiff(
@@ -918,7 +1551,7 @@ export class CommentPersistenceController {
             synced.threads,
         );
         await this.syncEventStore.appendLocalEvents(file.path, eventInputs);
-        await this.sidecarStorage.write(file.path, synced.threads);
+        await this.writeSourceAndPathSidecars(sourceRecord.sourceId, file.path, synced.threads);
         await this.compactSyncedSideNoteEventsForSnapshots([{
             notePath: file.path,
             threads: synced.threads,
@@ -938,8 +1571,9 @@ export class CommentPersistenceController {
         source: "none" | "inline" | "sidecar";
     }> {
         const inlineParsed = await this.parseAndNormalizeFileComments(file.path, noteContent);
-        const hasSidecar = await this.sidecarStorage.exists(file.path);
-        const sidecarThreads = hasSidecar ? await this.sidecarStorage.read(file.path) : null;
+        const sourceRecord = await this.ensureSourceIdentityForFilePath(file.path, noteContent);
+        const sidecarResult = await this.readSourceOrPathSidecar(sourceRecord, file.path);
+        const sidecarThreads = sidecarResult?.threads ?? null;
 
         if (sidecarThreads) {
             const canonicalThreads = await this.reconcileLegacyInlineThreadsWithSidecar(
@@ -962,6 +1596,14 @@ export class CommentPersistenceController {
             if (getManagedSectionKind(noteContent) === "threaded") {
                 await this.stripInlineManagedSectionIfPresent(file, noteContent);
             }
+            const recoveredThreads = await this.recoverRenamedSourceThreadsForFile(file, noteContent);
+            if (recoveredThreads) {
+                return {
+                    mainContent: inlineParsed.mainContent,
+                    threads: recoveredThreads,
+                    source: "sidecar",
+                };
+            }
             return {
                 mainContent: inlineParsed.mainContent,
                 threads: [],
@@ -969,7 +1611,7 @@ export class CommentPersistenceController {
             };
         }
 
-        await this.sidecarStorage.write(file.path, inlineParsed.threads);
+        await this.writeSourceAndPathSidecars(sourceRecord.sourceId, file.path, inlineParsed.threads);
         await this.syncEventStore.appendLocalEvents(
             file.path,
             buildSideNoteSyncEventInputsForThreadDiff([], inlineParsed.threads),
@@ -1012,11 +1654,12 @@ export class CommentPersistenceController {
         }
 
         const normalizedThreads = await this.normalizeThreadsForFile(file.path, parsed.threads);
+        const sourceRecord = await this.ensureSourceIdentityForFilePath(file.path, noteContent);
         await this.syncEventStore.appendLocalEvents(
             file.path,
             buildSideNoteSyncEventInputsForThreadDiff([], normalizedThreads),
         );
-        await this.sidecarStorage.write(file.path, normalizedThreads);
+        await this.writeSourceAndPathSidecars(sourceRecord.sourceId, file.path, normalizedThreads);
         await this.compactSyncedSideNoteEventsForSnapshots([{
             notePath: file.path,
             threads: normalizedThreads,
@@ -1054,7 +1697,8 @@ export class CommentPersistenceController {
         }
 
         await this.syncEventStore.appendLocalEvents(filePath, eventInputs);
-        await this.sidecarStorage.write(filePath, normalizedMergedThreads);
+        const sourceRecord = await this.ensureSourceIdentityForFilePath(filePath);
+        await this.writeSourceAndPathSidecars(sourceRecord.sourceId, filePath, normalizedMergedThreads);
         await this.compactSyncedSideNoteEventsForSnapshots([{
             notePath: filePath,
             threads: normalizedMergedThreads,

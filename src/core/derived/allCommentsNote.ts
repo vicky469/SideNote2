@@ -140,7 +140,7 @@ function formatFileHeadingLabel(filePath: string): string {
     const normalizedPath = normalizeNotePath(filePath);
     const pathSegments = normalizedPath.split("/").filter(Boolean);
     const fileName = pathSegments.pop() ?? normalizedPath;
-    return `<strong class="sidenote2-index-heading-label" title="${escapeHtmlText(filePath)}">${escapeHtmlText(fileName)}</strong>`;
+    return `<span class="sidenote2-index-heading-label" title="${escapeHtmlText(filePath)}">${escapeHtmlText(fileName)}</span>`;
 }
 
 function getFolderPath(filePath: string): string {
@@ -274,7 +274,7 @@ export function findCommentLocationLineNumber(noteContent: string, commentId: st
 }
 
 export function findFileHeadingPathInMarkdownLine(line: string): string | null {
-    const match = line.match(/<strong class="sidenote2-index-heading-label" title="([^"]+)">/);
+    const match = line.match(/<(?:span|strong) class="sidenote2-index-heading-label" title="([^"]+)">/);
     if (!match?.[1]) {
         return null;
     }
@@ -385,7 +385,7 @@ function appendFileSections(
             .slice()
             .sort((left, right) => left.localeCompare(right));
         for (const filePath of folderFilePaths) {
-            lines.push(`  ${formatFileHeadingLabel(filePath)}`);
+            lines.push(`##### ${formatFileHeadingLabel(filePath)}`);
             lines.push("");
 
             const fileComments = (commentsByFile.get(filePath) ?? [])

@@ -15,6 +15,7 @@ export type SideNoteSyncOp =
     | "updateAnchor"
     | "moveThread"
     | "moveEntry"
+    | "renameSource"
     | "renameNote"
     | "deleteNote";
 
@@ -88,6 +89,7 @@ function isSideNoteSyncOp(value: unknown): value is SideNoteSyncOp {
         || value === "updateAnchor"
         || value === "moveThread"
         || value === "moveEntry"
+        || value === "renameSource"
         || value === "renameNote"
         || value === "deleteNote";
 }
@@ -381,7 +383,12 @@ function applyMoveEntry(threads: CommentThread[], event: SideNoteSyncEvent): Com
 
 function applyRenameNote(threads: CommentThread[], event: SideNoteSyncEvent): CommentThread[] {
     const payload = getPayloadRecord(event);
-    const nextNotePath = typeof payload?.nextNotePath === "string" ? payload.nextNotePath : event.notePath;
+    let nextNotePath = event.notePath;
+    if (typeof payload?.nextNotePath === "string") {
+        nextNotePath = payload.nextNotePath;
+    } else if (typeof payload?.nextPath === "string") {
+        nextNotePath = payload.nextPath;
+    }
     return threads.map((thread) => ({
         ...thread,
         filePath: nextNotePath,
@@ -433,6 +440,8 @@ function applyEvent(threads: CommentThread[], event: SideNoteSyncEvent): Comment
             return applyMoveThread(threads, event);
         case "moveEntry":
             return applyMoveEntry(threads, event);
+        case "renameSource":
+            return applyRenameNote(threads, event);
         case "renameNote":
             return applyRenameNote(threads, event);
         case "deleteNote":

@@ -84,7 +84,9 @@ import bundledSidenoteSkillContent from "../skills/sidenote2/SKILL.md";
 
 const SIDECAR_STORAGE_MIGRATION_VERSION = 2;
 const SIDE_NOTE_SYNC_EVENT_MIGRATION_VERSION = 2;
+const SOURCE_IDENTITY_MIGRATION_VERSION = 1;
 const SIDE_NOTE_SYNC_DEVICE_ID_STORAGE_PREFIX = "sidenote2.sync-device-id.v1";
+const FOCUSED_SYNC_POLL_INTERVAL_MS = 750;
 
 // Helper function to generate SHA256 hash using Web Crypto API (works on mobile)
 async function generateHash(text: string): Promise<string> {
@@ -458,6 +460,7 @@ export default class SideNote2 extends Plugin {
     private aggregateCommentIndex = new AggregateCommentIndex();
     private parsedNoteCache = new ParsedNoteCache(20);
     private sideNoteSyncDeviceId: string | null = null;
+    private focusedSyncPollInFlight = false;
 
     private async detectRuntimeMode(): Promise<"local" | "release"> {
         const pluginRootRelativePath = normalizePath(`${this.app.vault.configDir}/plugins/${this.manifest.id}`);
@@ -498,6 +501,7 @@ export default class SideNote2 extends Plugin {
         await this.loadSettings();
         await this.ensureSidecarStorageMigrated();
         await this.ensureSideNoteSyncEventsMigrated();
+        await this.ensureSourceIdentitiesMigrated();
         await this.commentPersistenceController.replaySyncedSideNoteEvents();
         this.pluginRegistrationController.register();
         this.registerEditorExtension([
@@ -566,6 +570,10 @@ export default class SideNote2 extends Plugin {
             })
         );
 
+        this.registerInterval(window.setInterval(() => {
+            void this.pollFocusedSyncedSideNoteEvents();
+        }, FOCUSED_SYNC_POLL_INTERVAL_MS));
+
         this.addSettingTab(new SideNote2SettingTab(this.app, this));
     }
 
@@ -594,6 +602,43 @@ export default class SideNote2 extends Plugin {
         await this.logEvent("info", "persistence", "sync.plugin-data.external-settings", {
             appliedEventCount,
         });
+    }
+
+    private getFocusedSyncFiles(): TFile[] {
+        const filesByPath = new Map<string, TFile>();
+        const addFile = (file: TFile | null): void => {
+            if (this.isCommentableFile(file)) {
+                filesByPath.set(file.path, file);
+            }
+        };
+
+        addFile(this.getSidebarTargetFile());
+        for (const file of this.workspaceViewController.getVisibleSidebarFiles()) {
+            addFile(file);
+        }
+        return Array.from(filesByPath.values());
+    }
+
+    private async pollFocusedSyncedSideNoteEvents(): Promise<void> {
+        if (this.focusedSyncPollInFlight) {
+            return;
+        }
+
+        const files = this.getFocusedSyncFiles();
+        if (files.length === 0) {
+            return;
+        }
+
+        this.focusedSyncPollInFlight = true;
+        try {
+            for (const file of files) {
+                await this.commentPersistenceController.replaySyncedSideNoteEvents(file.path);
+            }
+        } catch (error) {
+            this.warn("Failed to poll focused SideNote2 sync state.", error, "persistence", "sync.plugin-data.poll.warn");
+        } finally {
+            this.focusedSyncPollInFlight = false;
+        }
     }
 
     public readPersistedPluginData() {
@@ -906,6 +951,60 @@ export default class SideNote2 extends Plugin {
                 error,
                 "persistence",
                 "sync.plugin-data.migrate.startup.warn",
+            );
+        }
+    }
+
+    private getSourceIdentityMigrationVersion(): number | null {
+        const persistedData = this.indexNoteSettingsController.readPersistedPluginData();
+        const migrationVersions = isRecord(persistedData.sourceIdentityMigrationVersions)
+            ? persistedData.sourceIdentityMigrationVersions
+            : {};
+        const deviceMigrationVersion = migrationVersions[this.getSideNoteSyncDeviceId()];
+        return typeof deviceMigrationVersion === "number"
+            ? deviceMigrationVersion
+            : null;
+    }
+
+    private async setSourceIdentityMigrationVersion(version: number): Promise<void> {
+        const persistedData = this.indexNoteSettingsController.readPersistedPluginData();
+        const deviceId = this.getSideNoteSyncDeviceId();
+        const migrationVersions = isRecord(persistedData.sourceIdentityMigrationVersions)
+            ? persistedData.sourceIdentityMigrationVersions
+            : {};
+        if (migrationVersions[deviceId] === version) {
+            return;
+        }
+
+        await this.indexNoteSettingsController.writePersistedPluginData({
+            ...persistedData,
+            sourceIdentityMigrationVersions: {
+                ...migrationVersions,
+                [deviceId]: version,
+            },
+        });
+    }
+
+    private async ensureSourceIdentitiesMigrated(): Promise<void> {
+        if (this.getSourceIdentityMigrationVersion() === SOURCE_IDENTITY_MIGRATION_VERSION) {
+            return;
+        }
+
+        try {
+            await this.logEvent("info", "persistence", "source-identity.migrate.startup.begin", {
+                version: SOURCE_IDENTITY_MIGRATION_VERSION,
+            });
+            await this.commentPersistenceController.migrateSourceIdentitiesOnStartup();
+            await this.setSourceIdentityMigrationVersion(SOURCE_IDENTITY_MIGRATION_VERSION);
+            await this.logEvent("info", "persistence", "source-identity.migrate.startup.success", {
+                version: SOURCE_IDENTITY_MIGRATION_VERSION,
+            });
+        } catch (error) {
+            this.warn(
+                "Failed to migrate SideNote2 source identities.",
+                error,
+                "persistence",
+                "source-identity.migrate.startup.warn",
             );
         }
     }

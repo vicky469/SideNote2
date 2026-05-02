@@ -6,6 +6,7 @@ const SIDECAR_STORAGE_VERSION = 1;
 interface StoredSidecarComments {
     version: number;
     notePath: string;
+    sourceId?: string;
     threads: CommentThread[];
 }
 
@@ -65,13 +66,19 @@ function cloneThreadsForNote(notePath: string, threads: unknown[]): CommentThrea
 
 export class SidecarCommentStorage {
     private readonly baseDirPath: string;
+    private readonly sourceBaseDirPath: string;
 
     constructor(private readonly options: SidecarCommentStorageOptions) {
         this.baseDirPath = normalizeStoragePath(`${options.pluginDirPath}/sidenotes/by-note`);
+        this.sourceBaseDirPath = normalizeStoragePath(`${options.pluginDirPath}/sidenotes/by-source`);
     }
 
     public getBaseDirPath(): string {
         return this.baseDirPath;
+    }
+
+    public getSourceBaseDirPath(): string {
+        return this.sourceBaseDirPath;
     }
 
     public async exists(notePath: string): Promise<boolean> {
@@ -80,6 +87,18 @@ export class SidecarCommentStorage {
 
     public async read(notePath: string): Promise<CommentThread[] | null> {
         const storagePath = await this.getNoteStoragePath(notePath);
+        return this.readStoragePath(storagePath, notePath);
+    }
+
+    public async existsForSource(sourceId: string): Promise<boolean> {
+        return this.options.adapter.exists(await this.getSourceStoragePath(sourceId));
+    }
+
+    public async readForSource(sourceId: string, notePath: string): Promise<CommentThread[] | null> {
+        return this.readStoragePath(await this.getSourceStoragePath(sourceId), notePath);
+    }
+
+    private async readStoragePath(storagePath: string, notePath: string): Promise<CommentThread[] | null> {
         if (!(await this.options.adapter.exists(storagePath))) {
             return null;
         }
@@ -99,6 +118,20 @@ export class SidecarCommentStorage {
 
     public async write(notePath: string, threads: CommentThread[]): Promise<void> {
         const storagePath = await this.getNoteStoragePath(notePath);
+        await this.writeStoragePath(storagePath, notePath, threads);
+    }
+
+    public async writeForSource(sourceId: string, notePath: string, threads: CommentThread[]): Promise<void> {
+        const storagePath = await this.getSourceStoragePath(sourceId);
+        await this.writeStoragePath(storagePath, notePath, threads, sourceId);
+    }
+
+    private async writeStoragePath(
+        storagePath: string,
+        notePath: string,
+        threads: CommentThread[],
+        sourceId?: string,
+    ): Promise<void> {
         if (threads.length === 0) {
             if (await this.options.adapter.exists(storagePath)) {
                 await this.options.adapter.remove(storagePath);
@@ -113,6 +146,7 @@ export class SidecarCommentStorage {
         const payload: StoredSidecarComments = {
             version: SIDECAR_STORAGE_VERSION,
             notePath,
+            ...(sourceId ? { sourceId } : {}),
             threads: normalizedThreads,
         };
         const serialized = `${JSON.stringify(payload)}\n`;
@@ -162,6 +196,14 @@ export class SidecarCommentStorage {
 
     public async remove(notePath: string): Promise<void> {
         const storagePath = await this.getNoteStoragePath(notePath);
+        await this.removeStoragePath(storagePath);
+    }
+
+    public async removeForSource(sourceId: string): Promise<void> {
+        await this.removeStoragePath(await this.getSourceStoragePath(sourceId));
+    }
+
+    private async removeStoragePath(storagePath: string): Promise<void> {
         if (!(await this.options.adapter.exists(storagePath))) {
             return;
         }
@@ -173,5 +215,11 @@ export class SidecarCommentStorage {
         const noteHash = await this.options.hashText(notePath);
         const shard = noteHash.slice(0, 2) || "00";
         return normalizeStoragePath(`${this.baseDirPath}/${shard}/${noteHash}.json`);
+    }
+
+    public async getSourceStoragePath(sourceId: string): Promise<string> {
+        const sourceHash = await this.options.hashText(sourceId);
+        const shard = sourceHash.slice(0, 2) || "00";
+        return normalizeStoragePath(`${this.sourceBaseDirPath}/${shard}/${sourceHash}.json`);
     }
 }

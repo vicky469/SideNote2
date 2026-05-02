@@ -425,11 +425,35 @@ function mergeWatermarks(
     return merged;
 }
 
+function areSyncEventStatesEqual(left: SideNoteSyncEventState, right: SideNoteSyncEventState): boolean {
+    return JSON.stringify(cloneState(left)) === JSON.stringify(cloneState(right));
+}
+
 export class SideNoteSyncEventStore {
     constructor(private readonly host: SideNoteSyncEventStoreHost) {}
 
     public readState(): SideNoteSyncEventState {
         return normalizeSideNoteSyncEventState(this.host.readPersistedPluginData().sideNoteSyncEventState);
+    }
+
+    public async refreshFromLatestPersistedData(): Promise<boolean> {
+        const latestPersistedData = await this.host.readLatestPersistedPluginData?.();
+        if (!latestPersistedData) {
+            return false;
+        }
+
+        const cachedState = this.readState();
+        const latestState = normalizeSideNoteSyncEventState(latestPersistedData.sideNoteSyncEventState);
+        const mergedState = mergeSideNoteSyncEventStates(cachedState, latestState);
+        if (areSyncEventStatesEqual(cachedState, mergedState)) {
+            return false;
+        }
+
+        await this.host.writePersistedPluginData({
+            ...latestPersistedData,
+            sideNoteSyncEventState: cloneState(mergedState),
+        });
+        return true;
     }
 
     public async appendLocalEvents(
@@ -539,8 +563,15 @@ export class SideNoteSyncEventStore {
 
         const state = this.readState();
         const processorDeviceId = this.host.getDeviceId();
+        const currentWatermarks = state.processedWatermarks[processorDeviceId] ?? {};
+        const hasAdvancedWatermark = Object.entries(watermarks).some(([deviceId, logicalClock]) =>
+            logicalClock > (currentWatermarks[deviceId] ?? 0));
+        if (!hasAdvancedWatermark) {
+            return;
+        }
+
         state.processedWatermarks[processorDeviceId] = mergeWatermarks(
-            state.processedWatermarks[processorDeviceId] ?? {},
+            currentWatermarks,
             watermarks,
         );
         await this.writeState(state);

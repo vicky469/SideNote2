@@ -1,15 +1,10 @@
 import { parseCommentLocationUrl } from "../core/derived/allCommentsNote";
 
-export type IndexLivePreviewClickTarget =
-    | {
-        kind: "comment";
-        commentId: string;
-        filePath: string;
-    }
-    | {
-        kind: "file";
-        filePath: string;
-    };
+export interface IndexLivePreviewClickTarget {
+    kind: "comment";
+    commentId: string;
+    filePath: string;
+}
 
 export interface ClosestLookupTarget {
     closest(selector: string): {
@@ -18,10 +13,25 @@ export interface ClosestLookupTarget {
     } | null;
 }
 
+const INDEX_NATIVE_COLLAPSE_CONTROL_SELECTOR = [
+    ".heading-collapse-indicator",
+    ".collapse-indicator",
+    ".collapse-icon",
+    ".cm-fold-indicator",
+].join(", ");
+
+export function isIndexNativeCollapseControlTarget(target: ClosestLookupTarget | null): boolean {
+    return !!target?.closest(INDEX_NATIVE_COLLAPSE_CONTROL_SELECTOR);
+}
+
 export function findClickedIndexLivePreviewTarget(
     target: ClosestLookupTarget | null,
 ): IndexLivePreviewClickTarget | null {
     if (!target) {
+        return null;
+    }
+
+    if (isIndexNativeCollapseControlTarget(target)) {
         return null;
     }
 
@@ -32,15 +42,6 @@ export function findClickedIndexLivePreviewTarget(
         return {
             kind: "comment",
             ...commentTarget,
-        };
-    }
-
-    const fileHeading = target.closest(".sidenote2-index-heading-label[title]");
-    const filePath = fileHeading?.getAttribute("title")?.trim() ?? "";
-    if (filePath) {
-        return {
-            kind: "file",
-            filePath,
         };
     }
 
