@@ -289,6 +289,29 @@
     align-items: center;
 }
 
+.sidenote2-sidebar-toolbar.is-index-toolbar button.clickable-icon.sidenote2-toolbar-icon-button {
+    flex: 0 0 22px;
+    width: 22px !important;
+    min-width: 22px !important;
+    max-width: 22px !important;
+    height: 22px !important;
+    min-height: 22px !important;
+    max-height: 22px !important;
+    padding: 0 !important;
+    border-radius: 8px;
+    line-height: 1;
+    --icon-size: 12px;
+}
+
+.sidenote2-sidebar-toolbar.is-index-toolbar button.clickable-icon.sidenote2-toolbar-icon-button > svg.svg-icon {
+    width: 12px !important;
+    min-width: 12px !important;
+    max-width: 12px !important;
+    height: 12px !important;
+    min-height: 12px !important;
+    max-height: 12px !important;
+}
+
 .sidenote2-sidebar-toolbar-row.is-note-secondary-row {
     justify-content: flex-start;
     flex-wrap: wrap;

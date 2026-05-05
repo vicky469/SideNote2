@@ -16,10 +16,10 @@ test("normalizeSidebarPrimaryMode accepts the supported sidebar modes only", () 
     assert.equal(normalizeSidebarPrimaryMode(undefined), null);
 });
 
-test("normalizeIndexSidebarMode accepts index modes and rejects tags", () => {
+test("normalizeIndexSidebarMode accepts index modes", () => {
     assert.equal(normalizeIndexSidebarMode("list"), "list");
+    assert.equal(normalizeIndexSidebarMode("tags"), "tags");
     assert.equal(normalizeIndexSidebarMode("thought-trail"), "thought-trail");
-    assert.equal(normalizeIndexSidebarMode("tags"), null);
     assert.equal(normalizeIndexSidebarMode("agent"), null);
     assert.equal(normalizeIndexSidebarMode(undefined), null);
 });

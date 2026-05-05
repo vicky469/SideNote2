@@ -33,25 +33,14 @@ export function shouldShowNestedToolbarChip(options: {
     selectedIndexFileFilterRootPath: string | null;
     filteredIndexFileCount: number;
 }): boolean {
-    if (!options.hasNestedComments) {
-        return false;
-    }
-
-    if (!options.isAllCommentsView) {
-        return true;
-    }
-
-    return !(
-        options.selectedIndexFileFilterRootPath
-        && options.filteredIndexFileCount <= 1
-    );
+    return options.hasNestedComments;
 }
 
 export function shouldShowIndexListToolbarChips(
     isAllCommentsView: boolean,
     indexSidebarMode: IndexSidebarMode,
 ): boolean {
-    return !isAllCommentsView || indexSidebarMode === "list";
+    return !isAllCommentsView || indexSidebarMode === "list" || indexSidebarMode === "tags";
 }
 
 export function shouldShowResolvedIndexEmptyState(

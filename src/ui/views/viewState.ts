@@ -1,7 +1,7 @@
 import { getNormalizedFilterPath, normalizeIndexFileFilterPaths } from "./indexFileFilter";
 
 export type SidebarPrimaryMode = "list" | "tags" | "thought-trail";
-export type IndexSidebarMode = "list" | "thought-trail";
+export type IndexSidebarMode = SidebarPrimaryMode;
 export type NoteSidebarMode = SidebarPrimaryMode;
 
 export interface CommentTagProjection {
@@ -62,7 +62,7 @@ export function normalizeSidebarPrimaryMode(value: unknown): SidebarPrimaryMode 
 }
 
 export function normalizeIndexSidebarMode(value: unknown): IndexSidebarMode | null {
-    return value === "list" || value === "thought-trail"
+    return value === "list" || value === "tags" || value === "thought-trail"
         ? value
         : null;
 }

@@ -82,24 +82,25 @@ test("shouldShowResolvedToolbarChip keeps the resolved toggle visible while reso
 
 test("shouldShowIndexListToolbarChips hides list-only chips when thought trail is active", () => {
     assert.equal(shouldShowIndexListToolbarChips(true, "list"), true);
+    assert.equal(shouldShowIndexListToolbarChips(true, "tags"), true);
     assert.equal(shouldShowIndexListToolbarChips(true, "thought-trail"), false);
     assert.equal(shouldShowIndexListToolbarChips(false, "thought-trail"), true);
 });
 
-test("shouldShowNestedToolbarChip hides the nested toggle for a single-file filtered index scope", () => {
+test("shouldShowNestedToolbarChip shows the nested toggle whenever nested comments exist", () => {
     assert.equal(shouldShowNestedToolbarChip({
         hasNestedComments: true,
         isAllCommentsView: true,
         selectedIndexFileFilterRootPath: "docs/a.md",
         filteredIndexFileCount: 1,
-    }), false);
+    }), true);
 
     assert.equal(shouldShowNestedToolbarChip({
-        hasNestedComments: true,
+        hasNestedComments: false,
         isAllCommentsView: true,
         selectedIndexFileFilterRootPath: "docs/a.md",
         filteredIndexFileCount: 2,
-    }), true);
+    }), false);
 
     assert.equal(shouldShowNestedToolbarChip({
         hasNestedComments: true,

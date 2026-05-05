@@ -1268,6 +1268,18 @@ export default class SideNote2View extends ItemView {
                 : countDeletedComments(pageThreadsWithDeleted);
             const showResolved = this.plugin.shouldShowResolvedComments();
             const allAgentRuns = this.plugin.getAgentRuns();
+            this.noteSidebarTagIndex = isAllCommentsView && selectedIndexSourceFile
+                ? this.rebuildNoteSidebarTagIndex(selectedIndexSourceFile.path, persistedThreads)
+                : isAllCommentsView
+                    ? null
+                    : this.noteSidebarTagIndex;
+            if (
+                isAllCommentsView
+                && this.noteSidebarVisibleTagFilterKey
+                && !this.noteSidebarTagIndex?.threadIdsByTag.has(this.noteSidebarVisibleTagFilterKey)
+            ) {
+                this.noteSidebarVisibleTagFilterKey = null;
+            }
             const visiblePersistedThreads = persistedThreads.filter((thread) =>
                 isAllCommentsView
                     ? matchesResolvedVisibility(thread.resolved, showResolved)
@@ -1327,12 +1339,22 @@ export default class SideNote2View extends ItemView {
                 pinnedSidebarThreadIds,
                 showPinnedThreadsOnly,
             );
+            const isIndexTagsMode = isAllCommentsView && this.indexSidebarMode === "tags";
+            const indexTagThreadIds = isIndexTagsMode && this.noteSidebarVisibleTagFilterKey
+                ? this.noteSidebarTagIndex?.threadIdsByTag.get(this.noteSidebarVisibleTagFilterKey) ?? null
+                : null;
+            const tagFilteredScopedVisibleThreads = indexTagThreadIds
+                ? pinnedScopedVisibleThreads.filter((thread) => indexTagThreadIds.has(thread.id))
+                : pinnedScopedVisibleThreads;
+            const tagFilteredScopedAllThreads = indexTagThreadIds
+                ? pinnedScopedAllThreads.filter((thread) => indexTagThreadIds.has(thread.id))
+                : pinnedScopedAllThreads;
             const searchMatchedVisibleThreads = rankThreadsBySidebarSearchQuery(
-                pinnedScopedVisibleThreads,
+                tagFilteredScopedVisibleThreads,
                 this.indexSidebarSearchQuery,
             );
             const searchMatchedAllThreads = rankThreadsBySidebarSearchQuery(
-                pinnedScopedAllThreads,
+                tagFilteredScopedAllThreads,
                 this.indexSidebarSearchQuery,
             );
             const draftComment = this.plugin.getDraftForView(file.path);
@@ -1397,7 +1419,7 @@ export default class SideNote2View extends ItemView {
                     replacedThreadId,
                 );
             const limitedComments = isAllCommentsView
-                && this.indexSidebarMode === "list"
+                && (this.indexSidebarMode === "list" || this.indexSidebarMode === "tags")
                 && shouldLimitIndexSidebarList(selectedIndexFileFilterRootPath, this.indexSidebarSearchQuery)
                 ? limitIndexSidebarListItems(renderableItems)
                 : {
@@ -2861,19 +2883,22 @@ export default class SideNote2View extends ItemView {
             });
         }
 
+        if (activePrimaryMode === "tags") {
+            this.renderNoteSidebarTagFilterRow(toolbarEl, options.isAllCommentsView ? "index" : "note");
+        }
+
         if (!options.isAllCommentsView && options.noteSidebarMode === "tags") {
-            this.renderNoteSidebarTagFilterRow(toolbarEl);
             this.renderNoteSidebarTagBatchFlowPanel(toolbarEl);
         }
     }
 
-    private renderNoteSidebarTagFilterRow(toolbarEl: HTMLElement): void {
+    private renderNoteSidebarTagFilterRow(toolbarEl: HTMLElement, surface: "note" | "index" = "note"): void {
         const index = this.noteSidebarTagIndex;
         if (!index || index.threadIdsByTag.size === 0) {
             return;
         }
 
-        const row = toolbarEl.createDiv("sidenote2-sidebar-toolbar-row is-note-tag-filter-row");
+        const row = toolbarEl.createDiv(`sidenote2-sidebar-toolbar-row is-${surface}-tag-filter-row`);
         const tagFilterGroup = row.createDiv("sidenote2-sidebar-toolbar-group is-filter-group");
 
         this.renderToolbarChip(tagFilterGroup, {
@@ -2887,8 +2912,12 @@ export default class SideNote2View extends ItemView {
                 }
 
                 this.noteSidebarVisibleTagFilterKey = null;
-                this.noteSidebarSearchQuery = "";
-                this.noteSidebarSearchInputValue = "";
+                if (surface === "index") {
+                    this.indexSidebarSearchQuery = "";
+                } else {
+                    this.noteSidebarSearchQuery = "";
+                    this.noteSidebarSearchInputValue = "";
+                }
                 void this.renderComments({
                     skipDataRefresh: true,
                 });
@@ -2912,8 +2941,12 @@ export default class SideNote2View extends ItemView {
                         ...this.noteSidebarBatchTagFlow,
                         isOpen: false,
                     };
-                    this.noteSidebarSearchQuery = "";
-                    this.noteSidebarSearchInputValue = "";
+                    if (surface === "index") {
+                        this.indexSidebarSearchQuery = "";
+                    } else {
+                        this.noteSidebarSearchQuery = "";
+                        this.noteSidebarSearchInputValue = "";
+                    }
                     void this.renderComments({
                         skipDataRefresh: true,
                     });
@@ -3092,12 +3125,8 @@ export default class SideNote2View extends ItemView {
     private renderIndexModeControl(container: HTMLElement): void {
         this.renderSidebarModeControl(container, {
             mode: this.indexSidebarMode,
-            showTagsTab: false,
+            showTagsTab: true,
             onChange: (mode) => {
-                if (mode === "tags") {
-                    return;
-                }
-
                 if (this.indexSidebarMode === mode) {
                     return;
                 }

@@ -914,7 +914,9 @@ function renderStoredThreadEntry(
         } else if (entryComment.deletedAt && host.enableSoftDeleteActions) {
             renderRestoreButton(entryActionsEl, entryComment.id, host, "Restore deleted side note entry");
         } else {
-            renderEditButton(entryActionsEl, entryComment.id, host, "Edit side note");
+            if (!host.showSourceRedirectAction) {
+                renderEditButton(entryActionsEl, entryComment.id, host, "Edit side note");
+            }
             if (host.enableSoftDeleteActions) {
                 renderDeleteButton(entryActionsEl, entryComment.id, host, "Delete side note entry");
             }
@@ -941,7 +943,7 @@ function renderStoredThreadEntry(
             entryAgentRun,
             {
                 showShareAction: !entryComment.deletedAt && !thread.deletedAt,
-                showAddEntryAction: !entryComment.deletedAt && !thread.deletedAt,
+                showAddEntryAction: !host.showSourceRedirectAction && !entryComment.deletedAt && !thread.deletedAt,
                 showRetryAction: shouldShowRetryActionForSidebarComment(
                     entryComment.id,
                     entryComment.comment,
@@ -1077,7 +1079,9 @@ export async function renderPersistedCommentCard(
                 });
             };
 
-            renderEditButton(actionsEl, comment.id, host, "Edit side note");
+            if (!host.showSourceRedirectAction) {
+                renderEditButton(actionsEl, comment.id, host, "Edit side note");
+            }
             if (host.enableSoftDeleteActions) {
                 renderDeleteButton(actionsEl, comment.id, host, "Delete side note thread");
             }
@@ -1090,7 +1094,7 @@ export async function renderPersistedCommentCard(
         }
         renderThreadFooterActions(commentEl, comment, parentRetryRun?.id ?? null, parentAuthor, null, {
             showShareAction: !comment.deletedAt,
-            showAddEntryAction: !comment.deletedAt,
+            showAddEntryAction: !host.showSourceRedirectAction && !comment.deletedAt,
             showRetryAction: shouldShowRetryActionForSidebarComment(
                 comment.id,
                 comment.comment,
