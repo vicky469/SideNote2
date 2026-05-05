@@ -13,6 +13,9 @@ export const ALL_COMMENTS_NOTE_IMAGE_URL = "https://ichef.bbci.co.uk/images/ic/1
 export const ALL_COMMENTS_NOTE_IMAGE_CAPTION = "Relativity (Credit: 2015 The M.C. Escher Company - Baarn, The Netherlands)";
 export const ALL_COMMENTS_NOTE_IMAGE_ALT = "SideNote2 index header image";
 export const ALL_COMMENTS_NOTE_IMAGE_CAPTION_STYLE = "display: block; color: #8a8a8a; font-size: 12px; line-height: 1.2; text-align: center;";
+export const INDEX_FILE_FILTER_PROTOCOL = "side-note2-index-file";
+export const INDEX_FILE_FILTER_LINK_CLASS = "sidenote2-index-file-filter-link";
+export const INDEX_FILE_FILTER_DATA_ATTRIBUTE = "data-sidenote2-file-path";
 
 export interface CommentLocationTarget {
     filePath: string;
@@ -117,10 +120,6 @@ function unescapeHtmlText(value: string): string {
         .replace(/&amp;/g, "&");
 }
 
-function buildFileOpenUrl(vaultName: string, filePath: string): string {
-    return `obsidian://open?vault=${encodeURIComponent(vaultName)}&file=${encodeURIComponent(filePath)}`;
-}
-
 export function parseIndexFileOpenUrl(url: string): string | null {
     let parsedUrl: URL;
     try {
@@ -129,7 +128,10 @@ export function parseIndexFileOpenUrl(url: string): string | null {
         return null;
     }
 
-    if (parsedUrl.protocol !== "obsidian:" || parsedUrl.hostname !== "open") {
+    if (
+        parsedUrl.protocol !== "obsidian:"
+        || (parsedUrl.hostname !== "open" && parsedUrl.hostname !== INDEX_FILE_FILTER_PROTOCOL)
+    ) {
         return null;
     }
 
@@ -137,11 +139,11 @@ export function parseIndexFileOpenUrl(url: string): string | null {
     return filePath || null;
 }
 
-function formatFileLink(vaultName: string, filePath: string): string {
+function formatFileLink(filePath: string): string {
     const normalizedPath = normalizeNotePath(filePath);
     const pathSegments = normalizedPath.split("/").filter(Boolean);
     const fileName = pathSegments.pop() ?? normalizedPath;
-    return `[${escapeMarkdownText(fileName)}](${buildFileOpenUrl(vaultName, filePath)})`;
+    return `<a href="#" class="${INDEX_FILE_FILTER_LINK_CLASS} sidenote2-index-heading-label" title="${escapeHtmlText(normalizedPath)}" ${INDEX_FILE_FILTER_DATA_ATTRIBUTE}="${escapeHtmlText(normalizedPath)}">${escapeHtmlText(fileName)}</a>`;
 }
 
 function getFolderPath(filePath: string): string {
@@ -228,7 +230,12 @@ export function findFileHeadingPathInMarkdownLine(line: string): string | null {
         return unescapeHtmlText(titleMatch[1]);
     }
 
-    const markdownLinkPattern = /\[[^\]]*]\((obsidian:\/\/open\?[^)\s]+)\)/g;
+    const htmlFileLinkMatch = line.match(/\bdata-sidenote2-file-path="([^"]+)"/);
+    if (htmlFileLinkMatch?.[1]) {
+        return unescapeHtmlText(htmlFileLinkMatch[1]);
+    }
+
+    const markdownLinkPattern = /\[[^\]]*]\((obsidian:\/\/(?:open|side-note2-index-file)\?[^)\s]+)\)/g;
     for (const match of line.matchAll(markdownLinkPattern)) {
         const url = match[1];
         if (!url) {
@@ -325,7 +332,7 @@ function appendFileSections(
             .slice()
             .sort((left, right) => left.localeCompare(right));
         for (const filePath of folderFilePaths) {
-            lines.push(`- ${formatFileLink(vaultName, filePath)}`);
+            lines.push(`- ${formatFileLink(filePath)}`);
         }
 
         lines.push("");

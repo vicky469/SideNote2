@@ -35,7 +35,6 @@ export class PluginLifecycleController {
         void this.host.log?.("info", "startup", "startup.sidebar.ready");
         await this.host.refreshCommentViews();
         this.host.refreshEditorDecorations();
-        this.host.scheduleAggregateNoteRefresh();
         this.host.syncIndexNoteViewClasses();
         void this.host.log?.("info", "startup", "startup.layout.ready");
     }

@@ -1,8 +1,5 @@
 import type { Comment } from "../../commentManager";
-import {
-    getIndexFileFilterConnectedComponent,
-    type IndexFileFilterGraph,
-} from "../../core/derived/indexFileFilterGraph";
+import type { IndexFileFilterGraph } from "../../core/derived/indexFileFilterGraph";
 
 export interface IndexFileFilterOption {
     filePath: string;
@@ -66,7 +63,7 @@ export function deriveIndexSidebarScopedFilePaths(
         return [];
     }
 
-    return getIndexFileFilterConnectedComponent(graph, normalizedRootPath);
+    return [normalizedRootPath];
 }
 
 export function shouldLimitIndexSidebarList(

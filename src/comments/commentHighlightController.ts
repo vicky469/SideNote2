@@ -12,6 +12,7 @@ import {
     findIndexMarkdownLineTarget,
     parseCommentLocationUrl,
     parseIndexFileOpenUrl,
+    INDEX_FILE_FILTER_PROTOCOL,
 } from "../core/derived/allCommentsNote";
 import { buildEditorHighlightRanges } from "../core/derived/editorHighlightRanges";
 import { matchesResolvedCommentVisibility } from "../core/rules/resolvedCommentVisibility";
@@ -133,7 +134,7 @@ export class CommentHighlightController {
     constructor(private readonly host: CommentHighlightHost) {}
 
     private readonly indexPreviewLinkSelector = "a.sidenote2-index-comment-link[data-sidenote2-comment-url]";
-    private readonly indexPreviewFileHeadingSelector = ".sidenote2-index-heading-label[title], a[href^=\"obsidian://open\"]";
+    private readonly indexPreviewFileHeadingSelector = ".sidenote2-index-heading-label[title], a[data-sidenote2-file-path], a[href^=\"obsidian://open\"], a[href^=\"obsidian://side-note2-index-file\"]";
     private readonly previewManagedSectionStartLineCache =
         new Map<string, PreviewManagedSectionStartLineCacheEntry>();
 
@@ -481,6 +482,11 @@ export class CommentHighlightController {
     }
 
     private getIndexPreviewFilePathFromElement(element: HTMLElement): string | null {
+        const dataPath = element.dataset.sidenote2FilePath?.trim();
+        if (dataPath) {
+            return dataPath;
+        }
+
         const titlePath = element.getAttribute("title")?.trim();
         if (titlePath) {
             return titlePath;
@@ -510,6 +516,30 @@ export class CommentHighlightController {
             link.classList.remove("external-link");
             link.classList.add("sidenote2-index-comment-link");
             link.removeAttribute("href");
+            link.removeAttribute("target");
+            link.removeAttribute("rel");
+            link.removeAttribute("aria-label");
+            link.removeAttribute("data-tooltip-position");
+            link.removeAttribute("tabindex");
+        });
+
+        element.querySelectorAll(`a[href^="obsidian://open"], a[href^="obsidian://${INDEX_FILE_FILTER_PROTOCOL}"], a[data-sidenote2-file-path]`).forEach((link) => {
+            if (!(link instanceof HTMLAnchorElement)) {
+                return;
+            }
+
+            const filePath = link.dataset.sidenote2FilePath?.trim()
+                || parseIndexFileOpenUrl(link.getAttribute("href")?.trim() ?? "")
+                || "";
+            if (!filePath) {
+                return;
+            }
+
+            link.dataset.sidenote2FilePath = filePath;
+            link.classList.remove("external-link");
+            link.classList.add("sidenote2-index-file-filter-link", "sidenote2-index-heading-label");
+            link.setAttribute("title", filePath);
+            link.setAttribute("href", "#");
             link.removeAttribute("target");
             link.removeAttribute("rel");
             link.removeAttribute("aria-label");

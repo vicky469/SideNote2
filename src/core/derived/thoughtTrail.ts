@@ -90,7 +90,15 @@ function isAllCommentsNotePath(filePath: string, currentPath: string = ALL_COMME
 }
 
 function toInlineWordPreview(value: string, maxWords: number): string {
-    const normalized = value.replace(/\r\n/g, "\n").replace(/\s+/g, " ").trim();
+    const normalized = value
+        .replace(/!?\[([^\]\n]+)\]\([^)]+\)/g, "$1")
+        .replace(/\[\[([^\]|#\n]+)(?:#[^\]|\n]+)?(?:\|([^\]\n]+))?\]\]/g, (_match, target: string, displayText?: string) => {
+            const label = displayText?.trim() || target.split("/").pop()?.replace(/\.md$/i, "") || target;
+            return label;
+        })
+        .replace(/\r\n/g, "\n")
+        .replace(/\s+/g, " ")
+        .trim();
     if (!normalized) {
         return "(blank selection)";
     }
@@ -346,11 +354,11 @@ export function buildThoughtTrailLines(
     ): void => {
         const sourceId = ensureNode(sourceFilePath);
         for (const edge of edgesBySourceFile.get(sourceFilePath) ?? []) {
-            const targetId = ensureNode(edge.targetFilePath);
-            const label = formatEdgeLabel(edge.comment);
-            edgeLines.push(label
-                ? `    ${sourceId} -->|${label}| ${targetId}`
-                : `    ${sourceId} --> ${targetId}`);
+			const targetId = ensureNode(edge.targetFilePath);
+			const label = formatEdgeLabel(edge.comment);
+			edgeLines.push(label
+				? `    ${sourceId} -->|${JSON.stringify(label)}| ${targetId}`
+				: `    ${sourceId} --> ${targetId}`);
 
             if (
                 branchVisited.has(edge.targetFilePath)

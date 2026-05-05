@@ -28,8 +28,8 @@ const INDEX_NATIVE_COLLAPSE_CONTROL_SELECTOR = [
     ".cm-fold-indicator",
 ].join(", ");
 const INDEX_COMMENT_LINK_SELECTOR = "a.sidenote2-index-comment-link[data-sidenote2-comment-url]";
-const INDEX_FILE_HEADING_SELECTOR = ".sidenote2-index-heading-label[title]";
-const INDEX_FILE_LINK_SELECTOR = "a[href^=\"obsidian://open\"]";
+const INDEX_FILE_HEADING_SELECTOR = ".sidenote2-index-heading-label[title], a[data-sidenote2-file-path]";
+const INDEX_FILE_LINK_SELECTOR = "a[href^=\"obsidian://open\"], a[href^=\"obsidian://side-note2-index-file\"]";
 
 export function isIndexNativeCollapseControlTarget(target: ClosestLookupTarget | null): boolean {
     return !!target?.closest(INDEX_NATIVE_COLLAPSE_CONTROL_SELECTOR);
@@ -57,7 +57,9 @@ export function findClickedIndexLivePreviewTarget(
     }
 
     const fileHeading = target.closest(INDEX_FILE_HEADING_SELECTOR);
-    const filePath = fileHeading?.getAttribute("title")?.trim() ?? "";
+    const filePath = fileHeading?.dataset?.sidenote2FilePath?.trim()
+        || fileHeading?.getAttribute("title")?.trim()
+        || "";
     if (filePath) {
         return {
             kind: "file",

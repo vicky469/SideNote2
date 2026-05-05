@@ -332,7 +332,7 @@ export default class SideNote2 extends Plugin {
         getDraftHostFilePath: () => this.commentSessionController.getDraftHostFilePath(),
         setDraftHostFilePath: (filePath) => this.commentSessionController.setDraftHostFilePath(filePath),
         getSidebarTargetFile: () => this.getSidebarTargetFile(),
-        updateSidebarViews: (file, options) => this.updateSidebarViews(file, options),
+        updateSidebarViews: (file) => this.updateSidebarViews(file),
         refreshAggregateNoteNow: () => this.refreshAggregateNoteNow(),
         loadData: () => this.loadData(),
         saveData: (data) => this.saveData(data),
@@ -390,7 +390,7 @@ export default class SideNote2 extends Plugin {
     }, this.agentRunStore);
     private readonly pluginLifecycleController = new PluginLifecycleController({
         app: this.app,
-        ensureSidebarView: () => this.commentNavigationController.ensureSidebarView(),
+        ensureSidebarView: () => this.commentNavigationController.ensureSidebarView(true),
         getCommentManager: () => this.commentManager,
         getAggregateCommentIndex: () => this.aggregateCommentIndex,
         renameStoredComments: (previousFilePath, nextFilePath) =>
@@ -547,9 +547,11 @@ export default class SideNote2 extends Plugin {
         this.derivedCommentMetadataManager.installMetadataCacheAugmentation();
         const activeFile = this.app.workspace.getActiveFile();
         this.workspaceContextController.initializeActiveFiles(activeFile);
-        await this.workspaceViewController.loadVisibleFiles();
         await this.pluginEventRouter.register();
         this.addSettingTab(new SideNote2Setting(this.app, this));
+        void this.workspaceViewController.loadVisibleFiles().catch((error) => {
+            this.warn("Failed to preload visible SideNote2 comments during startup.", error, "startup", "startup.visible-files.preload.warn");
+        });
     }
 
     onunload() {
@@ -1147,7 +1149,9 @@ export default class SideNote2 extends Plugin {
             return;
         }
 
-        await this.app.workspace.openLinkText(sourceFilePath, indexFilePath, "tab");
+        const indexFile = this.workspaceViewController.getMarkdownFileByPath(indexFilePath);
+        await this.commentNavigationController.ensureSidebarView(true);
+        await this.commentNavigationController.syncIndexFileFilter(indexFile, sourceFile.path);
     }
 
     public async revealIndexCommentFromSidebar(commentId: string, indexFilePath: string) {
@@ -1564,8 +1568,6 @@ export default class SideNote2 extends Plugin {
     }
 
     async openIndexNote() {
-        await this.refreshAggregateNoteNow();
-
         const indexFilePath = this.getAllCommentsNotePath();
         if (!this.workspaceViewController.getMarkdownFileByPath(indexFilePath)) {
             this.showNotice(`Unable to open ${indexFilePath}.`, "index", "index.open.error", {

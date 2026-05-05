@@ -61,6 +61,13 @@ function cloneMermaidConfig<T>(config: T): T {
     return JSON.parse(JSON.stringify(config)) as T;
 }
 
+function extractDirectRenderMermaidSource(lines: string[]): string {
+    return extractThoughtTrailMermaidSource(lines)
+        .split("\n")
+        .filter((line) => !/^\s*click\s+\S+\s+href\s+/.test(line))
+        .join("\n");
+}
+
 export async function renderSidebarThoughtTrail(
     container: HTMLDivElement,
     comments: Array<Comment | CommentThread>,
@@ -173,7 +180,7 @@ async function renderThoughtTrailMermaid(
         const renderId = `sidenote2-thought-trail-${context.renderVersion}-${Date.now()}`;
         const renderResult = await mermaidRuntime.render(
             renderId,
-            extractThoughtTrailMermaidSource(thoughtTrailLines),
+            extractDirectRenderMermaidSource(thoughtTrailLines),
         );
         const svg = typeof renderResult === "string" ? renderResult : renderResult?.svg;
         if (!svg) {

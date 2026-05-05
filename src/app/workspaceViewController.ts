@@ -193,10 +193,6 @@ export class WorkspaceViewController {
         }
 
         if (this.host.isAllCommentsNotePath(file.path)) {
-            await this.host.ensureIndexedCommentsLoaded();
-            if (this.host.hasPendingAggregateRefresh()) {
-                await this.host.refreshAggregateNoteNow();
-            }
             return;
         }
 
@@ -259,6 +255,10 @@ export class WorkspaceViewController {
     private getOpenSidebarFiles(): TFile[] {
         const files = new Map<string, TFile>();
         this.host.app.workspace.iterateAllLeaves((leaf) => {
+            if (isSidebarViewLike(leaf.view)) {
+                return;
+            }
+
             if (!isFileViewLike(leaf.view)) {
                 return;
             }

@@ -249,6 +249,18 @@ export class CommentNavigationController {
         }
     }
 
+    public async syncIndexFileFilter(indexFile: TFile | null, sourceFilePath: string): Promise<void> {
+        const leaves = this.host.app.workspace.getLeavesOfType("sidenote2-view");
+        for (const leaf of leaves) {
+            if (isSidebarViewLike(leaf.view)) {
+                await leaf.view.updateActiveFile(indexFile, { skipDataRefresh: true });
+                if (leaf.view.setIndexFileFilterRootPath) {
+                    await leaf.view.setIndexFileFilterRootPath(sourceFilePath);
+                }
+            }
+        }
+    }
+
     public async activateView(skipViewUpdate = false): Promise<void> {
         await this.activateSidebarView({ skipViewUpdate });
     }

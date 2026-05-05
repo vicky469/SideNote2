@@ -915,9 +915,6 @@ function renderStoredThreadEntry(
                 renderDeleteButton(entryActionsEl, entryComment.id, host, "Delete side note entry");
             }
         }
-        if (host.showSourceRedirectAction && !entryComment.deletedAt && !thread.deletedAt) {
-            renderSourceRedirectButton(entryActionsEl, entryComment, "Open source note", "obsidian-external-link", host);
-        }
         if (shouldRenderChildEntryMoveHandle({
             enableChildEntryMove: host.enableChildEntryMove,
             showSourceRedirectAction: host.showSourceRedirectAction,
@@ -1050,6 +1047,14 @@ export async function renderPersistedCommentCard(
         } else {
             if (canShowHeaderPinAction) {
                 renderPinActionButton(actionsEl, thread.id, host.isPinnedThread(thread.id), host);
+            } else if (host.showSourceRedirectAction && !comment.deletedAt && !thread.deletedAt) {
+                renderSourceRedirectButton(
+                    actionsEl,
+                    comment,
+                    presentation.redirectHint.ariaLabel,
+                    presentation.redirectHint.icon,
+                    host,
+                );
             }
             const resolveButton = actionsEl.createEl("button", {
                 cls: "clickable-icon sidenote2-comment-action-button sidenote2-comment-action-resolve",
@@ -1072,15 +1077,6 @@ export async function renderPersistedCommentCard(
             if (host.enableSoftDeleteActions) {
                 renderDeleteButton(actionsEl, comment.id, host, "Delete side note thread");
             }
-        }
-        if (host.showSourceRedirectAction && !comment.deletedAt) {
-            renderSourceRedirectButton(
-                actionsEl,
-                comment,
-                presentation.redirectHint.ariaLabel,
-                presentation.redirectHint.icon,
-                host,
-            );
         }
         if (isDraggablePageThread) {
             renderReorderHandle(actionsEl, thread.id, host);

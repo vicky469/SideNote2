@@ -157,7 +157,7 @@ test("plugin lifecycle controller handles layout ready by refreshing views and s
     assert.equal(harness.getEnsureSidebarViewCount(), 1);
     assert.equal(harness.getRefreshCommentViewsCount(), 1);
     assert.equal(harness.getRefreshEditorDecorationsCount(), 1);
-    assert.equal(harness.getScheduleAggregateNoteRefreshCount(), 1);
+    assert.equal(harness.getScheduleAggregateNoteRefreshCount(), 0);
     assert.equal(harness.getSyncIndexNoteViewClassesCount(), 1);
 });
 
