@@ -15,6 +15,7 @@ Use this skill when the user:
 
 - pastes an `obsidian://side-note2-comment?...` URI
 - says `create a page note`
+- says `put each point into one comment`
 - says `create an anchored note`
 - says `create a new side note thread`
 - says `reply to this`
@@ -82,6 +83,7 @@ Important:
    - keep the side note concise
    - create or update a linked wiki page with the fuller detail when needed
 9. Do not cram oversized detail into one side note just to avoid splitting it.
+10. For "one point a note/comment" requests, create one parent thread and append each point as a child entry in that thread. Do not create many separate page-note threads for points from the same source.
 
 ## Preferred Write Entry Points
 
@@ -93,6 +95,14 @@ Create a page note:
 ```bash
 node scripts/create-note-comment-thread.mjs --file /abs/path/note.md --page --comment-file /abs/path/comment.md
 ```
+
+Create one page-note thread with child comments:
+
+```bash
+node scripts/create-note-comment-thread-with-children.mjs --file /abs/path/note.md --page --root-comment-file /abs/path/root.md --children-dir /abs/path/children
+```
+
+Use this for requests like "add this in sidebar page note, one point a note" or "put each point into one comment." Put the framing/summary in `root.md`; put child comments in sorted files like `01-self.md`, `02-motivation.md`. Add `--replace-existing` only when repairing a wrong prior split.
 
 Create an anchored note:
 

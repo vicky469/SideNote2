@@ -21,12 +21,32 @@ function getSidecarPath(vaultRoot: string, noteRelativePath: string): string {
     return path.join(vaultRoot, ".obsidian", "plugins", "side-note2", "sidenotes", "by-note", shard, `${hash}.json`);
 }
 
+function getSourceSidecarPath(vaultRoot: string, sourceId: string): string {
+    const hash = hashText(sourceId);
+    const shard = hash.slice(0, 2);
+    return path.join(vaultRoot, ".obsidian", "plugins", "side-note2", "sidenotes", "by-source", shard, `${hash}.json`);
+}
+
 async function readSidecar(vaultRoot: string, noteRelativePath: string): Promise<{ version: number; notePath: string; threads: CommentThread[] } | null> {
     const sidecarPath = getSidecarPath(vaultRoot, noteRelativePath);
     try {
         const raw = await readFile(sidecarPath, "utf8");
         const parsed = JSON.parse(raw);
         if (!parsed || typeof parsed !== "object" || parsed.version !== 1 || !Array.isArray(parsed.threads)) {
+            return null;
+        }
+        return parsed;
+    } catch {
+        return null;
+    }
+}
+
+async function readSourceSidecar(vaultRoot: string, sourceId: string): Promise<{ version: number; notePath: string; sourceId: string; threads: CommentThread[] } | null> {
+    const sidecarPath = getSourceSidecarPath(vaultRoot, sourceId);
+    try {
+        const raw = await readFile(sidecarPath, "utf8");
+        const parsed = JSON.parse(raw);
+        if (!parsed || typeof parsed !== "object" || parsed.version !== 1 || parsed.sourceId !== sourceId || !Array.isArray(parsed.threads)) {
             return null;
         }
         return parsed;
@@ -105,6 +125,77 @@ test("create-note-comment-thread script creates a page note thread", async () =>
 
     const noteContent = await readFile(notePath, "utf8");
     assert.equal(noteContent, "# Title\n\nBody text.\n");
+});
+
+test("create-note-comment-thread-with-children script creates one page thread with child entries", async () => {
+    const tempDir = await mkdtemp(path.join(tmpdir(), "sidenote2-comment-create-children-"));
+    const notePath = path.join(tempDir, "Thread Note.md");
+    const rootPath = path.join(tempDir, "root.md");
+    const childrenDir = path.join(tempDir, "children");
+    const scriptPath = path.resolve(process.cwd(), "scripts/create-note-comment-thread-with-children.mjs");
+
+    await createVaultDir(tempDir);
+    await mkdir(childrenDir, { recursive: true });
+    await writeFile(notePath, "# Thread Note\n\nBody text.\n", "utf8");
+    await writeFile(rootPath, "Frame the question\n", "utf8");
+    await writeFile(path.join(childrenDir, "01-self.md"), "Self:\n- What keeps my attention?\n", "utf8");
+    await writeFile(path.join(childrenDir, "02-motivation.md"), "Motivation:\n- What do I value long term?\n", "utf8");
+    await writeFile(path.join(tempDir, ".obsidian", "plugins", "side-note2", "data.json"), JSON.stringify({
+        sourceIdentityState: {
+            schemaVersion: 1,
+            sources: {
+                "src-test": {
+                    sourceId: "src-test",
+                    currentPath: "Thread Note.md",
+                    aliases: [],
+                    contentFingerprint: "test",
+                    createdAt: 1710000000000,
+                    updatedAt: 1710000000000,
+                },
+            },
+            pathToSourceId: {
+                "Thread Note.md": "src-test",
+            },
+        },
+    }), "utf8");
+
+    const { stdout } = await execFile("node", [
+        scriptPath,
+        "--file",
+        notePath,
+        "--page",
+        "--root-comment-file",
+        rootPath,
+        "--children-dir",
+        childrenDir,
+    ], {
+        cwd: process.cwd(),
+    });
+
+    assert.match(stdout, /Created page note thread .* with 2 child comments/);
+
+    const sidecar = await readSidecar(tempDir, "Thread Note.md");
+    assert.ok(sidecar);
+    assert.equal(sidecar!.threads.length, 1);
+    const thread = sidecar!.threads[0];
+    assert.equal(thread.anchorKind, "page");
+    assert.equal(thread.selectedText, "Thread Note");
+    assert.equal(thread.selectedTextHash, hashText("Thread Note"));
+    assert.equal(thread.startLine, 0);
+    assert.equal(thread.entries.length, 3);
+    assert.equal(thread.entries[0].id, thread.id);
+    assert.equal(thread.entries[0].body, "Frame the question");
+    assert.equal(thread.entries[1].body, "Self:\n- What keeps my attention?");
+    assert.equal(thread.entries[2].body, "Motivation:\n- What do I value long term?");
+
+    const sourceSidecar = await readSourceSidecar(tempDir, "src-test");
+    assert.ok(sourceSidecar);
+    assert.equal(sourceSidecar!.notePath, "Thread Note.md");
+    assert.equal(sourceSidecar!.threads.length, 1);
+    assert.equal(sourceSidecar!.threads[0].entries.length, 3);
+
+    const noteContent = await readFile(notePath, "utf8");
+    assert.equal(noteContent, "# Thread Note\n\nBody text.\n");
 });
 
 test("create-note-comment-thread script creates an anchored thread without flattening existing replies", async () => {

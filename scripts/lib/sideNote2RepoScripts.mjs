@@ -28,6 +28,16 @@ function printCreateNoteCommentThreadUsage(stream = process.stderr) {
     );
 }
 
+function printCreateNoteCommentThreadWithChildrenUsage(stream = process.stderr) {
+    stream.write(
+        [
+            "Usage:",
+            "  node scripts/create-note-comment-thread-with-children.mjs --file <note.md> --page --root-comment-file <path> (--children-dir <dir> | --children-file <path>) [--child-separator <text>] [--replace-existing] [--settle-ms <milliseconds>]",
+            "  node scripts/create-note-comment-thread-with-children.mjs --file <note.md> --selected-text <text> --start-line <number> --start-char <number> --end-line <number> --end-char <number> --root-comment-file <path> (--children-dir <dir> | --children-file <path>) [--child-separator <text>] [--replace-existing] [--settle-ms <milliseconds>]",
+        ].join("\n") + "\n",
+    );
+}
+
 function printAppendNoteCommentEntryUsage(stream = process.stderr) {
     stream.write(
         [
@@ -170,6 +180,125 @@ function parseCreateNoteCommentThreadArgs(argv) {
     const contentSources = [options.comment !== null, Boolean(options.commentFile), options.stdin].filter(Boolean).length;
     if (!options.file || contentSources !== 1) {
         throw new Error("Expected --file plus exactly one comment source.");
+    }
+
+    const hasSelectionTarget = options.selectedText.length > 0
+        || options.startLine !== null
+        || options.startChar !== null
+        || options.endLine !== null
+        || options.endChar !== null;
+    if (options.page && hasSelectionTarget) {
+        throw new Error("Expected either --page or a selection target, not both.");
+    }
+
+    if (!options.page) {
+        if (
+            !options.selectedText
+            || options.startLine === null
+            || options.startChar === null
+            || options.endLine === null
+            || options.endChar === null
+        ) {
+            throw new Error(
+                "Expected --page, or --selected-text with --start-line/--start-char/--end-line/--end-char.",
+            );
+        }
+
+        if (
+            options.endLine < options.startLine
+            || (options.endLine === options.startLine && options.endChar < options.startChar)
+        ) {
+            throw new Error("Expected the end position to be at or after the start position.");
+        }
+    }
+
+    return options;
+}
+
+function parseCreateNoteCommentThreadWithChildrenArgs(argv) {
+    const options = {
+        file: "",
+        page: false,
+        selectedText: "",
+        startLine: null,
+        startChar: null,
+        endLine: null,
+        endChar: null,
+        rootCommentFile: "",
+        childrenDir: "",
+        childrenFile: "",
+        childSeparator: "\n---\n",
+        replaceExisting: false,
+        settleMs: 0,
+    };
+
+    for (let index = 0; index < argv.length; index += 1) {
+        const arg = argv[index];
+        switch (arg) {
+            case "--file":
+                options.file = argv[index + 1] ?? "";
+                index += 1;
+                break;
+            case "--page":
+                options.page = true;
+                break;
+            case "--selected-text":
+                options.selectedText = argv[index + 1] ?? "";
+                index += 1;
+                break;
+            case "--start-line":
+                options.startLine = parseNonNegativeIntegerOption(argv[index + 1] ?? "", "--start-line");
+                index += 1;
+                break;
+            case "--start-char":
+                options.startChar = parseNonNegativeIntegerOption(argv[index + 1] ?? "", "--start-char");
+                index += 1;
+                break;
+            case "--end-line":
+                options.endLine = parseNonNegativeIntegerOption(argv[index + 1] ?? "", "--end-line");
+                index += 1;
+                break;
+            case "--end-char":
+                options.endChar = parseNonNegativeIntegerOption(argv[index + 1] ?? "", "--end-char");
+                index += 1;
+                break;
+            case "--root-comment-file":
+                options.rootCommentFile = argv[index + 1] ?? "";
+                index += 1;
+                break;
+            case "--children-dir":
+                options.childrenDir = argv[index + 1] ?? "";
+                index += 1;
+                break;
+            case "--children-file":
+                options.childrenFile = argv[index + 1] ?? "";
+                index += 1;
+                break;
+            case "--child-separator":
+                options.childSeparator = argv[index + 1] ?? "";
+                index += 1;
+                break;
+            case "--replace-existing":
+                options.replaceExisting = true;
+                break;
+            case "--settle-ms":
+                options.settleMs = parseNonNegativeIntegerOption(argv[index + 1] ?? "", "--settle-ms");
+                index += 1;
+                break;
+            case "--help":
+            case "-h":
+                return null;
+            default:
+                throw new Error(`Unknown argument: ${arg}`);
+        }
+    }
+
+    const childSources = [Boolean(options.childrenDir), Boolean(options.childrenFile)].filter(Boolean).length;
+    if (!options.file || !options.rootCommentFile || childSources !== 1) {
+        throw new Error("Expected --file, --root-comment-file, and exactly one of --children-dir or --children-file.");
+    }
+    if (options.childrenFile && !options.childSeparator) {
+        throw new Error("Expected --child-separator to be non-empty when --children-file is used.");
     }
 
     const hasSelectionTarget = options.selectedText.length > 0
@@ -459,6 +588,59 @@ export function getSidecarPath(vaultRoot, noteRelativePath) {
     return path.join(vaultRoot, ".obsidian", "plugins", "side-note2", "sidenotes", "by-note", shard, `${noteHash}.json`);
 }
 
+export function getSourceSidecarPath(vaultRoot, sourceId) {
+    const sourceHash = hashText(sourceId);
+    const shard = sourceHash.slice(0, 2) || "00";
+    return path.join(vaultRoot, ".obsidian", "plugins", "side-note2", "sidenotes", "by-source", shard, `${sourceHash}.json`);
+}
+
+async function readSourceIdForPath(vaultRoot, noteRelativePath) {
+    const dataPath = path.join(vaultRoot, ".obsidian", "plugins", "side-note2", "data.json");
+    let parsed;
+    try {
+        parsed = JSON.parse(await readFile(dataPath, "utf8"));
+    } catch (error) {
+        if (error && error.code === "ENOENT") {
+            return null;
+        }
+        throw error;
+    }
+
+    const state = parsed?.sourceIdentityState;
+    const pathToSourceId = state?.pathToSourceId;
+    if (pathToSourceId && typeof pathToSourceId[noteRelativePath] === "string") {
+        return pathToSourceId[noteRelativePath];
+    }
+
+    const sources = state?.sources && typeof state.sources === "object" ? state.sources : {};
+    for (const record of Object.values(sources)) {
+        if (!record || typeof record !== "object") {
+            continue;
+        }
+        if (record.currentPath === noteRelativePath) {
+            return record.sourceId ?? null;
+        }
+        if (Array.isArray(record.aliases) && record.aliases.includes(noteRelativePath)) {
+            return record.sourceId ?? null;
+        }
+    }
+
+    return null;
+}
+
+async function writeSidecarPayload(sidecarPath, payload) {
+    const serialized = `${JSON.stringify(payload)}\n`;
+    const tempPath = `${sidecarPath}.tmp-${process.pid}-${randomUUID()}`;
+    await mkdir(path.dirname(sidecarPath), { recursive: true });
+    await writeFile(tempPath, serialized, "utf8");
+    try {
+        await rename(tempPath, sidecarPath);
+    } catch (error) {
+        await rm(tempPath, { force: true });
+        throw error;
+    }
+}
+
 export async function resolveVaultRootByPath(notePath) {
     let current = path.resolve(notePath);
     while (true) {
@@ -502,9 +684,14 @@ export async function readSidecar(vaultRoot, noteRelativePath) {
 
 export async function writeSidecar(vaultRoot, noteRelativePath, threads) {
     const sidecarPath = getSidecarPath(vaultRoot, noteRelativePath);
+    const sourceId = await readSourceIdForPath(vaultRoot, noteRelativePath);
+    const sourceSidecarPath = sourceId ? getSourceSidecarPath(vaultRoot, sourceId) : null;
     if (threads.length === 0) {
         if (await pathExists(sidecarPath)) {
             await rm(sidecarPath, { force: true });
+        }
+        if (sourceSidecarPath && await pathExists(sourceSidecarPath)) {
+            await rm(sourceSidecarPath, { force: true });
         }
         return;
     }
@@ -516,16 +703,60 @@ export async function writeSidecar(vaultRoot, noteRelativePath, threads) {
             filePath: noteRelativePath,
         })),
     };
-    const serialized = `${JSON.stringify(payload)}\n`;
-    const tempPath = `${sidecarPath}.tmp-${process.pid}-${randomUUID()}`;
-    await mkdir(path.dirname(sidecarPath), { recursive: true });
-    await writeFile(tempPath, serialized, "utf8");
-    try {
-        await rename(tempPath, sidecarPath);
-    } catch (error) {
-        await rm(tempPath, { force: true });
-        throw error;
+    await writeSidecarPayload(sidecarPath, payload);
+    if (sourceId && sourceSidecarPath) {
+        await writeSidecarPayload(sourceSidecarPath, {
+            ...payload,
+            sourceId,
+        });
     }
+}
+
+async function loadChildCommentBodies(options) {
+    if (options.childrenDir) {
+        const dirPath = path.resolve(process.cwd(), options.childrenDir);
+        const entries = await readdir(dirPath, { withFileTypes: true });
+        const fileNames = entries
+            .filter((entry) => entry.isFile() && !entry.name.startsWith("."))
+            .map((entry) => entry.name)
+            .sort((left, right) => left.localeCompare(right));
+        if (fileNames.length === 0) {
+            throw new Error(`No child comment files found in ${dirPath}`);
+        }
+
+        return Promise.all(fileNames.map(async (fileName) =>
+            normalizeCommentBody(await readFile(path.join(dirPath, fileName), "utf8"))
+        ));
+    }
+
+    const raw = await readFile(path.resolve(process.cwd(), options.childrenFile), "utf8");
+    const bodies = raw
+        .split(options.childSeparator)
+        .map((body) => normalizeCommentBody(body.trim()))
+        .filter((body) => body.length > 0);
+    if (bodies.length === 0) {
+        throw new Error(`No child comments found in ${options.childrenFile}`);
+    }
+    return bodies;
+}
+
+function removeExistingThreadsForTarget(threads, target) {
+    return threads.filter((thread) => {
+        if (thread.filePath !== target.filePath) {
+            return true;
+        }
+        if (target.anchorKind === "page") {
+            return thread.anchorKind !== "page";
+        }
+        return !(
+            thread.anchorKind !== "page"
+            && thread.startLine === target.startLine
+            && thread.startChar === target.startChar
+            && thread.endLine === target.endLine
+            && thread.endChar === target.endChar
+            && thread.selectedTextHash === target.selectedTextHash
+        );
+    });
 }
 
 export async function loadThreadsWithFallback(vaultRoot, notePath, noteRelativePath) {
@@ -817,6 +1048,123 @@ export async function runCreateNoteCommentThread(argv, io = { stdout: process.st
 
     const anchorLabel = options.page ? "page note" : "anchored note";
     io.stdout.write(`Created ${anchorLabel} thread ${threadId} in ${notePath}\n`);
+    return 0;
+}
+
+export async function runCreateNoteCommentThreadWithChildren(argv, io = { stdout: process.stdout, stderr: process.stderr }) {
+    let options;
+    try {
+        options = parseCreateNoteCommentThreadWithChildrenArgs(argv);
+    } catch (error) {
+        io.stderr.write(`${error instanceof Error ? error.message : String(error)}\n`);
+        printCreateNoteCommentThreadWithChildrenUsage(io.stderr);
+        return 1;
+    }
+
+    if (options === null) {
+        printCreateNoteCommentThreadWithChildrenUsage(io.stdout);
+        return 0;
+    }
+
+    const notePath = path.resolve(process.cwd(), options.file);
+    let vaultRoot;
+    let noteRelativePath;
+    try {
+        vaultRoot = await resolveVaultRootByPath(notePath);
+        noteRelativePath = getVaultRelativePath(vaultRoot, notePath);
+    } catch (error) {
+        io.stderr.write(`${error instanceof Error ? error.message : String(error)}\n`);
+        return 1;
+    }
+
+    let rootBody;
+    let childBodies;
+    try {
+        rootBody = normalizeCommentBody(await readFile(path.resolve(process.cwd(), options.rootCommentFile), "utf8"));
+        childBodies = await loadChildCommentBodies(options);
+    } catch (error) {
+        io.stderr.write(`${error instanceof Error ? error.message : String(error)}\n`);
+        return 1;
+    }
+
+    if (!rootBody) {
+        io.stderr.write("Root comment body is empty.\n");
+        return 1;
+    }
+
+    let threads;
+    let noteContent;
+    let hadLegacyBlock;
+    try {
+        ({ threads, noteContent, hadLegacyBlock } = await loadThreadsWithFallback(vaultRoot, notePath, noteRelativePath));
+    } catch (error) {
+        io.stderr.write(`${error instanceof Error ? error.message : String(error)}\n`);
+        return 1;
+    }
+
+    const timestamp = Date.now();
+    const threadId = randomUUID();
+    const selectedText = options.page
+        ? getPageCommentLabelForPath(noteRelativePath)
+        : options.selectedText;
+    const selectedTextHash = hashCommentSelection(selectedText);
+    const target = {
+        filePath: noteRelativePath,
+        anchorKind: options.page ? "page" : "selection",
+        startLine: options.page ? 0 : options.startLine,
+        startChar: options.page ? 0 : options.startChar,
+        endLine: options.page ? 0 : options.endLine,
+        endChar: options.page ? 0 : options.endChar,
+        selectedTextHash,
+    };
+    const entries = [
+        {
+            id: threadId,
+            body: rootBody,
+            timestamp,
+        },
+        ...childBodies.map((body, index) => ({
+            id: randomUUID(),
+            body,
+            timestamp: timestamp + index + 1,
+        })),
+    ];
+    const nextThread = {
+        id: threadId,
+        filePath: noteRelativePath,
+        startLine: target.startLine,
+        startChar: target.startChar,
+        endLine: target.endLine,
+        endChar: target.endChar,
+        selectedText,
+        selectedTextHash,
+        anchorKind: options.page ? "page" : "selection",
+        orphaned: false,
+        resolved: false,
+        entries,
+        createdAt: timestamp,
+        updatedAt: entries[entries.length - 1]?.timestamp ?? timestamp,
+    };
+
+    const nextThreads = [
+        ...(options.replaceExisting ? removeExistingThreadsForTarget(threads, target) : threads),
+        nextThread,
+    ];
+    await writeSidecar(vaultRoot, noteRelativePath, nextThreads);
+
+    const migrationResult = await stripLegacyBlockIfNeeded(vaultRoot, notePath, noteRelativePath, noteContent, hadLegacyBlock, options.settleMs);
+    if (migrationResult.kind === "changed") {
+        io.stderr.write(
+            `Note content changed during sidecar migration; legacy block may still exist in ${notePath}. `
+            + "Rerun after Obsidian Sync or other local edits settle.\n",
+        );
+    }
+
+    const anchorLabel = options.page ? "page note" : "anchored note";
+    io.stdout.write(
+        `Created ${anchorLabel} thread ${threadId} with ${childBodies.length} child `
+        + `comment${childBodies.length === 1 ? "" : "s"} in ${notePath}\n`,
+    );
     return 0;
 }
 

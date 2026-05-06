@@ -1,6 +1,6 @@
 {
 	"name": "side-note2",
-	"version": "2.0.60",
+	"version": "2.0.61",
 	"description": "Side comments for both humans and agents.",
 	"main": "main.js",
 	"scripts": {
@@ -10,6 +10,7 @@
 		"build": "npm run test && npm run lint && tsc -noEmit -skipLibCheck && node esbuild.config.mjs production",
 		"lint": "eslint src",
 		"comment:create": "node scripts/create-note-comment-thread.mjs",
+		"comment:create-with-children": "node scripts/create-note-comment-thread-with-children.mjs",
 		"comment:append": "node scripts/append-note-comment-entry.mjs",
 		"comment:resolve": "node scripts/resolve-note-comment.mjs",
 		"comment:update": "node scripts/update-note-comment.mjs",
