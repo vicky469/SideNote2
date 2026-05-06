@@ -4,6 +4,10 @@ import {
     replaceRawSideNoteReferenceUrls,
     type RawSideNoteReferenceMatch,
 } from "../../core/text/commentReferences";
+import {
+    isMarkdownListLine,
+    toggleMarkdownLinesContentWrap,
+} from "./markdownLineWrapping";
 
 const DASH_RULE_LINE = /^ {0,3}-(?:[ \t]*-){2,}[ \t]*$/;
 const FENCE_LINE = /^ {0,3}(`{3,}|~{3,})/;
@@ -83,7 +87,7 @@ function normalizePreparedCommentMarkdownForRender(markdown: string): string {
         return markdown;
     }
 
-    const lines = shortenBareUrlsInMarkdown(markdown).split("\n");
+    const lines = normalizeStandaloneMultilineBoldListBlocks(shortenBareUrlsInMarkdown(markdown)).split("\n");
     const normalized: string[] = [];
     let activeFence: FenceState | null = null;
 
@@ -125,6 +129,59 @@ function normalizePreparedCommentMarkdownForRender(markdown: string): string {
         }
 
         normalized.push(normalizedLine);
+    }
+
+    return normalized.join("\n");
+}
+
+function normalizeStandaloneMultilineBoldListBlocks(markdown: string): string {
+    const lines = markdown.split("\n");
+    const normalized: string[] = [];
+    let activeFence: FenceState | null = null;
+
+    for (let index = 0; index < lines.length; index += 1) {
+        const line = lines[index];
+        if (activeFence) {
+            normalized.push(line);
+            if (isClosingFence(line, activeFence)) {
+                activeFence = null;
+            }
+            continue;
+        }
+
+        const fenceState = parseFenceState(line);
+        if (fenceState) {
+            normalized.push(line);
+            activeFence = fenceState;
+            continue;
+        }
+
+        const openMatch = line.match(/^(\s*)\*\*(.*)$/);
+        if (!openMatch || openMatch[2].includes("**")) {
+            normalized.push(line);
+            continue;
+        }
+
+        const blockLines = [openMatch[2]];
+        let endIndex = -1;
+        for (let nextIndex = index + 1; nextIndex < lines.length; nextIndex += 1) {
+            const closeMatch = lines[nextIndex].match(/^(.*)\*\*(\s*)$/);
+            if (closeMatch) {
+                blockLines.push(closeMatch[1]);
+                endIndex = nextIndex;
+                break;
+            }
+            blockLines.push(lines[nextIndex]);
+        }
+
+        if (endIndex === -1 || !blockLines.some((blockLine) => isMarkdownListLine(blockLine))) {
+            normalized.push(line);
+            continue;
+        }
+
+        const wrappedLines = toggleMarkdownLinesContentWrap(blockLines, "**");
+        normalized.push(`${openMatch[1]}${wrappedLines[0] ?? ""}`, ...wrappedLines.slice(1));
+        index = endIndex;
     }
 
     return normalized.join("\n");

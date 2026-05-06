@@ -1,3 +1,8 @@
+import {
+    getMarkdownLinesContentSelectionBounds,
+    toggleMarkdownLinesContentWrap,
+} from "./markdownLineWrapping";
+
 export interface TextEditResult {
     value: string;
     selectionStart: number;
@@ -54,6 +59,20 @@ function toggleWrappedSelection(
     const start = getMarkdownListContentStart(value, rawStart, end) ?? rawStart;
     const selectedText = value.slice(start, end);
     const markerLength = marker.length;
+
+    if (selectedText.includes("\n")) {
+        const replacementLines = toggleMarkdownLinesContentWrap(selectedText.split("\n"), marker);
+        const replacement = replacementLines.join("\n");
+        const replacementSelection = getMarkdownLinesContentSelectionBounds(replacementLines, marker);
+        return replaceRange(
+            value,
+            start,
+            end,
+            replacement,
+            start + replacementSelection.selectionStart,
+            start + replacementSelection.selectionEnd,
+        );
+    }
 
     if (
         selectedText.length >= markerLength * 2

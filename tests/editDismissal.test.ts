@@ -10,26 +10,26 @@ test("decideEditDismissal keeps edit mode when clicking inside the draft", () =>
     });
 });
 
-test("decideEditDismissal autosaves when clicking another comment", () => {
+test("decideEditDismissal ignores clicks on another comment while editing", () => {
     assert.deepEqual(decideEditDismissal(false, true, false), {
-        shouldSaveDraft: true,
+        shouldSaveDraft: false,
         shouldClearActiveState: false,
         shouldClearRevealedCommentSelection: false,
     });
 });
 
-test("decideEditDismissal autosaves and clears state on sidebar background click", () => {
+test("decideEditDismissal ignores sidebar background clicks while editing", () => {
     assert.deepEqual(decideEditDismissal(false, false, false), {
-        shouldSaveDraft: true,
-        shouldClearActiveState: true,
-        shouldClearRevealedCommentSelection: true,
+        shouldSaveDraft: false,
+        shouldClearActiveState: false,
+        shouldClearRevealedCommentSelection: false,
     });
 });
 
-test("decideEditDismissal autosaves without clearing revealed selection on toolbar click", () => {
+test("decideEditDismissal ignores toolbar clicks while editing", () => {
     assert.deepEqual(decideEditDismissal(false, false, true), {
-        shouldSaveDraft: true,
-        shouldClearActiveState: true,
+        shouldSaveDraft: false,
+        shouldClearActiveState: false,
         shouldClearRevealedCommentSelection: false,
     });
 });

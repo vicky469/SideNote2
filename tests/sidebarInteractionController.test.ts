@@ -414,7 +414,7 @@ test("sidebar interaction controller claims the sidebar leaf immediately when fo
     }
 });
 
-test("sidebar interaction controller autosaves draft edits on sidebar background click", async () => {
+test("sidebar interaction controller leaves draft alone on sidebar background click", async () => {
     const originalHTMLElement = globalThis.HTMLElement;
     const originalNode = globalThis.Node;
     Object.assign(globalThis, {
@@ -462,10 +462,11 @@ test("sidebar interaction controller autosaves draft edits on sidebar background
         controller.setActiveComment("draft-1");
         await controller.sidebarClickHandler({ target: backgroundEl } as unknown as MouseEvent);
 
-        assert.deepEqual(saveDraftCalls, ["draft-1"]);
-        assert.equal(controller.getActiveCommentId(), null);
-        assert.equal(clearRevealedCommentSelectionCalls, 1);
-        assert.deepEqual(activeEl.removeClassCalls, ["active"]);
+        assert.deepEqual(saveDraftCalls, []);
+        assert.equal(currentDraft?.id, "draft-1");
+        assert.equal(controller.getActiveCommentId(), "draft-1");
+        assert.equal(clearRevealedCommentSelectionCalls, 0);
+        assert.deepEqual(activeEl.removeClassCalls, []);
     } finally {
         Object.assign(globalThis, {
             HTMLElement: originalHTMLElement,
@@ -474,7 +475,7 @@ test("sidebar interaction controller autosaves draft edits on sidebar background
     }
 });
 
-test("sidebar interaction controller autosaves draft edits on document clicks outside the sidebar", async () => {
+test("sidebar interaction controller leaves draft alone on document clicks outside the sidebar", async () => {
     const originalHTMLElement = globalThis.HTMLElement;
     const originalNode = globalThis.Node;
     const originalWindow = globalThis.window;
@@ -539,17 +540,12 @@ test("sidebar interaction controller autosaves draft edits on document clicks ou
         } as unknown as MouseEvent);
         await Promise.resolve();
 
-        assert.deepEqual(saveDraftCalls, ["draft-1"]);
-        assert.equal(controller.getActiveCommentId(), null);
+        assert.deepEqual(saveDraftCalls, []);
+        assert.equal(currentDraft?.id, "draft-1");
+        assert.equal(controller.getActiveCommentId(), "draft-1");
         assert.equal(clearRevealedCommentSelectionCalls, 0);
-        assert.equal(rafCallbacks.length, 1);
-
-        const callback = rafCallbacks.shift();
-        assert.ok(callback);
-        callback?.(0);
-
-        assert.equal(clearRevealedCommentSelectionCalls, 1);
-        assert.deepEqual(activeEl.removeClassCalls, ["active"]);
+        assert.equal(rafCallbacks.length, 0);
+        assert.deepEqual(activeEl.removeClassCalls, []);
     } finally {
         Object.assign(globalThis, {
             HTMLElement: originalHTMLElement,
@@ -740,7 +736,7 @@ test("sidebar interaction controller keeps draft editing open while clicking a p
     }
 });
 
-test("sidebar interaction controller autosaves without clearing active state when clicking another comment", async () => {
+test("sidebar interaction controller leaves draft alone when clicking another comment", async () => {
     const originalHTMLElement = globalThis.HTMLElement;
     const originalNode = globalThis.Node;
     Object.assign(globalThis, {
@@ -788,7 +784,8 @@ test("sidebar interaction controller autosaves without clearing active state whe
         controller.setActiveComment("draft-1");
         await controller.sidebarClickHandler({ target: commentTargetEl } as unknown as MouseEvent);
 
-        assert.deepEqual(saveDraftCalls, ["draft-1"]);
+        assert.deepEqual(saveDraftCalls, []);
+        assert.equal(currentDraft?.id, "draft-1");
         assert.equal(controller.getActiveCommentId(), "draft-1");
         assert.equal(clearRevealedCommentSelectionCalls, 0);
         assert.deepEqual(activeEl.removeClassCalls, []);

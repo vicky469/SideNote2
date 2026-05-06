@@ -161,6 +161,27 @@ test("toggleMarkdownBold unwraps a list item selection without touching the list
     });
 });
 
+test("toggleMarkdownBold wraps multiline list selections per content line", () => {
+    const value = [
+        "When evaluating opportunities, ask:",
+        "- Is a real customer using this weekly?",
+        "- Does it reduce labor, defects, downtime, or cost?",
+        "- Can it survive outside a staged demo?",
+        "- Does the team care about deployment and maintenance?",
+        "- Will I build skills that compound across many hardware products?",
+    ].join("\n");
+    const edit = toggleMarkdownBold(value, 0, value.length);
+
+    assert.equal(edit.value, [
+        "**When evaluating opportunities, ask:**",
+        "- **Is a real customer using this weekly?**",
+        "- **Does it reduce labor, defects, downtime, or cost?**",
+        "- **Can it survive outside a staged demo?**",
+        "- **Does the team care about deployment and maintenance?**",
+        "- **Will I build skills that compound across many hardware products?**",
+    ].join("\n"));
+});
+
 test("renderStyledDraftCommentHtml keeps bold markers and highlights mentions", () => {
     assert.equal(
         renderStyledDraftCommentHtml("Hi **@blue** and @green"),

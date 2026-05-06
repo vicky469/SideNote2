@@ -92,3 +92,24 @@ test("normalizeCommentMarkdownForRender preserves explicitly indented continuati
         "- item\n\n  Continued detail",
     );
 });
+
+test("normalizeCommentMarkdownForRender makes multiline bold list blocks renderable", () => {
+    assert.equal(
+        normalizeCommentMarkdownForRender([
+            "**When evaluating opportunities, ask:",
+            "- Is a real customer using this weekly?",
+            "- Does it reduce labor, defects, downtime, or cost?",
+            "- Can it survive outside a staged demo?",
+            "- Does the team care about deployment and maintenance?",
+            "- Will I build skills that compound across many hardware products?**",
+        ].join("\n")),
+        [
+            "**When evaluating opportunities, ask:**",
+            "- **Is a real customer using this weekly?**",
+            "- **Does it reduce labor, defects, downtime, or cost?**",
+            "- **Can it survive outside a staged demo?**",
+            "- **Does the team care about deployment and maintenance?**",
+            "- **Will I build skills that compound across many hardware products?**",
+        ].join("\n"),
+    );
+});
