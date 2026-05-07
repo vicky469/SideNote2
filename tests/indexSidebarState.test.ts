@@ -2,7 +2,9 @@ import * as assert from "node:assert/strict";
 import test from "node:test";
 import { commentToThread, type Comment } from "../src/commentManager";
 import {
+    GENERIC_INDEX_EMPTY_STATE_TEXTS,
     filterIndexThreadsByExistingSourceFiles,
+    GENERIC_INDEX_EMPTY_STATE_PRIMARY_TEXT,
     scopeIndexThreadsByFilePaths,
     shouldShowActiveIndexEmptyState,
     shouldShowGenericIndexEmptyState,
@@ -146,4 +148,16 @@ test("shouldShowGenericIndexEmptyState hides the generic selected-file-filter em
         hasSearchQuery: false,
         renderedItemCount: 1,
     }), false);
+});
+
+test("generic index empty state points users to file filtering", () => {
+    assert.deepEqual(GENERIC_INDEX_EMPTY_STATE_TEXTS, [
+        "Click a file in the index to filter the sidebar and see its side notes.",
+    ]);
+    assert.equal(
+        GENERIC_INDEX_EMPTY_STATE_PRIMARY_TEXT,
+        "Click a file in the index to filter the sidebar and see its side notes.",
+    );
+    assert.doesNotMatch(GENERIC_INDEX_EMPTY_STATE_PRIMARY_TEXT, /No side notes in the index yet\./);
+    assert.equal(GENERIC_INDEX_EMPTY_STATE_TEXTS.some((text) => text.includes("populate the index")), false);
 });

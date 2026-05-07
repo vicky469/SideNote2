@@ -2,6 +2,11 @@ import type { CommentThread } from "../../commentManager";
 import { filterCommentsByFilePaths } from "./indexFileFilter";
 import type { IndexSidebarMode } from "./viewState";
 
+export const GENERIC_INDEX_EMPTY_STATE_PRIMARY_TEXT = "Click a file in the index to filter the sidebar and see its side notes.";
+export const GENERIC_INDEX_EMPTY_STATE_TEXTS = [
+    GENERIC_INDEX_EMPTY_STATE_PRIMARY_TEXT,
+] as const;
+
 export function scopeIndexThreadsByFilePaths(
     visibleThreads: CommentThread[],
     allThreads: CommentThread[],

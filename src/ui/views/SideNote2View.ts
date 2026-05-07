@@ -75,6 +75,7 @@ import { buildRootedThoughtTrailScope } from "./sidebarThoughtTrailScope";
 import { clearSidebarSearchHighlights, highlightSidebarSearchMatches } from "./sidebarSearchHighlight";
 import {
     filterIndexThreadsByExistingSourceFiles,
+    GENERIC_INDEX_EMPTY_STATE_TEXTS,
     scopeIndexThreadsByFilePaths,
     shouldShowActiveIndexEmptyState,
     shouldShowGenericIndexEmptyState,
@@ -111,7 +112,10 @@ import {
     renderSupportButton,
     renderSupportButtonIn,
 } from "./sidebarSupportButton";
-import { renderNoSidebarFileEmptyState } from "./sidebarEmptyState";
+import {
+    NOTE_SIDEBAR_EMPTY_CREATE_HINT_TEXT,
+    renderNoSidebarFileEmptyState,
+} from "./sidebarEmptyState";
 import {
     renderSidebarThoughtTrail,
     type SidebarThoughtTrailOptions,
@@ -2553,7 +2557,7 @@ export default class SideNote2View extends ItemView {
                 : options.showPinnedThreadsOnly
                     ? "Pin one or more side notes, or turn off the pin filter."
                     : options.contentFilter === "all"
-                    ? "Use the add button to create a page side note."
+                    ? NOTE_SIDEBAR_EMPTY_CREATE_HINT_TEXT
                     : `Turn off ${filterLabel} to return to all side notes.`,
         });
     }
@@ -2658,8 +2662,9 @@ export default class SideNote2View extends ItemView {
             return;
         }
 
-        emptyStateEl.createEl("p", { text: "No side notes in the index yet." });
-        emptyStateEl.createEl("p", { text: "Add side notes in your notes to populate the index." });
+        for (const text of GENERIC_INDEX_EMPTY_STATE_TEXTS) {
+            emptyStateEl.createEl("p", { text });
+        }
     }
 
     private getNoteSidebarContentFilterLabel(filter: SidebarContentFilter): string {

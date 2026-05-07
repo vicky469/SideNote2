@@ -1,6 +1,9 @@
 import * as assert from "node:assert/strict";
 import test from "node:test";
-import { renderNoSidebarFileEmptyState } from "../src/ui/views/sidebarEmptyState";
+import {
+    NOTE_SIDEBAR_EMPTY_CREATE_HINT_TEXT,
+    renderNoSidebarFileEmptyState,
+} from "../src/ui/views/sidebarEmptyState";
 
 class FakeElement {
     public readonly children: FakeElement[] = [];
@@ -41,4 +44,12 @@ test("no-sidebar-file empty state clears stale note sidebar content and stays si
         "No markdown file selected.",
         "Open a markdown file to see its side notes.",
     ]);
+});
+
+test("note sidebar empty create hint includes page and anchored note paths", () => {
+    assert.equal(
+        NOTE_SIDEBAR_EMPTY_CREATE_HINT_TEXT,
+        "Use the add button to create a page side note, or select text and right-click \"Add comment to selection\" to add an anchored note.",
+    );
+    assert.doesNotMatch(NOTE_SIDEBAR_EMPTY_CREATE_HINT_TEXT, /Use the add button to create a page side note\.$/);
 });
