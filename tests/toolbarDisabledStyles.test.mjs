@@ -59,6 +59,25 @@ test("index note file names are larger than metadata text", () => {
     assert.doesNotMatch(indexListRule.groups.body, /font-size:\s*12px\s*;/);
 });
 
+test("index note file rows keep breathing room", () => {
+    const indexRowSpacingRule = css.match(
+        /\.aside-index-note-view \.markdown-preview-view li,[\s\S]*?\.aside-index-note-view \.markdown-source-view\.mod-cm6 \.markdown-rendered li\s*\{(?<body>[\s\S]*?)\}/,
+    );
+
+    assert.ok(indexRowSpacingRule?.groups?.body, "missing index note row spacing rule");
+    assert.match(indexRowSpacingRule.groups.body, /margin-block:\s*0\.45rem\s*;/);
+});
+
+test("regular index file links use normal text color", () => {
+    const indexFileLinkRule = css.match(
+        /\.aside-index-note-view \.markdown-preview-view \.aside-index-file-filter-link,[\s\S]*?\.aside-index-note-view \.markdown-source-view\.mod-cm6 \.markdown-rendered \.aside-index-file-filter-link\s*\{(?<body>[\s\S]*?)\}/,
+    );
+
+    assert.ok(indexFileLinkRule?.groups?.body, "missing index file link color rule");
+    assert.match(indexFileLinkRule.groups.body, /color:\s*var\(--text-normal\)\s*;/);
+    assert.doesNotMatch(indexFileLinkRule.groups.body, /var\(--link-color|--interactive-accent\)|purple/i);
+});
+
 test("selected index file rows use accent background without a left strip", () => {
     const selectedFileRule = css.match(
         /\.aside-index-selected-file,[\s\S]*?\.aside-index-note-view \.aside-index-selected-file\s*\{(?<body>[\s\S]*?)\}/,

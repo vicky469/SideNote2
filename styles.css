@@ -61,6 +61,16 @@
     font-size: 14px;
 }
 
+.aside-index-note-view .markdown-preview-view li,
+.aside-index-note-view .markdown-source-view.mod-cm6 .markdown-rendered li {
+    margin-block: 0.45rem;
+}
+
+.aside-index-note-view .markdown-preview-view .aside-index-file-filter-link,
+.aside-index-note-view .markdown-source-view.mod-cm6 .markdown-rendered .aside-index-file-filter-link {
+    color: var(--text-normal);
+}
+
 .aside-index-selected-file,
 .aside-index-note-view .aside-index-selected-file {
     color: var(--text-normal);
