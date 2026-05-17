@@ -2098,7 +2098,7 @@ export class CommentPersistenceController {
             if (this.disposed) {
                 return;
             }
-            const comments = this.host.getAggregateCommentIndex().getAllComments();
+            const comments = this.host.getAggregateCommentIndex().getAllThreads();
             const noteOptions: AllCommentsNoteBuildOptions = {
                 allCommentsNotePath: this.host.getAllCommentsNotePath(),
                 headerImageUrl: this.host.getIndexHeaderImageUrl(),

@@ -22,7 +22,7 @@ import {
     parseCommentLocationUrl,
     parseIndexFileOpenUrl,
 } from "../src/core/derived/allCommentsNote";
-import type { Comment } from "../src/commentManager";
+import type { Comment, CommentThread } from "../src/commentManager";
 
 function createComment(overrides: Partial<Comment> = {}): Comment {
     return {
@@ -36,6 +36,28 @@ function createComment(overrides: Partial<Comment> = {}): Comment {
         selectedTextHash: "hash-1",
         comment: "This is a side note.",
         timestamp: 1710000000000,
+        resolved: false,
+        ...overrides,
+    };
+}
+
+function createThread(overrides: Partial<CommentThread> = {}): CommentThread {
+    return {
+        id: "thread-1",
+        filePath: "Folder/Note.md",
+        startLine: 4,
+        startChar: 2,
+        endLine: 4,
+        endChar: 7,
+        selectedText: "hello",
+        selectedTextHash: "hash-1",
+        entries: [{
+            id: "entry-1",
+            body: "This is a side note.",
+            timestamp: 1710000000000,
+        }],
+        createdAt: 1710000000000,
+        updatedAt: 1710000000000,
         resolved: false,
         ...overrides,
     };
@@ -213,6 +235,71 @@ test("buildAllCommentsNoteContent lists unique files grouped by folder", () => {
     assert.equal(content.includes(`Projects/Alpha\n${expectedFileRow("Projects/Alpha/Note A.md")}\n${expectedFileRow("Projects/Alpha/Note B.md")}`), true);
     assert.doesNotMatch(content, /commentId=/);
     assert.doesNotMatch(content, /aside-index-kind-dot/);
+});
+
+test("buildAllCommentsNoteContent renders deduped source-file tags", () => {
+    const content = buildAllCommentsNoteContent("dev", [
+        createComment({
+            id: "comment-1",
+            filePath: "Projects/Alpha/Note A.md",
+            comment: "Needs #Review and #follow/up.",
+        }),
+        createComment({
+            id: "comment-2",
+            filePath: "Projects/Alpha/Note A.md",
+            comment: "Duplicate #review plus #idea.",
+        }),
+        createComment({
+            id: "comment-3",
+            filePath: "Projects/Alpha/Note B.md",
+            comment: "No tags here.",
+        }),
+    ]);
+
+    assert.equal(
+        content.includes(`${expectedFileRow("Projects/Alpha/Note A.md")}\n  Tags: #follow/up #idea #Review`),
+        true,
+    );
+    assert.equal(content.includes(`${expectedFileRow("Projects/Alpha/Note B.md")}\n  Tags:`), false);
+});
+
+test("buildAllCommentsNoteContent includes tags from every visible thread entry", () => {
+    const content = buildAllCommentsNoteContent("dev", [
+        createThread({
+            id: "thread-1",
+            filePath: "Projects/Alpha/Note A.md",
+            entries: [
+                {
+                    id: "entry-1",
+                    body: "Root #root",
+                    timestamp: 1710000000000,
+                },
+                {
+                    id: "entry-2",
+                    body: "Reply #reply",
+                    timestamp: 1710000001000,
+                },
+            ],
+        }),
+        createThread({
+            id: "thread-2",
+            filePath: "Projects/Alpha/Note B.md",
+            resolved: true,
+            entries: [{
+                id: "entry-3",
+                body: "Resolved #hidden",
+                timestamp: 1710000002000,
+            }],
+        }),
+    ], {
+        showResolved: false,
+    });
+
+    assert.equal(
+        content.includes(`${expectedFileRow("Projects/Alpha/Note A.md")}\n  Tags: #reply #root`),
+        true,
+    );
+    assert.equal(content.includes("#hidden"), false);
 });
 
 test("buildAllCommentsNoteContent keeps resolved visibility filtering", () => {
