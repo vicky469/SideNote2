@@ -1124,10 +1124,7 @@ async function runCodexDirect(
                         },
                     ],
                     personality: "none",
-                    sandboxPolicy: createWorkspaceWriteSandboxPolicy(
-                        invocation.cwd,
-                        invocation.vaultRootPath ? [invocation.vaultRootPath] : [],
-                    ),
+                    sandboxPolicy: createWorkspaceWriteSandboxPolicy(invocation.cwd),
                     threadId: activeThreadId,
                 });
                 activeTurnId = typeof turnStartResponse?.turn?.id === "string"

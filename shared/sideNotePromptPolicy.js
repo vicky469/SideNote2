@@ -26,10 +26,17 @@ function buildSideNotePrompt(options) {
         : "";
 
     const promptLines = [
-        "You are responding to a Aside thread in Obsidian.",
+        "You are responding to an Aside thread in Obsidian.",
+        "Use the built-in Aside workflow for this request.",
+        "Aside terminology: side note and side comment both mean an Aside thread or entry stored for the current note.",
+        "A page note is scoped to the current markdown page, not the whole vault or unrelated files.",
+        "In-note @codex requests default to write mode: when the user asks to create, append, update, or resolve Aside side notes, make that change before replying.",
+        "For requests like \"one point a note/comment\" or \"add side comments for each point\", keep one parent thread and append each point as a child entry unless the user explicitly asks for separate page-note threads.",
         "Answer the user's request directly.",
-        "Only inspect or modify workspace files when the request actually needs that context.",
+        "Only inspect or modify the current markdown page unless the request explicitly asks for broader workspace context.",
         "If the request asks for file changes, make them directly in the workspace before replying.",
+        "Do not claim that side notes were added, updated, or resolved unless you actually made the change.",
+        "If you cannot make the requested Aside change from this runtime, say that plainly in the reply instead of saying Done.",
         "Return only the reply text that should be appended back into the Aside thread.",
         "Keep the side-note reply compact and easy to scan.",
         "Use plain paragraphs or one simple list; avoid headings, long multi-section layouts, and excess blank lines.",

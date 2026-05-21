@@ -113,6 +113,8 @@ const REMOTE_LONG_POLL_WAIT_MS = 1_500;
 const REMOTE_NO_REPLY_TIMEOUT_MS = 180_000;
 const LOCAL_MAX_CONCURRENT_RUNS = 3;
 const REMOTE_MAX_CONCURRENT_RUNS = 3;
+const BUILT_IN_ASIDE_SKILL_NAME = "aside";
+const BUILT_IN_ASIDE_SKILL_MODE = "write";
 const UTF8_ENCODER = new TextEncoder();
 
 interface ActiveRunExecution {
@@ -311,6 +313,7 @@ export class CommentAgentController {
             promptText: event.body,
         });
         await this.enqueueRun(run);
+        this.logBuiltInAsideSkillSelected(run, event.entryId);
         void this.host.log?.("info", "agents", "agents.directive.detected", {
             threadId: event.threadId,
             entryId: event.entryId,
@@ -383,6 +386,9 @@ export class CommentAgentController {
 
         const retryOfRunId = options.retryOfRunId
             ?? getLatestAgentRunForTriggerEntry(this.store.getRuns(), latestComment.id)?.id;
+        const retryOutputEntryId = retryOfRunId
+            ? this.store.getRunById(retryOfRunId)?.outputEntryId
+            : undefined;
         const run = this.buildQueuedRun({
             threadId: thread.id,
             triggerEntryId: latestComment.id,
@@ -392,14 +398,42 @@ export class CommentAgentController {
             modePreference: runtimeSelection.modePreference,
             promptText: latestComment.comment,
             ...(retryOfRunId ? { retryOfRunId } : {}),
+            ...(retryOutputEntryId ? { outputEntryId: retryOutputEntryId } : {}),
         });
+        if (retryOutputEntryId && !(await this.clearRetryOutputEntry(run, retryOutputEntryId))) {
+            return false;
+        }
         await this.enqueueRun(run);
+        this.logBuiltInAsideSkillSelected(run, latestComment.id);
         void this.host.log?.("info", "agents", "agents.retry.created", {
             runId: run.id,
             ...(retryOfRunId ? { retryOfRunId } : {}),
             threadId: thread.id,
             triggerEntryId: latestComment.id,
             requestedAgent: run.requestedAgent,
+        });
+        return true;
+    }
+
+    private async clearRetryOutputEntry(run: AgentRunRecord, outputEntryId: string): Promise<boolean> {
+        const cleared = await this.host.editComment(outputEntryId, "", { skipCommentViewRefresh: true });
+        if (!cleared) {
+            this.host.showNotice(AGENT_REGENERATE_REPLACE_FAILED_NOTICE);
+            return false;
+        }
+
+        const updatedAt = this.host.now();
+        this.setRunStream(this.buildRunStreamState(run, {
+            status: "queued",
+            partialText: "",
+            startedAt: run.createdAt,
+            updatedAt,
+            outputEntryId,
+        }));
+        void this.host.log?.("info", "agents", "agents.retry.output_cleared", {
+            runId: run.id,
+            threadId: run.threadId,
+            outputEntryId,
         });
         return true;
     }
@@ -802,6 +836,8 @@ export class CommentAgentController {
                     contextBytes: options.runtimeContext.byteLength,
                     pluginVersion: this.host.getPluginVersion(),
                     capability: "workspace-aware",
+                    skills: [BUILT_IN_ASIDE_SKILL_NAME],
+                    skillMode: BUILT_IN_ASIDE_SKILL_MODE,
                 },
             });
             this.logRemoteStartResponse(options.run, response);
@@ -1042,7 +1078,7 @@ export class CommentAgentController {
         if (!thread) {
             const promptText = run.promptText;
             return {
-                scope: "section",
+                scope: "page",
                 promptText,
                 byteLength: UTF8_ENCODER.encode(promptText).length,
             };
@@ -1078,6 +1114,21 @@ export class CommentAgentController {
             hasNoteContext: !!noteContent,
         });
         return context;
+    }
+
+    private logBuiltInAsideSkillSelected(
+        run: Pick<AgentRunRecord, "id" | "threadId" | "requestedAgent">,
+        entryId: string,
+    ): void {
+        void this.host.log?.("info", "agents", "agents.skill.selected", {
+            runId: run.id,
+            threadId: run.threadId,
+            entryId,
+            requestedAgent: run.requestedAgent,
+            skill: BUILT_IN_ASIDE_SKILL_NAME,
+            mode: BUILT_IN_ASIDE_SKILL_MODE,
+            source: "built-in",
+        });
     }
 
     private resolveDispatchTarget(
@@ -1132,6 +1183,7 @@ export class CommentAgentController {
         modePreference: AgentRuntimeModePreference;
         promptText: string;
         retryOfRunId?: string;
+        outputEntryId?: string;
     }): AgentRunRecord {
         return {
             id: this.host.createCommentId(),
@@ -1145,6 +1197,7 @@ export class CommentAgentController {
             createdAt: this.host.now(),
             modePreference: options.modePreference,
             retryOfRunId: options.retryOfRunId,
+            outputEntryId: options.outputEntryId,
         };
     }
 

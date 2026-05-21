@@ -46,16 +46,19 @@ test("streamed agent reply controller restores borrowed nodes without cloning aw
     const metaValueEl = new FakeTextValue();
     const labelEl = new FakeLabelElement();
     const statusEl = new FakeContainerElement();
+    const footerMetaEl = new FakeContainerElement();
     const contentEl = new FakeContainerElement();
     const actionsEl = new FakeContainerElement();
     const statusNode = createFakeNode("status");
     const contentNode = createFakeNode("content");
     const actionNode = createFakeNode("action");
+    const footerActionNode = createFakeNode("footer-action");
 
     controller.ownsCard = false;
     controller.metaValueEl = metaValueEl;
     controller.labelEl = labelEl;
     controller.statusEl = statusEl;
+    controller.footerMetaEl = footerMetaEl;
     controller.contentEl = contentEl;
     controller.actionsEl = actionsEl;
     controller.borrowedSnapshot = {
@@ -68,6 +71,8 @@ test("streamed agent reply controller restores borrowed nodes without cloning aw
         statusNodes: [statusNode],
         statusAriaLabel: "saved status",
         statusTitle: null,
+        footerMetaClassName: "saved-footer-meta",
+        footerMetaNodes: [labelEl, statusEl, footerActionNode],
         contentNodes: [contentNode],
         actionsClassName: "saved-actions",
         actionsNodes: [actionNode],
@@ -81,7 +86,28 @@ test("streamed agent reply controller restores borrowed nodes without cloning aw
     assert.equal(statusEl.className, "saved-status");
     assert.equal(statusEl.getAttribute("aria-label"), "saved status");
     assert.equal(statusEl.childNodes[0], statusNode);
+    assert.equal(footerMetaEl.className, "saved-footer-meta");
+    assert.equal(footerMetaEl.childNodes[2], footerActionNode);
     assert.equal(contentEl.childNodes[0], contentNode);
     assert.equal(actionsEl.className, "saved-actions");
     assert.equal(actionsEl.childNodes[0], actionNode);
+});
+
+test("streamed agent reply controller hides borrowed footer actions while streaming", () => {
+    const controller = new StreamedAgentReplyController("thread-1") as any;
+    const labelEl = new FakeLabelElement();
+    const statusEl = new FakeContainerElement();
+    const footerMetaEl = new FakeContainerElement();
+    const separatorNode = createFakeNode("separator");
+    const addToFileNode = createFakeNode("add-to-file");
+    footerMetaEl.childNodes = [labelEl, statusEl, separatorNode, addToFileNode];
+
+    controller.ownsCard = false;
+    controller.labelEl = labelEl;
+    controller.statusEl = statusEl;
+    controller.footerMetaEl = footerMetaEl;
+
+    controller.syncBorrowedFooterMeta();
+
+    assert.deepEqual(footerMetaEl.childNodes, [labelEl, statusEl]);
 });

@@ -3,7 +3,7 @@ import type { AgentRunRecord } from "../core/agents/agentRuns";
 import { getAgentActorLabel } from "../core/agents/agentActorRegistry";
 import { getVisibleNoteContent } from "../core/storage/noteCommentStorage";
 
-export type AgentPromptContextScope = "anchor" | "section";
+export type AgentPromptContextScope = "anchor" | "page";
 
 export interface AgentPromptContext {
     scope: AgentPromptContextScope;
@@ -18,7 +18,7 @@ interface AgentPromptHeading {
 }
 
 const MAX_ANCHOR_CHARS = 1_200;
-const MAX_SECTION_CHARS = 1_800;
+const MAX_PAGE_CHARS = 8_000;
 const MAX_REQUEST_CHARS = 1_200;
 const MAX_TRANSCRIPT_ENTRY_CHARS = 360;
 const MAX_TRANSCRIPT_ENTRIES = 8;
@@ -168,43 +168,12 @@ function resolveNearbyHeadings(
         .map((heading) => formatHeading(heading));
 }
 
-function resolveSectionText(
-    noteContent: string,
-    referenceLine: number,
-): string | null {
+function resolvePageText(noteContent: string): string | null {
     const normalized = normalizeText(noteContent);
     if (!normalized) {
         return null;
     }
-
-    const lines = normalized.split("\n");
-    const headings = parseMarkdownHeadings(normalized);
-    if (headings.length === 0) {
-        return clipText(normalized, MAX_SECTION_CHARS);
-    }
-
-    let activeIndex = headings.findLastIndex((heading) => heading.line <= referenceLine);
-    let fromLine = 0;
-    let toLine = lines.length;
-    if (activeIndex >= 0) {
-        fromLine = headings[activeIndex].line;
-        toLine = headings[activeIndex + 1]?.line ?? lines.length;
-    } else {
-        fromLine = 0;
-        toLine = headings[0].line;
-    }
-
-    let sectionText = normalizeText(lines.slice(fromLine, toLine).join("\n"));
-    if (!sectionText && headings.length > 0) {
-        activeIndex = 0;
-        fromLine = headings[0].line;
-        toLine = headings[1]?.line ?? lines.length;
-        sectionText = normalizeText(lines.slice(fromLine, toLine).join("\n"));
-    }
-
-    return sectionText
-        ? clipText(sectionText, MAX_SECTION_CHARS)
-        : null;
+    return clipText(normalized, MAX_PAGE_CHARS);
 }
 
 function resolveTranscriptAuthorLabel(
@@ -260,7 +229,7 @@ export function buildAgentPromptContext(options: {
     fallbackPromptText: string;
     threadAgentRuns?: readonly Pick<AgentRunRecord, "requestedAgent" | "outputEntryId">[];
 }): AgentPromptContext {
-    const scope: AgentPromptContextScope = options.thread.anchorKind === "page" ? "section" : "anchor";
+    const scope: AgentPromptContextScope = options.thread.anchorKind === "page" ? "page" : "anchor";
     const visibleNoteContent = resolveVisibleMarkdownContext(options.noteContent);
     const nearbyHeadings = visibleNoteContent
         ? resolveNearbyHeadings(parseMarkdownHeadings(visibleNoteContent), options.thread.startLine)
@@ -289,12 +258,12 @@ export function buildAgentPromptContext(options: {
             sections.push(anchorBlock);
         }
     } else {
-        const sectionBlock = formatMultilineBlock(
-            "Section",
-            resolveSectionText(visibleNoteContent ?? "", options.thread.startLine) ?? "",
+        const pageBlock = formatMultilineBlock(
+            "Page",
+            resolvePageText(visibleNoteContent ?? "") ?? "",
         );
-        if (sectionBlock) {
-            sections.push(sectionBlock);
+        if (pageBlock) {
+            sections.push(pageBlock);
         }
     }
 

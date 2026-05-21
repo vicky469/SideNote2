@@ -305,6 +305,20 @@ test("comment agent controller appends a reply and marks the run succeeded", asy
     assert.equal(harness.runtimeCalls[0]?.target, "codex");
     assert.equal(harness.runtimeCalls[0]?.cwd, "/vault");
     assert.equal(harness.runtimeCalls[0]?.vaultRootPath, "/vault-root");
+    assert.deepEqual(
+        harness.logEntries
+            .filter((entry) => entry.event === "agents.skill.selected")
+            .map((entry) => entry.payload),
+        [{
+            runId: latestRun?.id,
+            threadId: "thread-1",
+            entryId: "thread-1",
+            requestedAgent: "codex",
+            skill: "aside",
+            mode: "write",
+            source: "built-in",
+        }],
+    );
 });
 
 test("comment agent controller blocks a run when runtime selection is unavailable", async () => {
@@ -389,8 +403,10 @@ test("comment agent controller can run through the remote bridge and persist res
     assert.equal(latestRun?.remoteExecutionId, "remote-run-1");
     assert.equal(latestRun?.remoteCursor, "evt-3");
     assert.equal(harness.editedEntries.at(-1)?.body, "Hello world");
-    assert.equal(harness.remoteStartCalls[0]?.metadata.contextScope, "section");
+    assert.equal(harness.remoteStartCalls[0]?.metadata.contextScope, "page");
     assert.equal(typeof harness.remoteStartCalls[0]?.metadata.contextBytes, "number");
+    assert.deepEqual(harness.remoteStartCalls[0]?.metadata.skills, ["aside"]);
+    assert.equal(harness.remoteStartCalls[0]?.metadata.skillMode, "write");
     assert.match(harness.remoteStartCalls[0]?.promptText ?? "", /Request:\n<<<\n@codex say hi\n>>>/);
     assert.deepEqual(
         harness.remotePollCalls.map((call) => call.waitMs),
@@ -791,8 +807,57 @@ test("comment agent controller regenerates a specific reply run using the curren
         body: "First reply",
     }, {
         commentId: "generated-2",
+        body: "",
+    }, {
+        commentId: "generated-2",
         body: "Second reply",
     }]);
+    assert.equal(harness.commentManager.getCommentById("generated-2")?.comment, "Second reply");
+});
+
+test("comment agent controller clears the previous retry reply before the regenerated runtime completes", async () => {
+    let resolveSecondReply!: (replyText: string) => void;
+    const secondReply = new Promise<string>((resolve) => {
+        resolveSecondReply = resolve;
+    });
+    let replyCount = 0;
+    const harness = createHarness({
+        customRunAgentRuntime: async () => {
+            replyCount += 1;
+            if (replyCount === 1) {
+                return {
+                    runtime: "direct-cli",
+                    replyText: "First reply",
+                };
+            }
+
+            return {
+                runtime: "direct-cli",
+                replyText: await secondReply,
+            };
+        },
+    });
+
+    await harness.controller.handleSavedUserEntry({
+        threadId: "thread-1",
+        entryId: "thread-1",
+        filePath: "Folder/Note.md",
+        body: "@codex old prompt",
+    });
+    await waitForAgentQueueToDrain(harness.controller);
+
+    const started = await harness.controller.retryRun("generated-1");
+
+    assert.equal(started, true);
+    assert.equal(harness.commentManager.getCommentById("generated-2")?.comment, "");
+    assert.deepEqual(harness.editedEntries.slice(-1), [{
+        commentId: "generated-2",
+        body: "",
+    }]);
+
+    resolveSecondReply("Second reply");
+    await waitForAgentQueueToDrain(harness.controller);
+
     assert.equal(harness.commentManager.getCommentById("generated-2")?.comment, "Second reply");
 });
 
@@ -883,7 +948,7 @@ test("comment agent controller uses the resolved working directory for runtime e
     assert.equal(harness.runtimeCalls[0]?.cwd, "/vault/Aside");
 });
 
-test("comment agent controller packs note path, section context, and transcript into the runtime prompt", async () => {
+test("comment agent controller packs note path, page context, and transcript into the runtime prompt", async () => {
     const harness = createHarness({
         currentNoteContent: [
             "# Project",
@@ -916,11 +981,10 @@ test("comment agent controller packs note path, section context, and transcript 
 
     const prompt = harness.runtimeCalls[0]?.prompt ?? "";
     assert.match(prompt, /Note path: Folder\/Note\.md/);
-    assert.match(prompt, /Scope: section/);
-    assert.match(prompt, /Section:\n<<<\n## Focus\n\nAlpha detail\nBeta detail\n>>>/);
+    assert.match(prompt, /Scope: page/);
+    assert.match(prompt, /Page:\n<<<\n# Project\n\nOverview\n\n## Focus\n\nAlpha detail\nBeta detail\n\n## Later\n\nGamma detail\n>>>/);
     assert.match(prompt, /Thread:\n- You \(current\): @codex summarize the focus section/);
     assert.match(prompt, /Request:\n<<<\n@codex summarize the focus section\n>>>/);
-    assert.doesNotMatch(prompt, /Gamma detail/);
 });
 
 test("comment agent controller resumes a persisted remote run after restart instead of failing it", async () => {

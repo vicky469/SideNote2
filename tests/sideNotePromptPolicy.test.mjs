@@ -22,3 +22,17 @@ test("buildSideNotePrompt falls back cleanly when no root path is provided", () 
     assert.match(prompt, /Attachments\/` at the active vault root/i);
     assert.doesNotMatch(prompt, /The active vault root is:/);
 });
+
+test("buildSideNotePrompt carries built-in Aside write-mode terminology", () => {
+    const prompt = sideNotePromptPolicy.buildSideNotePrompt({
+        promptText: "@codex add side comments for each point",
+        rootLabel: "vault root",
+        rootPath: "/vault",
+    });
+
+    assert.match(prompt, /Use the built-in Aside workflow/i);
+    assert.match(prompt, /side note and side comment both mean an Aside thread or entry/i);
+    assert.match(prompt, /A page note is scoped to the current markdown page/i);
+    assert.match(prompt, /in-note @codex requests default to write mode/i);
+    assert.match(prompt, /Do not claim that side notes were added, updated, or resolved unless you actually made the change/i);
+});

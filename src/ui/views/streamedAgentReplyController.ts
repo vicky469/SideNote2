@@ -26,6 +26,7 @@ export class StreamedAgentReplyController {
     private contentEl: HTMLDivElement | null = null;
     private labelEl: HTMLSpanElement | null = null;
     private statusEl: HTMLSpanElement | null = null;
+    private footerMetaEl: HTMLDivElement | null = null;
     private actionsEl: HTMLDivElement | null = null;
     private runId: string | null = null;
     private ownsCard = false;
@@ -39,6 +40,8 @@ export class StreamedAgentReplyController {
         statusNodes: Node[];
         statusAriaLabel: string | null;
         statusTitle: string | null;
+        footerMetaClassName: string;
+        footerMetaNodes: Node[];
         contentNodes: Node[];
         actionsClassName: string;
         actionsNodes: Node[];
@@ -88,6 +91,7 @@ export class StreamedAgentReplyController {
         labelEl.style.display = hideAgentLabel ? "none" : "";
 
         this.syncStatus(statusEl, label, stream);
+        this.syncBorrowedFooterMeta();
         this.syncActions(actionsEl, stream);
 
         if (contentEl.textContent !== stream.partialText) {
@@ -119,6 +123,7 @@ export class StreamedAgentReplyController {
         this.contentEl = null;
         this.labelEl = null;
         this.statusEl = null;
+        this.footerMetaEl = null;
         this.actionsEl = null;
         this.runId = null;
         this.ownsCard = false;
@@ -232,11 +237,13 @@ export class StreamedAgentReplyController {
                 const metaValueEl = persisted.querySelector(".aside-comment-meta-value");
                 const labelEl = persisted.querySelector(".aside-comment-author-indicator");
                 const statusEl = persisted.querySelector(".aside-agent-run-status");
+                const footerMetaEl = persisted.querySelector(".aside-thread-footer-meta");
                 const contentEl = persisted.querySelector(".aside-comment-content");
                 const actionsEl = persisted.querySelector(".aside-comment-actions");
                 this.metaValueEl = nodeInstanceOf(metaValueEl, HTMLSpanElement) ? metaValueEl : null;
                 this.labelEl = nodeInstanceOf(labelEl, HTMLSpanElement) ? labelEl : null;
                 this.statusEl = nodeInstanceOf(statusEl, HTMLSpanElement) ? statusEl : null;
+                this.footerMetaEl = nodeInstanceOf(footerMetaEl, HTMLDivElement) ? footerMetaEl : null;
                 this.contentEl = nodeInstanceOf(contentEl, HTMLDivElement) ? contentEl : null;
                 this.actionsEl = nodeInstanceOf(actionsEl, HTMLDivElement) ? actionsEl : null;
                 this.captureBorrowedCardSnapshot();
@@ -253,11 +260,13 @@ export class StreamedAgentReplyController {
                 const metaValueEl = existing.querySelector(".aside-agent-stream-meta-value");
                 const labelEl = existing.querySelector(".aside-agent-stream-author");
                 const statusEl = existing.querySelector(".aside-agent-run-status");
+                const footerMetaEl = existing.querySelector(".aside-thread-footer-meta");
                 const contentEl = existing.querySelector(".aside-agent-stream-content");
                 const actionsEl = existing.querySelector(".aside-comment-actions");
                 this.metaValueEl = nodeInstanceOf(metaValueEl, HTMLSpanElement) ? metaValueEl : null;
                 this.labelEl = nodeInstanceOf(labelEl, HTMLSpanElement) ? labelEl : null;
                 this.statusEl = nodeInstanceOf(statusEl, HTMLSpanElement) ? statusEl : null;
+                this.footerMetaEl = nodeInstanceOf(footerMetaEl, HTMLDivElement) ? footerMetaEl : null;
                 this.contentEl = nodeInstanceOf(contentEl, HTMLDivElement) ? contentEl : null;
                 this.actionsEl = nodeInstanceOf(actionsEl, HTMLDivElement) ? actionsEl : null;
                 return existing;
@@ -299,6 +308,7 @@ export class StreamedAgentReplyController {
         this.statusEl = statusEl;
         this.contentEl = contentEl;
         this.actionsEl = actionsEl;
+        this.footerMetaEl = footerMetaEl;
         return cardEl;
     }
 
@@ -318,10 +328,20 @@ export class StreamedAgentReplyController {
             statusNodes: Array.from(this.statusEl?.childNodes ?? []),
             statusAriaLabel: this.statusEl?.getAttribute("aria-label") ?? null,
             statusTitle: this.statusEl?.getAttribute("title") ?? null,
+            footerMetaClassName: this.footerMetaEl?.className ?? "",
+            footerMetaNodes: Array.from(this.footerMetaEl?.childNodes ?? []),
             contentNodes: Array.from(this.contentEl?.childNodes ?? []),
             actionsClassName: this.actionsEl?.className ?? "",
             actionsNodes: Array.from(this.actionsEl?.childNodes ?? []),
         };
+    }
+
+    private syncBorrowedFooterMeta(): void {
+        if (this.ownsCard || !this.footerMetaEl || !this.labelEl || !this.statusEl) {
+            return;
+        }
+
+        this.footerMetaEl.replaceChildren(this.labelEl, this.statusEl);
     }
 
     private restoreBorrowedCard(): void {
@@ -351,6 +371,10 @@ export class StreamedAgentReplyController {
             } else {
                 this.statusEl.removeAttribute("title");
             }
+        }
+        if (this.footerMetaEl) {
+            this.footerMetaEl.className = this.borrowedSnapshot.footerMetaClassName;
+            this.footerMetaEl.replaceChildren(...this.borrowedSnapshot.footerMetaNodes);
         }
         if (this.contentEl) {
             this.contentEl.replaceChildren(...this.borrowedSnapshot.contentNodes);

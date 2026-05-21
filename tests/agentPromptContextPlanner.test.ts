@@ -89,7 +89,7 @@ test("buildAgentPromptContext uses anchor scope for selection threads and includ
     assert.equal(context.byteLength, Buffer.byteLength(context.promptText, "utf8"));
 });
 
-test("buildAgentPromptContext uses section scope for page threads and strips hidden comment blocks", () => {
+test("buildAgentPromptContext uses page scope for page threads and strips hidden comment blocks", () => {
     const context = buildAgentPromptContext({
         filePath: "Folder/Note.md",
         noteContent: [
@@ -120,11 +120,10 @@ test("buildAgentPromptContext uses section scope for page threads and strips hid
         fallbackPromptText: "@codex fallback",
     });
 
-    assert.equal(context.scope, "section");
-    assert.match(context.promptText, /Scope: section/);
-    assert.match(context.promptText, /Section:\n<<<\n## Focus\n\nAlpha detail\nBeta detail\n>>>/);
+    assert.equal(context.scope, "page");
+    assert.match(context.promptText, /Scope: page/);
+    assert.match(context.promptText, /Page:\n<<<\n# Project\n\nOverview\n\n## Focus\n\nAlpha detail\nBeta detail\n\n## Later\n\nGamma detail\n>>>/);
     assert.match(context.promptText, /Headings: # Project \| ## Focus \| ## Later/);
-    assert.doesNotMatch(context.promptText, /Gamma detail/);
     assert.doesNotMatch(context.promptText, /Aside comments/);
     assert.equal(context.byteLength, Buffer.byteLength(context.promptText, "utf8"));
 });
